@@ -8,14 +8,8 @@ import time
 from typing import Any
 
 from app.core.config import settings
-from app.services.debug_log import debug_log
 
 logger = logging.getLogger(__name__)
-_last_fs_cli_error: str | None = None
-
-
-def last_fs_cli_error() -> str | None:
-    return _last_fs_cli_error
 
 
 def _parse_fs_cli_output(raw: str) -> list[dict[str, Any]]:
@@ -80,11 +74,8 @@ def _normalize_channel(row: dict[str, Any]) -> dict[str, Any]:
 
 
 async def list_active_recording_channels() -> list[dict[str, Any]]:
-    global _last_fs_cli_error
     prefix = settings.freeswitch_fs_cli.strip()
     if not prefix:
-        _last_fs_cli_error = "FREESWITCH_FS_CLI is not configured"
-        debug_log("freeswitch.py:list_active_recording_channels", "fs_cli skipped", data={"reason": _last_fs_cli_error}, hypothesis_id="H1")
         return []
 
     cmd = [*shlex.split(prefix), "-x", "show channels as json"]
@@ -96,25 +87,12 @@ async def list_active_recording_channels() -> list[dict[str, Any]]:
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=8)
     except (TimeoutError, OSError) as exc:
-        _last_fs_cli_error = str(exc)
         logger.warning("fs_cli failed: %s", exc)
-        debug_log("freeswitch.py:list_active_recording_channels", "fs_cli subprocess error", data={"error": _last_fs_cli_error}, hypothesis_id="H1")
         return []
 
     if proc.returncode != 0:
-        _last_fs_cli_error = stderr.decode().strip() or f"exit code {proc.returncode}"
-        logger.warning("fs_cli exit %s: %s", proc.returncode, _last_fs_cli_error)
-        debug_log("freeswitch.py:list_active_recording_channels", "fs_cli non-zero exit", data={"returncode": proc.returncode, "stderr": _last_fs_cli_error}, hypothesis_id="H1")
+        logger.warning("fs_cli exit %s: %s", proc.returncode, stderr.decode().strip())
         return []
 
-    _last_fs_cli_error = None
-    rows = _parse_fs_cli_output(stdout.decode())
-    channels = [_normalize_channel(row) for row in rows if _is_active_recording(row)]
-    result = [c for c in channels if c.get("uuid")]
-    debug_log(
-        "freeswitch.py:list_active_recording_channels",
-        "fs_cli channels parsed",
-        data={"row_count": len(rows), "recording_count": len(result)},
-        hypothesis_id="H1",
-    )
-    return result
+    channels = [_normalize_channel(row) for row in _parse_fs_cli_output(stdout.decode()) if _is_active_recording(row)]
+    return [c for c in channels if c.get("uuid")]

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import glob
-import json
 import os
 import subprocess
 import sys
@@ -13,26 +12,6 @@ import time
 import wave
 
 RECORDINGS_DIR = os.environ.get("RECORDINGS_DIR", "/var/lib/freeswitch/recordings")
-DEBUG_LOG = os.path.join(RECORDINGS_DIR, ".debug-d3dd31.log")
-
-
-def _debug_log(message: str, data: dict | None = None, hypothesis_id: str = "H4") -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "d3dd31",
-            "timestamp": int(time.time() * 1000),
-            "location": "bib-hangup-hook.py",
-            "message": message,
-            "data": data or {},
-            "hypothesisId": hypothesis_id,
-            "runId": "post-fix",
-        }
-        with open(DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-    # #endregion
 
 
 def find_latest(pattern: str) -> str | None:
@@ -114,17 +93,15 @@ def main() -> None:
 
     recordings_dir = args.recordings_dir
     file_pairs: list[str] = []
-    for attempt in range(6):
+    for _attempt in range(6):
         file_pairs = collect_file_pairs(args.refci, recordings_dir, args.base)
         if file_pairs:
             break
-        _debug_log("hangup waiting for recordings", {"refci": args.refci, "attempt": attempt}, hypothesis_id="H4")
         time.sleep(1)
 
     if not file_pairs:
         reason = "no recordings found after hangup retries"
         print(f"bib-hangup-hook: {reason} for refci={args.refci}", file=sys.stderr)
-        _debug_log("hangup failed - no recordings", {"refci": args.refci}, hypothesis_id="H4")
         notify_fail(args.refci, reason)
         return
 
@@ -147,7 +124,6 @@ def main() -> None:
     if duration_s is not None:
         complete_cmd.extend(["--duration-s", f"{duration_s:.3f}"])
 
-    _debug_log("hangup complete notify", {"refci": args.refci, "files": file_pairs}, hypothesis_id="H4")
     subprocess.run(complete_cmd, check=False)
 
 

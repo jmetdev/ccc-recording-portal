@@ -10,7 +10,6 @@ from app.core.database import get_db
 from app.models import Call, CallStatus, JobType, RecordedExtension, Recording, RecordingLeg
 from app.schemas import IngestCompletePayload, IngestFailPayload, IngestStartPayload
 from app.services.audio_meta import duration_from_recording_files
-from app.services.debug_log import debug_log
 from app.services.live_hub import live_hub
 from app.services.media_jobs import enqueue_job
 from app.services.transcription import is_transcription_enabled
@@ -50,14 +49,12 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
 
     for call in calls:
         if call.status == CallStatus.RECORDING:
-            debug_log("ingest.py:ingest_start", "already recording", data={"refci": payload.refci, "call_id": call.id}, hypothesis_id="H5")
             return {"status": "already_recording", "refci": payload.refci, "call_id": call.id}
 
     if calls:
         latest = calls[0]
         if latest.started_at and (now - latest.started_at).total_seconds() < 120:
             if latest.status not in (CallStatus.COMPLETED, CallStatus.FAILED):
-                debug_log("ingest.py:ingest_start", "deduped recent call", data={"refci": payload.refci, "call_id": latest.id}, hypothesis_id="H5")
                 return {"status": "ok", "call_id": latest.id, "refci": payload.refci}
 
     group_id = await resolve_group_id(db, payload.near_addr, payload.far_addr)
@@ -77,7 +74,6 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
     await db.commit()
     await db.refresh(call)
 
-    debug_log("ingest.py:ingest_start", "created recording call", data={"refci": payload.refci, "call_id": call.id}, hypothesis_id="H5")
     await live_hub.broadcast({"event": "call_started", "call_id": call.id, "refci": call.refci})
     return {"status": "ok", "call_id": call.id}
 
@@ -138,7 +134,6 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         )
 
     await db.commit()
-    debug_log("ingest.py:ingest_complete", "call completed ingest", data={"refci": payload.refci, "call_id": call.id, "files": list(payload.files.keys())}, hypothesis_id="H4")
     await live_hub.broadcast({"event": "call_completed", "call_id": call.id, "refci": call.refci})
     return {"status": "ok", "call_id": call.id, "recording_ids": recording_ids}
 
@@ -148,7 +143,6 @@ async def ingest_fail(payload: IngestFailPayload, db: AsyncSession = Depends(get
     result = await db.execute(select(Call).where(Call.refci == payload.refci).order_by(Call.id.desc()))
     calls = [c for c in result.scalars().all() if c.status == CallStatus.RECORDING]
     if not calls:
-        debug_log("ingest.py:ingest_fail", "no recording call to fail", data={"refci": payload.refci, "reason": payload.reason}, hypothesis_id="H4")
         return {"status": "ignored", "refci": payload.refci}
 
     now = datetime.now(timezone.utc)
@@ -161,7 +155,6 @@ async def ingest_fail(payload: IngestFailPayload, db: AsyncSession = Depends(get
         updated_ids.append(call.id)
 
     await db.commit()
-    debug_log("ingest.py:ingest_fail", "marked calls failed", data={"refci": payload.refci, "call_ids": updated_ids, "reason": payload.reason}, hypothesis_id="H4")
     for call_id in updated_ids:
         await live_hub.broadcast({"event": "call_completed", "call_id": call_id, "refci": payload.refci})
     return {"status": "ok", "call_ids": updated_ids}
