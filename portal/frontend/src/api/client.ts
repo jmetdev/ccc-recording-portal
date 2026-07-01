@@ -89,7 +89,7 @@ export const api = {
   audioUrl: (recordingId: number) => `${API_BASE}/recordings/${recordingId}/audio`,
   listTags: (callId: number) => request<Tag[]>(`/calls/${callId}/tags`),
   getTags: (callId: number) => request<Tag[]>(`/calls/${callId}/tags`),
-  createTag: (body: Omit<Tag, 'id' | 'created_at' | 'created_by'>) =>
+  createTag: (body: TagCreate) =>
     request<Tag>('/tags', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   searchTranscripts: (q: string, sentiment?: string) => {
     const params = new URLSearchParams({ q });
@@ -100,27 +100,41 @@ export const api = {
     users: () => request<User[]>('/admin/users'),
     createUser: (body: unknown) =>
       request<User>('/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    deleteUser: (id: number) =>
+      request<void>(`/admin/users/${id}`, { method: 'DELETE' }),
     groups: () => request<Group[]>('/admin/groups'),
     createGroup: (name: string) =>
       request<Group>('/admin/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
     roles: () => request<Role[]>('/admin/roles'),
     createRole: (body: unknown) =>
       request<Role>('/admin/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-    extensions: () => request<Extension[]>('/admin/extensions'),
+    extensions: () => request<Extension[]>('/admin/recorded-extensions'),
     createExtension: (body: unknown) =>
-      request<Extension>('/admin/extensions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      request<Extension>('/admin/recorded-extensions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    deleteExtension: (id: number) =>
+      request<void>(`/admin/recorded-extensions/${id}`, { method: 'DELETE' }),
   },
 };
 
 export type Tag = {
   id: number;
   call_id: number;
+  recording_id: number | null;
   channel: string;
   start_s: number;
   end_s: number;
   note: string | null;
   created_at: string;
   created_by: number | null;
+};
+
+export type TagCreate = {
+  call_id: number;
+  recording_id?: number | null;
+  channel?: string;
+  start_s: number;
+  end_s: number;
+  note?: string | null;
 };
 
 export type Group = { id: number; name: string };

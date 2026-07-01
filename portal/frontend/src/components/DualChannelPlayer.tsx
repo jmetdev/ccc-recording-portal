@@ -35,8 +35,8 @@ export function DualChannelPlayer({ call }: Props) {
       url: api.audioUrl(stereo.id),
       height: 160,
       splitChannels: [
-        { overlay: false, waveColor: NEAR_COLOR, progressColor: '#195184', label: `Near: ${call.near_name || call.near_addr || '?'}` },
-        { overlay: false, waveColor: FAR_COLOR, progressColor: '#226cac', label: `Far: ${call.far_name || call.far_addr || '?'}` },
+        { overlay: false, waveColor: NEAR_COLOR, progressColor: '#195184' },
+        { overlay: false, waveColor: FAR_COLOR, progressColor: '#226cac' },
       ],
       plugins: [regions],
     });
@@ -94,6 +94,9 @@ export function DualChannelPlayer({ call }: Props) {
       <Group>
         <Button size="xs" variant="light" onClick={enableDrag}>Add tag region</Button>
         <Button size="xs" variant="subtle" onClick={() => wsRef.current?.playPause()}>Play / Pause</Button>
+        <Text size="xs" c="dimmed">
+          Near: {call.near_name || call.near_addr || '?'} · Far: {call.far_name || call.far_addr || '?'}
+        </Text>
       </Group>
       <Box ref={containerRef} />
       <Modal opened={!!regionModal} onClose={() => setRegionModal(null)} title="Tag region">

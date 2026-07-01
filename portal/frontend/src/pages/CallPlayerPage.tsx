@@ -37,7 +37,10 @@ export function CallPlayerPage() {
     waveColor: '#128feb',
     progressColor: '#0a558d',
     height: 120,
-    splitChannels: true,
+    splitChannels: [
+      { overlay: false, waveColor: '#2b87d4', progressColor: '#195184' },
+      { overlay: false, waveColor: '#43a3eb', progressColor: '#226cac' },
+    ],
     normalize: true,
     plugins,
   });
@@ -46,11 +49,11 @@ export function CallPlayerPage() {
     mutationFn: () =>
       api.createTag({
         call_id: callId,
-        recording_id: stereo?.id,
+        recording_id: stereo?.id ?? null,
         channel: 'mix',
         start_s: selection!.start,
         end_s: selection!.end,
-        note: note || undefined,
+        note: note || null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tags', callId] });

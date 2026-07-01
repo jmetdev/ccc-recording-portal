@@ -1,6 +1,6 @@
-FROM node:22-alpine AS build
+FROM node:lts-alpine AS build
 WORKDIR /app
-COPY package.json ./
+COPY package.json package-lock.json ./
 RUN npm install
 COPY . .
 ARG VITE_API_URL=http://localhost:8080
