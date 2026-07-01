@@ -9,7 +9,6 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    Table,
     Text,
     UniqueConstraint,
     func,
@@ -19,6 +18,37 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
 from app.core.database import Base
+
+# #region agent log
+import json
+import sys
+import time
+
+
+def _agent_log(message: str, data: dict | None = None, hypothesis_id: str = "A") -> None:
+    payload = {
+        "sessionId": "d3dd31",
+        "timestamp": int(time.time() * 1000),
+        "location": "models/__init__.py",
+        "message": message,
+        "data": data or {},
+        "hypothesisId": hypothesis_id,
+        "runId": "deploy",
+    }
+    try:
+        with open("/Users/jmetcalf/Projects/ccc-recording-portal/.cursor/debug-d3dd31.log", "a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(payload) + "\n")
+    except OSError:
+        pass
+    print(json.dumps(payload), file=sys.stderr)
+
+
+_agent_log(
+    "models module loaded",
+    {"user_roles_impl": "UserRole.__table__", "column_import_removed": True},
+    hypothesis_id="A",
+)
+# #endregion
 
 
 class Permission(str, enum.Enum):
@@ -53,15 +83,14 @@ class JobStatus(str, enum.Enum):
     FAILED = "failed"
 
 
-user_roles = Table(
-    "user_roles",
-    Base.metadata,
-    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Column("role_id", ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
-)
+class UserRole(Base):
+    __tablename__ = "user_roles"
 
-from sqlalchemy import Column  # noqa: E402 — needed after Base for Table defs
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role_id: Mapped[int] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
 
+
+user_roles = UserRole.__table__
 
 class Group(Base):
     __tablename__ = "groups"
