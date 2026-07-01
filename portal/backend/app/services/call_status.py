@@ -27,7 +27,11 @@ async def sync_call_status_from_jobs(db: AsyncSession, call_id: int) -> None:
         return
 
     if any(j.status == JobStatus.FAILED for j in jobs):
+        failed = [j for j in jobs if j.status == JobStatus.FAILED]
         call.status = CallStatus.FAILED
+        call.status_message = "; ".join(
+            f"{j.job_type.value}: {j.error or 'unknown error'}" for j in failed
+        )
         return
 
     media = next((j for j in jobs if j.job_type == JobType.MEDIA_CONVERT), None)
@@ -71,6 +75,7 @@ async def repair_stuck_recording_calls(db: AsyncSession) -> int:
     for call in calls:
         call.status = CallStatus.FAILED
         call.ended_at = now
+        call.status_message = "Recording timed out without hangup completion (no ingest complete received)"
         if call.started_at:
             call.duration_s = max(0.0, (now - call.started_at).total_seconds())
     return len(calls)

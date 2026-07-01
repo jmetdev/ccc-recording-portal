@@ -162,6 +162,7 @@ class Call(Base):
         default=CallStatus.RECORDING,
         index=True,
     )
+    status_message: Mapped[str | None] = mapped_column(Text)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), index=True)
 
     group: Mapped["Group | None"] = relationship(back_populates="calls")

@@ -133,6 +133,7 @@ class CallOut(BaseModel):
     ended_at: datetime | None
     duration_s: float | None
     status: str
+    status_message: str | None = None
     group_id: int | None
     sentiment: str | None = None
 

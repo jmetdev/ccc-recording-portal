@@ -1,6 +1,6 @@
 import { AppShell, Burger, Group, NavLink, Text, ActionIcon } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconDashboard, IconSearch, IconFileText, IconUsers, IconLogout } from '@tabler/icons-react';
+import { IconDashboard, IconSearch, IconFileText, IconUsers, IconLogout, IconHeartbeat } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasPermission } from '../api/client';
@@ -14,6 +14,7 @@ const nav = [
   { to: '/', label: 'Dashboard', icon: IconDashboard, end: true },
   { to: '/calls', label: 'Call Search', icon: IconSearch, end: false },
   { to: '/transcripts', label: 'Transcription Search', icon: IconFileText, perm: 'view_transcripts', end: false },
+  { to: '/health', label: 'Health / Status', icon: IconHeartbeat, perm: 'manage_users', end: false },
   { to: '/admin', label: 'Admin', icon: IconUsers, perm: 'manage_users', end: false },
 ];
 

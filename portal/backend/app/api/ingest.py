@@ -150,6 +150,7 @@ async def ingest_fail(payload: IngestFailPayload, db: AsyncSession = Depends(get
     for call in calls:
         call.status = CallStatus.FAILED
         call.ended_at = now
+        call.status_message = f"Ingest: {payload.reason or 'hangup reported failure'}"
         if call.started_at:
             call.duration_s = max(0.0, (now - call.started_at).total_seconds())
         updated_ids.append(call.id)

@@ -22,6 +22,7 @@ export type Call = {
   ended_at: string | null;
   duration_s: number | null;
   status: 'recording' | 'processing' | 'transcribing' | 'completed' | 'failed' | string;
+  status_message?: string | null;
   sentiment: string | null;
   group_id: number | null;
 };
@@ -57,6 +58,59 @@ export type DashboardStats = {
   calls_total: number;
   recording_now: number;
   extensions_enabled: number;
+};
+
+export type ContainerHealth = {
+  name: string;
+  state: 'healthy' | 'starting' | 'unhealthy' | 'down' | 'unknown';
+  status: string;
+  health: string | null;
+  image: string | null;
+  started_at: string | null;
+  detail: string | null;
+};
+
+export type FailedCallRow = {
+  call_id: number;
+  refci: string;
+  near_addr: string | null;
+  far_addr: string | null;
+  started_at: string;
+  ended_at: string | null;
+  stage: string;
+  message: string;
+};
+
+export type SystemStatus = {
+  checked_at: string;
+  overall: 'healthy' | 'degraded' | 'critical';
+  summary: {
+    containers_healthy: number;
+    containers_total: number;
+    recent_failures: number;
+  };
+  containers: ContainerHealth[];
+  services: {
+    database: { ok: boolean; latency_ms?: number; error?: string };
+    recordings: {
+      ok: boolean;
+      path: string;
+      readable?: boolean;
+      writable?: boolean;
+      wav_count?: number;
+      ingest_log_exists?: boolean;
+      error?: string;
+    };
+    freeswitch: { fs_cli_configured: boolean; active_recording_channels: number };
+    transcription: { enabled: boolean; reason: string; whisper_running: boolean };
+  };
+  recent_failures: FailedCallRow[];
+  log_sources: string[];
+};
+
+export type SystemLogs = {
+  source: string;
+  lines: string[];
 };
 
 export function authHeaders(): HeadersInit {
@@ -115,6 +169,9 @@ export const api = {
     if (sentiment) params.set('sentiment', sentiment);
     return request<TranscriptSearchResult[]>(`/transcripts/search?${params}`);
   },
+  systemStatus: () => request<SystemStatus>('/system/status'),
+  systemLogs: (source: string, lines = 120) =>
+    request<SystemLogs>(`/system/logs/${encodeURIComponent(source)}?lines=${lines}`),
   admin: {
     users: () => request<User[]>('/admin/users'),
     createUser: (body: unknown) =>

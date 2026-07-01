@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Empty = auto-detect via whisper container at startup; true/false to override.
     transcription_enabled: str = ""
     whisper_container_name: str = "portal-whisper"
+    system_containers: str = (
+        "portal-backend,portal-db,portal-frontend,portal-media-handler,portal-whisper,freeswitch"
+    )
     cors_origins: str = "http://localhost:3000"
     admin_email: str = "admin@localhost"
     admin_password: str = "admin123"
@@ -24,6 +27,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def system_container_list(self) -> list[str]:
+        return [c.strip() for c in self.system_containers.split(",") if c.strip()]
 
 
 settings = Settings()

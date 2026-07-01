@@ -7,6 +7,7 @@ import { CallSearchPage } from './pages/CallSearchPage';
 import { CallPlayerRedirect } from './pages/CallPlayerRedirect';
 import { TranscriptionSearchPage } from './pages/TranscriptionSearchPage';
 import { AdminPage } from './pages/AdminPage';
+import { HealthStatusPage } from './pages/HealthStatusPage';
 
 export function App() {
   return (
@@ -22,6 +23,7 @@ export function App() {
               <Route path="transcripts" element={<TranscriptionSearchPage />} />
             </Route>
             <Route element={<RequirePermission permission="manage_users" />}>
+              <Route path="health" element={<HealthStatusPage />} />
               <Route path="admin" element={<AdminPage />} />
             </Route>
           </Route>

@@ -1,0 +1,41 @@
+.containerCard {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.containerCard:hover {
+  transform: translateY(-2px);
+}
+
+.logPanel {
+  background: light-dark(#0d1117, #0d1117);
+  color: #e6edf3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-md);
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+}
+
+.logLine {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.logLineError {
+  color: #ff7b72;
+}
+
+.logLineWarn {
+  color: #d29922;
+}
+
+.logLineInfo {
+  color: #79c0ff;
+}
+
+.overallBanner {
+  border-left-width: 4px;
+}
