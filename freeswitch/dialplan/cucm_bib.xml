@@ -4,50 +4,50 @@
     <extension name="cucm_bib_1034">
       <condition field="destination_number" expression="^1034$"/>
       <condition field="${network_addr}" expression="^172\.25\.100\.(10|11|30|31)$">
-        <!-- Cisco BIB metadata from sip_from_x-* headers -->
-        <action application="set" data="bib_refci=${sip_h_X-refci}"/>
-        <action application="set" data="bib_session=${sip_h_X-session}"/>
-        <action application="set" data="bib_guid=${sip_h_X-guid}"/>
-        <action application="set" data="bib_near_addr=${sip_h_X-nearendaddr}"/>
-        <action application="set" data="bib_far_addr=${sip_h_X-farendaddr}"/>
-        <action application="set" data="bib_near_name=${sip_from_display}"/>
+        <action application="set" data="bib_refci=${sip_from_x-refci}"/>
+        <action application="set" data="bib_far_refci=${sip_from_x-farendrefci}"/>
+        <action application="set" data="bib_near_addr=${sip_from_x-nearendaddr}"/>
+        <action application="set" data="bib_far_addr=${sip_from_x-farendaddr}"/>
+        <action application="set" data="bib_session=${sip_from_x-sessionid}"/>
+        <action application="set" data="bib_near_device=${sip_from_x-nearenddevice}"/>
+        <action application="set" data="bib_far_device=${sip_from_x-farenddevice}"/>
+        <action application="set" data="bib_cisco_guid=${sip_h_Cisco-Guid}"/>
+        <action application="set" data="bib_near_name=${caller_id_name}"/>
         <action application="set" data="bib_far_name=${caller_id_name}"/>
-        <action application="set" data="bib_direction=${sip_h_X-direction}"/>
 
-        <!-- Sequential leg assignment from sip_full_from -->
+        <action application="set" data="bib_refci=${regex(${sip_full_from}|x-refci=([^;>]+)|%1)}" condition="${bib_refci} == ''"/>
+        <action application="set" data="bib_near_addr=${regex(${sip_full_from}|x-nearendaddr=([^;>]+)|%1)}" condition="${bib_near_addr} == ''"/>
+        <action application="set" data="bib_far_addr=${regex(${sip_full_from}|x-farendaddr=([^;>]+)|%1)}" condition="${bib_far_addr} == ''"/>
+
         <action application="set" data="bib_leg=${regex(${sip_full_from}|;x-nearend;|near)}"/>
-        <action application="set" data="bib_leg=${cond(${bib_leg} != near ? far : near)}"/>
+        <action application="set" data="bib_leg=${regex(${sip_full_from}|;x-farend;|far)}" condition="${bib_leg} != near"/>
 
         <action application="set" data="record_sample_rate=8000"/>
         <action application="set" data="RECORD_STEREO=false"/>
-        <action application="set" data="bib_base=cucm_${bib_refci:-none}_${uuid}"/>
-        <action application="set" data="recording_file=$${recordings_dir}/${bib_base}_${bib_leg}.wav"/>
+        <action application="set" data="recording_file=$${recordings_dir}/cucm_${bib_refci}_${bib_leg}_${bib_near_addr}-${bib_far_addr}_${strftime(%Y%m%d-%H%M%S)}_${uuid}.wav"/>
 
-        <action application="log" data="CRIT CUCM-BIB-1034 leg=${bib_leg} refci=${bib_refci} near=${bib_near_addr} far=${bib_far_addr} file=${recording_file}"/>
+        <action application="log" data="CRIT CUCM-BIB-1034 src=${network_addr} leg=${bib_leg} refci=${bib_refci} near=${bib_near_addr} far=${bib_far_addr} file=${recording_file}"/>
 
-        <!-- Notify portal on answer -->
-        <action application="set" data="bib_start_json={&quot;refci&quot;:&quot;${bib_refci}&quot;,&quot;session&quot;:&quot;${bib_session}&quot;,&quot;near_addr&quot;:&quot;${bib_near_addr}&quot;,&quot;far_addr&quot;:&quot;${bib_far_addr}&quot;,&quot;near_name&quot;:&quot;${bib_near_name}&quot;,&quot;far_name&quot;:&quot;${bib_far_name}&quot;,&quot;guid&quot;:&quot;${bib_guid}&quot;,&quot;direction&quot;:&quot;${bib_direction}&quot;}"/>
+        <action application="set" data="bib_start_json={&quot;refci&quot;:&quot;${bib_refci}&quot;,&quot;session&quot;:&quot;${bib_session}&quot;,&quot;near_addr&quot;:&quot;${bib_near_addr}&quot;,&quot;far_addr&quot;:&quot;${bib_far_addr}&quot;,&quot;near_name&quot;:&quot;${bib_near_name}&quot;,&quot;far_name&quot;:&quot;${bib_far_name}&quot;,&quot;guid&quot;:&quot;${bib_cisco_guid}&quot;}"/>
+
         <action application="answer"/>
         <action application="bgsystem" data="python3 /usr/local/sbin/notify-recording.py start --json '${bib_start_json}'"/>
 
         <action application="record_session" data="${recording_file}"/>
 
-        <!-- On hangup: mix legs then notify portal -->
-        <action application="set" data="execute_on_hangup=bgsystem python3 /usr/local/sbin/bib-hangup-hook.py --refci ${bib_refci} --base ${bib_base}"/>
+        <action application="set" data="execute_on_hangup=bgsystem python3 /usr/local/sbin/bib-hangup-hook.py --refci ${bib_refci}"/>
 
         <action application="sleep" data="3600000"/>
         <action application="hangup"/>
       </condition>
     </extension>
 
-    <!-- Reject 1034 from unexpected sources -->
     <extension name="cucm_bib_1034_reject">
       <condition field="destination_number" expression="^1034$"/>
       <action application="log" data="CRIT CUCM-BIB-1034-REJECTED src=${network_addr} from=${sip_from_user}@${sip_from_host}"/>
       <action application="respond" data="403 Forbidden"/>
     </extension>
 
-    <!-- Log any other inbound attempts for troubleshooting -->
     <extension name="cucm_bib_other">
       <condition field="destination_number" expression="^(\d+)$">
         <action application="log" data="CRIT CUCM-BIB-OTHER dst=${destination_number} src=${network_addr} from=${sip_from_user}@${sip_from_host}"/>
