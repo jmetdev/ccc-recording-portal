@@ -4,7 +4,8 @@ set -euo pipefail
 
 REMOTE="${REMOTE:-hyetech@172.25.100.83}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/ccc-recording-portal}"
-FS_RECORDINGS="${FS_RECORDINGS:-/home/hyetech/ccc-freeswitch-docker/runtime/recordings}"
+FS_DIR="${FS_DIR:-/home/hyetech/ccc-freeswitch-docker}"
+FS_RECORDINGS="${FS_RECORDINGS:-$FS_DIR/runtime/recordings}"
 
 ssh "$REMOTE" bash -s <<EOF
 set -euo pipefail
@@ -22,6 +23,12 @@ if grep -q '^#.*FREESWITCH_FS_CLI' .env 2>/dev/null || ! grep -q '^FREESWITCH_FS
   echo "FREESWITCH_FS_CLI=docker exec freeswitch fs_cli" >> .env.tmp
   mv .env.tmp .env
 fi
+
+# Sync FreeSWITCH integration (scripts + dialplan) — not covered by portal compose alone.
+cp -f "$REMOTE_DIR/freeswitch/scripts/"* "$FS_DIR/scripts/"
+chmod +x "$FS_DIR/scripts/"*.sh "$FS_DIR/scripts/"*.py 2>/dev/null || true
+cp -f "$REMOTE_DIR/freeswitch/dialplan/cucm_bib.xml" "$FS_DIR/runtime/config/dialplan/cucm_bib.xml"
+docker exec freeswitch fs_cli -x "reloadxml" >/dev/null
 
 docker compose up -d --build
 docker compose --profile whisper up -d --build whisper

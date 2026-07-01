@@ -7,7 +7,7 @@ from app.models import Call, CallStatus, Job, JobStatus, JobType
 from app.services.transcription import is_transcription_enabled
 
 _ACTIVE = {JobStatus.PENDING, JobStatus.RUNNING}
-_STUCK_RECORDING_AFTER = timedelta(minutes=10)
+_STUCK_RECORDING_AFTER = timedelta(minutes=1)
 
 
 async def sync_call_status_from_jobs(db: AsyncSession, call_id: int) -> None:

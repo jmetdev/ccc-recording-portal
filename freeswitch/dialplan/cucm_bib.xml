@@ -40,8 +40,8 @@
 
         <action application="answer"/>
         <action application="bgsystem" data="/usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${bib_leg} == far"/>
-        <!-- + prefix: record inbound RTP only (CUCM BIB streams are sendonly toward us) -->
-        <action application="record_session" data="+${recording_file}"/>
+        <!-- Record both directions so a WAV is always flushed even if inbound RTP is delayed -->
+        <action application="record_session" data="${recording_file}"/>
 
         <action application="sleep" data="3600000"/>
         <action application="hangup"/>
