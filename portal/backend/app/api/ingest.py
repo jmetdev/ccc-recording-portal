@@ -1,15 +1,16 @@
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.models import Call, CallStatus, JobType, RecordedExtension, Recording, RecordingLeg
-from app.schemas import IngestCompletePayload, IngestStartPayload
+from app.schemas import IngestCompletePayload, IngestFailPayload, IngestStartPayload
 from app.services.audio_meta import duration_from_recording_files
+from app.services.debug_log import debug_log
 from app.services.live_hub import live_hub
 from app.services.media_jobs import enqueue_job
 from app.services.transcription import is_transcription_enabled
@@ -41,18 +42,22 @@ async def resolve_group_id(db: AsyncSession, near_addr: str | None, far_addr: st
 @router.post("/start", dependencies=[Depends(verify_ingest_token)])
 async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(get_db)):
     now = datetime.now(timezone.utc)
+    lock_key = abs(hash(payload.refci)) % (2**31)
+    await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+
     existing = await db.execute(select(Call).where(Call.refci == payload.refci).order_by(Call.id.desc()))
     calls = existing.scalars().all()
 
     for call in calls:
         if call.status == CallStatus.RECORDING:
+            debug_log("ingest.py:ingest_start", "already recording", data={"refci": payload.refci, "call_id": call.id}, hypothesis_id="H5")
             return {"status": "already_recording", "refci": payload.refci, "call_id": call.id}
 
-    # Guard against concurrent duplicate starts (same refci within a short window).
     if calls:
         latest = calls[0]
         if latest.started_at and (now - latest.started_at).total_seconds() < 120:
             if latest.status not in (CallStatus.COMPLETED, CallStatus.FAILED):
+                debug_log("ingest.py:ingest_start", "deduped recent call", data={"refci": payload.refci, "call_id": latest.id}, hypothesis_id="H5")
                 return {"status": "ok", "call_id": latest.id, "refci": payload.refci}
 
     group_id = await resolve_group_id(db, payload.near_addr, payload.far_addr)
@@ -72,6 +77,7 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
     await db.commit()
     await db.refresh(call)
 
+    debug_log("ingest.py:ingest_start", "created recording call", data={"refci": payload.refci, "call_id": call.id}, hypothesis_id="H5")
     await live_hub.broadcast({"event": "call_started", "call_id": call.id, "refci": call.refci})
     return {"status": "ok", "call_id": call.id}
 
@@ -132,5 +138,30 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         )
 
     await db.commit()
+    debug_log("ingest.py:ingest_complete", "call completed ingest", data={"refci": payload.refci, "call_id": call.id, "files": list(payload.files.keys())}, hypothesis_id="H4")
     await live_hub.broadcast({"event": "call_completed", "call_id": call.id, "refci": call.refci})
     return {"status": "ok", "call_id": call.id, "recording_ids": recording_ids}
+
+
+@router.post("/fail", dependencies=[Depends(verify_ingest_token)])
+async def ingest_fail(payload: IngestFailPayload, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Call).where(Call.refci == payload.refci).order_by(Call.id.desc()))
+    calls = [c for c in result.scalars().all() if c.status == CallStatus.RECORDING]
+    if not calls:
+        debug_log("ingest.py:ingest_fail", "no recording call to fail", data={"refci": payload.refci, "reason": payload.reason}, hypothesis_id="H4")
+        return {"status": "ignored", "refci": payload.refci}
+
+    now = datetime.now(timezone.utc)
+    updated_ids: list[int] = []
+    for call in calls:
+        call.status = CallStatus.FAILED
+        call.ended_at = now
+        if call.started_at:
+            call.duration_s = max(0.0, (now - call.started_at).total_seconds())
+        updated_ids.append(call.id)
+
+    await db.commit()
+    debug_log("ingest.py:ingest_fail", "marked calls failed", data={"refci": payload.refci, "call_ids": updated_ids, "reason": payload.reason}, hypothesis_id="H4")
+    for call_id in updated_ids:
+        await live_hub.broadcast({"event": "call_completed", "call_id": call_id, "refci": payload.refci})
+    return {"status": "ok", "call_ids": updated_ids}

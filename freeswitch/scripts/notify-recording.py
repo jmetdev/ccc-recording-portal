@@ -78,6 +78,13 @@ def cmd_complete(args: argparse.Namespace) -> None:
     post("/api/ingest/complete", payload)
 
 
+def cmd_fail(args: argparse.Namespace) -> None:
+    payload = {"refci": args.refci}
+    if args.reason:
+        payload["reason"] = args.reason
+    post("/api/ingest/fail", payload)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Recording portal ingest hook")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -98,6 +105,11 @@ def main() -> None:
     p_complete.add_argument("--files", help="comma-separated leg=path pairs")
     p_complete.add_argument("--duration-s", dest="duration_s")
     p_complete.set_defaults(func=cmd_complete)
+
+    p_fail = sub.add_parser("fail")
+    p_fail.add_argument("--refci", required=True)
+    p_fail.add_argument("--reason")
+    p_fail.set_defaults(func=cmd_fail)
 
     args = parser.parse_args()
     args.func(args)

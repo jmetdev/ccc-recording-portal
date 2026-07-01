@@ -114,6 +114,11 @@ class IngestCompletePayload(BaseModel):
     duration_s: float | None = None
 
 
+class IngestFailPayload(BaseModel):
+    refci: str
+    reason: str | None = None
+
+
 class CallOut(BaseModel):
     id: int
     refci: str

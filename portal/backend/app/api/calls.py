@@ -50,11 +50,14 @@ async def dashboard_stats(
     ).scalar_one()
     calls_total = (await db.execute(call_filter(select(func.count()).select_from(Call)))).scalar_one()
     fs_channels = await list_active_recording_channels()
-    recording_now = len(fs_channels) if fs_channels or settings.freeswitch_fs_cli.strip() else (
-        await db.execute(
-            call_filter(select(func.count()).select_from(Call).where(Call.status == CallStatus.RECORDING))
-        )
-    ).scalar_one()
+    if fs_channels:
+        recording_now = len(fs_channels)
+    else:
+        recording_now = (
+            await db.execute(
+                call_filter(select(func.count()).select_from(Call).where(Call.status == CallStatus.RECORDING))
+            )
+        ).scalar_one()
     extensions_enabled = (
         await db.execute(select(func.count()).select_from(RecordedExtension).where(RecordedExtension.enabled.is_(True)))
     ).scalar_one()
@@ -82,9 +85,33 @@ async def live_calls(user=Depends(get_current_user), db: AsyncSession = Depends(
 
 
 @router.get("/freeswitch/live-channels", response_model=list[LiveChannelOut])
-async def freeswitch_live_channels(user=Depends(get_current_user)):
+async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     channels = await list_active_recording_channels()
-    return [LiveChannelOut.model_validate(c) for c in channels]
+    if channels:
+        return [LiveChannelOut.model_validate(c) for c in channels]
+
+    group_id = await scoped_call_filter(user)
+    stmt = select(Call).where(Call.status == CallStatus.RECORDING).order_by(Call.started_at.desc())
+    if group_id is not None:
+        stmt = stmt.where(Call.group_id == group_id)
+    result = await db.execute(stmt)
+    now = datetime.now(timezone.utc)
+    fallback = []
+    for call in result.scalars().all():
+        duration_s = max(0.0, (now - call.started_at).total_seconds()) if call.started_at else None
+        fallback.append(
+            LiveChannelOut(
+                uuid=f"db-{call.id}",
+                refci=call.refci,
+                near_addr=call.near_addr,
+                far_addr=call.far_addr,
+                leg="portal",
+                dest="1034",
+                callstate="recording",
+                duration_s=duration_s,
+            )
+        )
+    return fallback
 
 
 @router.get("/calls", response_model=CallListResponse)

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone, timedelta
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -5,6 +7,7 @@ from app.models import Call, CallStatus, Job, JobStatus, JobType
 from app.services.transcription import is_transcription_enabled
 
 _ACTIVE = {JobStatus.PENDING, JobStatus.RUNNING}
+_STUCK_RECORDING_AFTER = timedelta(minutes=10)
 
 
 async def sync_call_status_from_jobs(db: AsyncSession, call_id: int) -> None:
@@ -54,4 +57,20 @@ async def repair_stuck_transcribing_calls(db: AsyncSession) -> int:
     calls = list(result.scalars().all())
     for call in calls:
         await sync_call_status_from_jobs(db, call.id)
+    return len(calls)
+
+
+async def repair_stuck_recording_calls(db: AsyncSession) -> int:
+    """Mark long-idle recording calls as failed (hangup hook missed or no WAV)."""
+    cutoff = datetime.now(timezone.utc) - _STUCK_RECORDING_AFTER
+    result = await db.execute(
+        select(Call).where(Call.status == CallStatus.RECORDING, Call.started_at < cutoff)
+    )
+    calls = list(result.scalars().all())
+    now = datetime.now(timezone.utc)
+    for call in calls:
+        call.status = CallStatus.FAILED
+        call.ended_at = now
+        if call.started_at:
+            call.duration_s = max(0.0, (now - call.started_at).total_seconds())
     return len(calls)
