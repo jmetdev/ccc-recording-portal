@@ -26,7 +26,7 @@ def _debug_log(message: str, data: dict | None = None, hypothesis_id: str = "H3"
             "message": message,
             "data": data or {},
             "hypothesisId": hypothesis_id,
-            "runId": "pre-fix",
+            "runId": "post-fix",
         }
         with open(DEBUG_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
