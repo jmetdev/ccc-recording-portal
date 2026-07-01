@@ -1,0 +1,21 @@
+# Additive override for the generic ccc-freeswitch-docker stack.
+# It layers the recording-portal BIB integration onto the FreeSWITCH service:
+#   - mounts the portal hook scripts at /usr/local/sbin
+#   - passes the ingest env the hooks read (PORTAL_API_URL, INGEST_TOKEN)
+#
+# Usage (from the ccc-freeswitch-docker checkout):
+#   export PORTAL_FS_SCRIPTS=/opt/recording-portal/freeswitch/scripts
+#   export PORTAL_API_URL=http://127.0.0.1:8000
+#   export INGEST_TOKEN=<same secret as the portal's INGEST_TOKEN>
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f /opt/recording-portal/freeswitch/docker-compose.freeswitch.override.yml \
+#     up -d
+services:
+  freeswitch:
+    environment:
+      PORTAL_API_URL: ${PORTAL_API_URL:-http://127.0.0.1:8000}
+      INGEST_TOKEN: ${INGEST_TOKEN:-change-me-ingest-token}
+      RECORDINGS_DIR: /var/lib/freeswitch/recordings
+    volumes:
+      - ${PORTAL_FS_SCRIPTS:?set PORTAL_FS_SCRIPTS to the absolute path of ccc-recording-portal/freeswitch/scripts}:/usr/local/sbin:ro

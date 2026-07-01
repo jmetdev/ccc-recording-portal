@@ -1,0 +1,10 @@
+<configuration name="acl.conf" description="Network ACL">
+  <network-lists>
+    <list name="cucm" default="deny">
+      <node type="allow" cidr="172.25.100.10/32"/>
+      <node type="allow" cidr="172.25.100.11/32"/>
+      <node type="allow" cidr="172.25.100.30/32"/>
+      <node type="allow" cidr="172.25.100.31/32"/>
+    </list>
+  </network-lists>
+</configuration>

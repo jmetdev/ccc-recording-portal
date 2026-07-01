@@ -41,21 +41,23 @@ docker compose up -d --build
 docker compose --profile whisper up -d --build whisper
 ```
 
-## Ingest hooks (contract with FreeSWITCH)
+## FreeSWITCH integration
 
-The FreeSWITCH container runs hangup hooks that POST call metadata to this
-portal. Set matching tokens on both sides:
+The BIB dialplan, ACL, and hook scripts that feed this portal live in
+[`freeswitch/`](freeswitch/) and are layered onto the generic
+`ccc-freeswitch-docker` image at deploy time (see
+[`freeswitch/README.md`](freeswitch/README.md)). The FreeSWITCH image itself
+carries no portal-specific code.
 
-- Portal `.env`: `INGEST_TOKEN=<secret>`
-- FreeSWITCH `.env`: `PORTAL_INGEST_TOKEN=<same secret>`
-
-Hooks POST to (header `X-Ingest-Token: <INGEST_TOKEN>`):
+The hooks POST call metadata to this portal (header `X-Ingest-Token: <INGEST_TOKEN>`):
 
 - `POST /api/ingest/start` — call enters `recording` state
 - `POST /api/ingest/complete` — registers near/far/stereo WAVs, enqueues media jobs
 
-Recordings are read from the shared host directory set by `RECORDINGS_HOST_PATH`,
-which must point at the FreeSWITCH repo's `runtime/recordings`.
+Set matching secrets on both sides: the portal's `INGEST_TOKEN` must equal the
+`INGEST_TOKEN` passed to the FreeSWITCH hooks. Recordings are read from the shared
+host directory set by `RECORDINGS_HOST_PATH`, which must point at the FreeSWITCH
+repo's `runtime/recordings`.
 
 ## Development
 
