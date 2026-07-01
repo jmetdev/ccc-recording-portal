@@ -1,0 +1,9 @@
+# Drop-in env for ccc-freeswitch-docker when the portal API listens on host port 8001.
+# Usage (from ~/ccc-freeswitch-docker):
+#   docker compose -f docker-compose.yml -f /opt/ccc-recording-portal/freeswitch/docker-compose.portal-env.yml up -d
+services:
+  freeswitch:
+    environment:
+      PORTAL_API_URL: ${PORTAL_API_URL:-http://127.0.0.1:8001}
+      INGEST_TOKEN: ${INGEST_TOKEN:-change-me-ingest-token}
+      RECORDINGS_DIR: /var/lib/freeswitch/recordings
