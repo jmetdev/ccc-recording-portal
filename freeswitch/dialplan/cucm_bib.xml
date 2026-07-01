@@ -28,14 +28,12 @@
 
         <action application="log" data="CRIT CUCM-BIB-1034 src=${network_addr} leg=${bib_leg} refci=${bib_refci} near=${bib_near_addr} far=${bib_far_addr} file=${recording_file}"/>
 
-        <action application="set" data="bib_start_json={&quot;refci&quot;:&quot;${bib_refci}&quot;,&quot;session&quot;:&quot;${bib_session}&quot;,&quot;near_addr&quot;:&quot;${bib_near_addr}&quot;,&quot;far_addr&quot;:&quot;${bib_far_addr}&quot;,&quot;near_name&quot;:&quot;${bib_near_name}&quot;,&quot;far_name&quot;:&quot;${bib_far_name}&quot;,&quot;guid&quot;:&quot;${bib_cisco_guid}&quot;}"/>
-
         <action application="answer"/>
-        <action application="bgsystem" data="python3 /usr/local/sbin/notify-recording.py start --json '${bib_start_json}'"/>
+        <action application="bgsystem" data="/usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}"/>
 
         <action application="record_session" data="${recording_file}"/>
 
-        <action application="set" data="execute_on_hangup=bgsystem python3 /usr/local/sbin/bib-hangup-hook.py --refci ${bib_refci}"/>
+        <action application="set" data="execute_on_hangup=bgsystem /usr/local/sbin/bib-notify-hangup.sh ${bib_refci}"/>
 
         <action application="sleep" data="3600000"/>
         <action application="hangup"/>

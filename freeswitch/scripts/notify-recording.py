@@ -44,9 +44,24 @@ def post(path: str, payload: dict) -> None:
 
 
 def cmd_start(args: argparse.Namespace) -> None:
-    payload = json.loads(args.json) if args.json else {}
+    if args.json:
+        payload = json.loads(args.json)
+    else:
+        payload = {}
     if args.refci:
         payload.setdefault("refci", args.refci)
+    if args.near_addr:
+        payload.setdefault("near_addr", args.near_addr)
+    if args.far_addr:
+        payload.setdefault("far_addr", args.far_addr)
+    if args.session:
+        payload.setdefault("session", args.session)
+    if args.near_name:
+        payload.setdefault("near_name", args.near_name)
+    if args.far_name:
+        payload.setdefault("far_name", args.far_name)
+    if args.guid:
+        payload.setdefault("guid", args.guid)
     post("/api/ingest/start", payload)
 
 
@@ -70,6 +85,12 @@ def main() -> None:
     p_start = sub.add_parser("start")
     p_start.add_argument("--json", help="JSON payload with call metadata")
     p_start.add_argument("--refci")
+    p_start.add_argument("--near-addr")
+    p_start.add_argument("--far-addr")
+    p_start.add_argument("--session")
+    p_start.add_argument("--near-name")
+    p_start.add_argument("--far-name")
+    p_start.add_argument("--guid")
     p_start.set_defaults(func=cmd_start)
 
     p_complete = sub.add_parser("complete")
