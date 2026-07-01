@@ -1,0 +1,83 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: portal-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-portal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-portal}
+      POSTGRES_DB: ${POSTGRES_DB:-portal}
+    volumes:
+      - portal_pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-portal}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./portal/backend
+    container_name: portal-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@db:5432/${POSTGRES_DB:-portal}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@db:5432/${POSTGRES_DB:-portal}
+      JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-min-32-chars!!}
+      INGEST_TOKEN: ${INGEST_TOKEN:-change-me-ingest-token}
+      WORKER_TOKEN: ${WORKER_TOKEN:-change-me-worker-token}
+      RECORDINGS_DIR: /recordings
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+    volumes:
+      - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:ro
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+  frontend:
+    build:
+      context: ./portal/frontend
+    container_name: portal-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+
+  media-handler:
+    build:
+      context: ./portal/media-handler
+    container_name: portal-media-handler
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      BACKEND_URL: http://backend:8000
+      WORKER_TOKEN: ${WORKER_TOKEN:-change-me-worker-token}
+      RECORDINGS_DIR: /recordings
+    volumes:
+      - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:rw
+
+  whisper:
+    profiles: [whisper]
+    build:
+      context: ./portal/whisper
+    container_name: portal-whisper
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      BACKEND_URL: http://backend:8000
+      WORKER_TOKEN: ${WORKER_TOKEN:-change-me-worker-token}
+      RECORDINGS_DIR: /recordings
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+    volumes:
+      - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:ro
+
+volumes:
+  portal_pgdata:

@@ -1,0 +1,8 @@
+.env
+.DS_Store
+runtime/
+portal/frontend/node_modules/
+portal/frontend/dist/
+__pycache__/
+*.pyc
+.venv/
