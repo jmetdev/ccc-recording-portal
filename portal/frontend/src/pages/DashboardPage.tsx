@@ -40,7 +40,7 @@ export function DashboardPage() {
   });
 
   const { data: channels = [], isLoading: recLoading } = useQuery({
-    queryKey: ['freeswitch-live-channels'],
+    queryKey: ['live-channels'],
     queryFn: api.freeswitchLiveChannels,
     refetchInterval: 5000,
   });
@@ -70,13 +70,13 @@ export function DashboardPage() {
 
       <Card withBorder padding="lg" radius="md">
         <Group justify="space-between" mb="md">
-          <Title order={4}>Currently Recording (FreeSWITCH)</Title>
+          <Title order={4}>Active Recordings</Title>
           <CallStatusBadge status="recording" />
         </Group>
         {recLoading ? (
           <Loader size="sm" />
         ) : live.length === 0 ? (
-          <Text c="dimmed">No active BIB recording channels on FreeSWITCH</Text>
+          <Text c="dimmed">No calls are currently being recorded</Text>
         ) : (
           <Table>
             <Table.Thead>

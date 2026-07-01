@@ -1,0 +1,7 @@
+<!-- Merge these params into sip_profiles/external.xml on the FreeSWITCH host.
+     CUCM BIB near-leg RTP can fail when FS negotiates session timers or rewrites RTP endpoints. -->
+    <param name="enable-timer" value="false"/>
+    <param name="minimum-session-expires" value="1800"/>
+    <param name="disable-rtp-auto-adjust" value="false"/>
+    <param name="rtp-autoflush-during-bridge" value="true"/>
+    <param name="inbound-use-callid-as-uuid" value="false"/>

@@ -35,6 +35,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       FREESWITCH_FS_CLI: ${FREESWITCH_FS_CLI:-}
+      TRANSCRIPTION_ENABLED: ${TRANSCRIPTION_ENABLED:-}
+      WHISPER_CONTAINER_NAME: ${WHISPER_CONTAINER_NAME:-portal-whisper}
     volumes:
       - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro

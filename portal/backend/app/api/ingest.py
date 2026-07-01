@@ -12,6 +12,7 @@ from app.schemas import IngestCompletePayload, IngestStartPayload
 from app.services.audio_meta import duration_from_recording_files
 from app.services.live_hub import live_hub
 from app.services.media_jobs import enqueue_job
+from app.services.transcription import is_transcription_enabled
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -39,9 +40,20 @@ async def resolve_group_id(db: AsyncSession, near_addr: str | None, far_addr: st
 
 @router.post("/start", dependencies=[Depends(verify_ingest_token)])
 async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(Call).where(Call.refci == payload.refci, Call.status == CallStatus.RECORDING))
-    if existing.scalar_one_or_none():
-        return {"status": "already_recording", "refci": payload.refci}
+    now = datetime.now(timezone.utc)
+    existing = await db.execute(select(Call).where(Call.refci == payload.refci).order_by(Call.id.desc()))
+    calls = existing.scalars().all()
+
+    for call in calls:
+        if call.status == CallStatus.RECORDING:
+            return {"status": "already_recording", "refci": payload.refci, "call_id": call.id}
+
+    # Guard against concurrent duplicate starts (same refci within a short window).
+    if calls:
+        latest = calls[0]
+        if latest.started_at and (now - latest.started_at).total_seconds() < 120:
+            if latest.status not in (CallStatus.COMPLETED, CallStatus.FAILED):
+                return {"status": "ok", "call_id": latest.id, "refci": payload.refci}
 
     group_id = await resolve_group_id(db, payload.near_addr, payload.far_addr)
     call = Call(
@@ -112,11 +124,12 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         JobType.MEDIA_CONVERT,
         {"call_id": call.id, "recording_ids": recording_ids, "paths": payload.files},
     )
-    await enqueue_job(
-        db,
-        JobType.TRANSCRIBE,
-        {"call_id": call.id, "recording_ids": recording_ids, "paths": payload.files},
-    )
+    if is_transcription_enabled():
+        await enqueue_job(
+            db,
+            JobType.TRANSCRIBE,
+            {"call_id": call.id, "recording_ids": recording_ids, "paths": payload.files},
+        )
 
     await db.commit()
     await live_hub.broadcast({"event": "call_completed", "call_id": call.id, "refci": call.refci})

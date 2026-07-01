@@ -130,16 +130,24 @@ async def list_calls(
     if date_to:
         filters.append(Call.started_at <= date_to)
 
-    base = select(Call).options(selectinload(Call.transcripts))
+    # One row per refci — duplicate Call rows can exist from concurrent ingest/start.
+    id_stmt = select(Call.id)
     if filters:
-        base = base.where(and_(*filters))
-
+        id_stmt = id_stmt.where(and_(*filters))
     if sentiment:
-        base = base.join(Transcript).where(Transcript.sentiment == sentiment).distinct()
+        id_stmt = id_stmt.join(Transcript, Transcript.call_id == Call.id).where(Transcript.sentiment == sentiment)
+    deduped_ids = id_stmt.distinct(Call.refci).order_by(Call.refci, Call.id.desc()).subquery()
 
-    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+    total = (await db.execute(select(func.count()).select_from(deduped_ids))).scalar_one()
     offset = (page - 1) * page_size
-    result = await db.execute(base.order_by(Call.started_at.desc()).offset(offset).limit(page_size))
+    result = await db.execute(
+        select(Call)
+        .where(Call.id.in_(select(deduped_ids.c.id)))
+        .options(selectinload(Call.transcripts))
+        .order_by(Call.started_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
     items = [
         CallOut.model_validate(c, from_attributes=True).model_copy(update={"sentiment": call_sentiment(c)})
         for c in result.scalars().all()

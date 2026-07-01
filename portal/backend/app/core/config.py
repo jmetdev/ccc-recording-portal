@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     worker_token: str = "change-me-worker-token"
     recordings_dir: str = "/recordings"
     freeswitch_fs_cli: str = ""
+    # Empty = auto-detect via whisper container at startup; true/false to override.
+    transcription_enabled: str = ""
+    whisper_container_name: str = "portal-whisper"
     cors_origins: str = "http://localhost:3000"
     admin_email: str = "admin@localhost"
     admin_password: str = "admin123"

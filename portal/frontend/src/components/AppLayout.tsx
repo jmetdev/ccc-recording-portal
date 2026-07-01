@@ -1,11 +1,12 @@
-import { AppShell, Burger, Group, NavLink, Text, ActionIcon, useMantineColorScheme } from '@mantine/core';
+import { AppShell, Burger, Group, NavLink, Text, ActionIcon } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconDashboard, IconSearch, IconFileText, IconUsers, IconSun, IconMoon, IconLogout } from '@tabler/icons-react';
+import { IconDashboard, IconSearch, IconFileText, IconUsers, IconLogout } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasPermission } from '../api/client';
 import { CallPlayerProvider, useCallPlayer } from './CallPlayerContext';
 import { CallPlayerDrawer } from './CallPlayerDrawer';
+import { ThemeSwitcher } from './ThemeSwitcher';
 
 const DRAWER_HEIGHT = 220;
 
@@ -20,7 +21,6 @@ function AppLayoutInner() {
   const [opened, { toggle }] = useDisclosure();
   const { user, logout } = useAuth();
   const location = useLocation();
-  const { colorScheme, setColorScheme } = useMantineColorScheme();
   const { callId } = useCallPlayer();
 
   return (
@@ -49,13 +49,7 @@ function AppLayoutInner() {
             <Text size="sm" c="dimmed">
               {user?.username}
             </Text>
-            <ActionIcon
-              variant="subtle"
-              onClick={() => setColorScheme(colorScheme === 'dark' ? 'light' : 'dark')}
-              aria-label="Toggle color scheme"
-            >
-              {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
-            </ActionIcon>
+            <ThemeSwitcher />
             <ActionIcon variant="subtle" onClick={logout} aria-label="Logout">
               <IconLogout size={18} />
             </ActionIcon>

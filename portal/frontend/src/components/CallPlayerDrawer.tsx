@@ -118,7 +118,7 @@ export function CallPlayerDrawer() {
       withBorder
       style={{
         position: 'fixed',
-        left: 0,
+        left: 'var(--app-shell-navbar-width, 0px)',
         right: 0,
         bottom: 0,
         zIndex: 200,

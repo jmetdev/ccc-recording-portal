@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Call, CallStatus, Job, JobStatus, JobType
+from app.services.transcription import is_transcription_enabled
 
 _ACTIVE = {JobStatus.PENDING, JobStatus.RUNNING}
 
@@ -29,9 +30,28 @@ async def sync_call_status_from_jobs(db: AsyncSession, call_id: int) -> None:
     media = next((j for j in jobs if j.job_type == JobType.MEDIA_CONVERT), None)
     transcribe = next((j for j in jobs if j.job_type == JobType.TRANSCRIBE), None)
 
+    if not is_transcription_enabled():
+        if media and media.status in _ACTIVE:
+            call.status = CallStatus.PROCESSING
+        elif media and media.status == JobStatus.COMPLETED:
+            call.status = CallStatus.COMPLETED
+        return
+
     if media and media.status in _ACTIVE:
         call.status = CallStatus.PROCESSING
     elif transcribe and transcribe.status in _ACTIVE:
         call.status = CallStatus.TRANSCRIBING
     elif all(j.status == JobStatus.COMPLETED for j in jobs):
         call.status = CallStatus.COMPLETED
+
+
+async def repair_stuck_transcribing_calls(db: AsyncSession) -> int:
+    """Re-sync calls stuck in transcribing when transcription is unavailable."""
+    if is_transcription_enabled():
+        return 0
+
+    result = await db.execute(select(Call).where(Call.status == CallStatus.TRANSCRIBING))
+    calls = list(result.scalars().all())
+    for call in calls:
+        await sync_call_status_from_jobs(db, call.id)
+    return len(calls)

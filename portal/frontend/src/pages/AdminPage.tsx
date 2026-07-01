@@ -93,7 +93,7 @@ export function AdminPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['calls'] });
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      qc.invalidateQueries({ queryKey: ['freeswitch-live'] });
+      qc.invalidateQueries({ queryKey: ['live-channels'] });
     },
   });
 
