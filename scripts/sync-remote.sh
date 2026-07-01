@@ -25,6 +25,8 @@ fi
 
 docker compose up -d --build
 docker compose --profile whisper up -d --build whisper
+# Re-detect whisper container after it starts (transcription init runs once at backend boot).
+docker compose restart backend
 
 docker ps --filter name='portal\|freeswitch' --format 'table {{.Names}}\t{{.Status}}'
 curl -sf http://localhost:8001/api/health
