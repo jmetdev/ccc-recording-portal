@@ -39,7 +39,7 @@ services:
       WHISPER_CONTAINER_NAME: ${WHISPER_CONTAINER_NAME:-portal-whisper}
       SYSTEM_CONTAINERS: ${SYSTEM_CONTAINERS:-portal-backend,portal-db,portal-frontend,portal-media-handler,portal-whisper,freeswitch}
     volumes:
-      - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:ro
+      - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "${BACKEND_PORT:-8000}:8000"
