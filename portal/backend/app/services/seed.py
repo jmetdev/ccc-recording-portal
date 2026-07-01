@@ -33,5 +33,7 @@ def seed_database(db: Session) -> None:
     db.flush()
     db.add(UserRole(user_id=admin.id, role_id=roles["admin"].id))
 
-    db.add(RecordedExtension(extension="1034", label="CUCM BIB Recording", enabled=True, group_id=default_group.id))
+    ext = RecordedExtension(extension="1034", label="CUCM BIB Recording", enabled=True)
+    ext.groups = [default_group]
+    db.add(ext)
     db.commit()

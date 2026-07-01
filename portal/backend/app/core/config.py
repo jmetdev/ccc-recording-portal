@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     ingest_token: str = "change-me-ingest-token"
     worker_token: str = "change-me-worker-token"
     recordings_dir: str = "/recordings"
+    freeswitch_fs_cli: str = ""
     cors_origins: str = "http://localhost:3000"
     admin_email: str = "admin@localhost"
     admin_password: str = "admin123"

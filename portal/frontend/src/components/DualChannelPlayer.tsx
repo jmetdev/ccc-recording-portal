@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Group, Stack, Text, Textarea, Modal } from '@mantine/core';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { api, Call, Recording, Tag } from '../api/client';
+import { api, authHeaders, Call, Recording, Tag } from '../api/client';
 
 type Props = {
   call: Call;
@@ -21,7 +21,13 @@ export function DualChannelPlayer({ call }: Props) {
 
   useEffect(() => {
     api.listRecordings(call.id).then((recs) => {
-      setStereo(recs.find((r) => r.leg === 'stereo') ?? recs[0] ?? null);
+      const ready = recs.filter((r) => r.path_m4a);
+      setStereo(
+        ready.find((r) => r.leg === 'stereo') ??
+          ready.find((r) => r.leg === 'far') ??
+          ready.find((r) => r.leg === 'near') ??
+          null,
+      );
     });
     api.listTags(call.id).then(setTags).catch(() => setTags([]));
   }, [call.id]);
@@ -33,11 +39,14 @@ export function DualChannelPlayer({ call }: Props) {
     const ws = WaveSurfer.create({
       container: containerRef.current,
       url: api.audioUrl(stereo.id),
+      fetchParams: { headers: authHeaders() },
       height: 160,
-      splitChannels: [
-        { overlay: false, waveColor: NEAR_COLOR, progressColor: '#195184' },
-        { overlay: false, waveColor: FAR_COLOR, progressColor: '#226cac' },
-      ],
+      splitChannels: stereo.leg === 'stereo'
+        ? [
+            { overlay: false, waveColor: NEAR_COLOR, progressColor: '#195184' },
+            { overlay: false, waveColor: FAR_COLOR, progressColor: '#226cac' },
+          ]
+        : undefined,
       plugins: [regions],
     });
     wsRef.current = ws;

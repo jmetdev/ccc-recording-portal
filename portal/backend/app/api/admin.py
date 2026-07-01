@@ -6,12 +6,23 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.rbac import require_permission, user_permissions
 from app.core.security import hash_password
-from app.models import Group, Permission, RecordedExtension, Role, RolePermission, User, user_roles
+from app.models import (
+    Group,
+    Job,
+    Permission,
+    RecordedExtension,
+    Role,
+    RolePermission,
+    User,
+    recorded_extension_groups,
+    user_roles,
+)
 from app.schemas import (
     GroupCreate,
     GroupOut,
     RecordedExtensionCreate,
     RecordedExtensionOut,
+    RecordedExtensionUpdate,
     RoleCreate,
     RoleOut,
     UserCreate,
@@ -41,6 +52,24 @@ def serialize_user(user: User) -> UserOut:
         roles=[r.name for r in user.roles],
         permissions=sorted(user_permissions(user)),
     )
+
+
+def serialize_extension(ext: RecordedExtension) -> RecordedExtensionOut:
+    return RecordedExtensionOut(
+        id=ext.id,
+        extension=ext.extension,
+        label=ext.label,
+        enabled=ext.enabled,
+        group_ids=[g.id for g in ext.groups],
+    )
+
+
+async def set_extension_groups(db: AsyncSession, ext: RecordedExtension, group_ids: list[int]) -> None:
+    await db.execute(delete(recorded_extension_groups).where(recorded_extension_groups.c.extension_id == ext.id))
+    for group_id in group_ids:
+        await db.execute(
+            recorded_extension_groups.insert().values(extension_id=ext.id, group_id=group_id)
+        )
 
 
 @router.get("/groups", response_model=list[GroupOut], dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
@@ -168,8 +197,12 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))],
 )
 async def list_extensions(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(RecordedExtension).order_by(RecordedExtension.extension))
-    return result.scalars().all()
+    result = await db.execute(
+        select(RecordedExtension)
+        .options(selectinload(RecordedExtension.groups))
+        .order_by(RecordedExtension.extension)
+    )
+    return [serialize_extension(e) for e in result.scalars().all()]
 
 
 @router.post(
@@ -178,11 +211,18 @@ async def list_extensions(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))],
 )
 async def create_extension(body: RecordedExtensionCreate, db: AsyncSession = Depends(get_db)):
-    ext = RecordedExtension(**body.model_dump())
+    data = body.model_dump(exclude={"group_ids"})
+    ext = RecordedExtension(**data)
     db.add(ext)
+    await db.flush()
+    await set_extension_groups(db, ext, body.group_ids)
     await db.commit()
-    await db.refresh(ext)
-    return ext
+    result = await db.execute(
+        select(RecordedExtension)
+        .options(selectinload(RecordedExtension.groups))
+        .where(RecordedExtension.id == ext.id)
+    )
+    return serialize_extension(result.scalar_one())
 
 
 @router.patch(
@@ -190,15 +230,26 @@ async def create_extension(body: RecordedExtensionCreate, db: AsyncSession = Dep
     response_model=RecordedExtensionOut,
     dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))],
 )
-async def update_extension(ext_id: int, body: RecordedExtensionCreate, db: AsyncSession = Depends(get_db)):
-    ext = (await db.execute(select(RecordedExtension).where(RecordedExtension.id == ext_id))).scalar_one_or_none()
+async def update_extension(ext_id: int, body: RecordedExtensionUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(RecordedExtension)
+        .options(selectinload(RecordedExtension.groups))
+        .where(RecordedExtension.id == ext_id)
+    )
+    ext = result.scalar_one_or_none()
     if not ext:
         raise HTTPException(status_code=404, detail="Extension not found")
-    for k, v in body.model_dump().items():
+    for k, v in body.model_dump(exclude_unset=True, exclude={"group_ids"}).items():
         setattr(ext, k, v)
+    if body.group_ids is not None:
+        await set_extension_groups(db, ext, body.group_ids)
     await db.commit()
-    await db.refresh(ext)
-    return ext
+    result = await db.execute(
+        select(RecordedExtension)
+        .options(selectinload(RecordedExtension.groups))
+        .where(RecordedExtension.id == ext_id)
+    )
+    return serialize_extension(result.scalar_one())
 
 
 @router.delete(
@@ -210,5 +261,16 @@ async def delete_extension(ext_id: int, db: AsyncSession = Depends(get_db)):
     if not ext:
         raise HTTPException(status_code=404, detail="Extension not found")
     await db.delete(ext)
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/purge-call-data", dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
+async def purge_call_data(db: AsyncSession = Depends(get_db)):
+    """Remove all calls, recordings, tags, transcripts, and media jobs."""
+    from app.models import Call
+
+    await db.execute(delete(Job))
+    await db.execute(delete(Call))
     await db.commit()
     return {"status": "ok"}

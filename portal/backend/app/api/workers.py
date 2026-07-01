@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models import Job, JobStatus, JobType
 from app.schemas import JobClaim, JobComplete, RecordingUpdate, TranscriptCreate
+from app.services.call_status import sync_call_status_from_jobs
 
 router = APIRouter(prefix="/workers", tags=["workers"])
 
@@ -49,6 +50,11 @@ async def complete_job(job_id: int, body: JobComplete, db: AsyncSession = Depend
     job.result = body.result
     job.error = body.error
     job.updated_at = datetime.now(timezone.utc)
+
+    call_id = job.payload.get("call_id")
+    if call_id is not None:
+        await sync_call_status_from_jobs(db, int(call_id))
+
     await db.commit()
     return {"status": "ok"}
 

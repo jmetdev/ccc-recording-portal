@@ -1,13 +1,15 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.models import Call, CallStatus, JobType, RecordedExtension, Recording, RecordingLeg
 from app.schemas import IngestCompletePayload, IngestStartPayload
+from app.services.audio_meta import duration_from_recording_files
 from app.services.live_hub import live_hub
 from app.services.media_jobs import enqueue_job
 
@@ -25,11 +27,13 @@ async def resolve_group_id(db: AsyncSession, near_addr: str | None, far_addr: st
             continue
         ext = addr.split("@")[0] if "@" in addr else addr
         result = await db.execute(
-            select(RecordedExtension).where(RecordedExtension.extension == ext, RecordedExtension.enabled.is_(True))
+            select(RecordedExtension)
+            .options(selectinload(RecordedExtension.groups))
+            .where(RecordedExtension.extension == ext, RecordedExtension.enabled.is_(True))
         )
         row = result.scalar_one_or_none()
-        if row:
-            return row.group_id
+        if row and row.groups:
+            return row.groups[0].id
     return None
 
 
@@ -68,11 +72,20 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         raise HTTPException(status_code=404, detail="Call not found")
 
     now = datetime.now(timezone.utc)
-    call.status = CallStatus.COMPLETED
-    call.ended_at = now
-    if payload.duration_s is not None:
-        call.duration_s = payload.duration_s
-    elif call.started_at:
+    already_terminal = call.status in (CallStatus.COMPLETED, CallStatus.FAILED)
+
+    file_duration = duration_from_recording_files(settings.recordings_dir, payload.files)
+    duration_s = payload.duration_s if payload.duration_s is not None else file_duration
+
+    if not already_terminal:
+        call.status = CallStatus.PROCESSING
+        call.ended_at = now
+
+    if duration_s is not None:
+        call.duration_s = duration_s
+        if call.started_at:
+            call.ended_at = call.started_at + timedelta(seconds=duration_s)
+    elif not already_terminal and call.started_at:
         call.duration_s = max(0.0, (now - call.started_at).total_seconds())
 
     leg_map = {"near": RecordingLeg.NEAR, "far": RecordingLeg.FAR, "stereo": RecordingLeg.STEREO}
@@ -82,8 +95,15 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         leg = leg_map.get(leg_name.lower())
         if not leg:
             continue
-        rec = Recording(call_id=call.id, leg=leg, path_wav=rel_path)
-        db.add(rec)
+        existing_rec = await db.execute(
+            select(Recording).where(Recording.call_id == call.id, Recording.leg == leg)
+        )
+        rec = existing_rec.scalar_one_or_none()
+        if rec:
+            rec.path_wav = rel_path
+        else:
+            rec = Recording(call_id=call.id, leg=leg, path_wav=rel_path)
+            db.add(rec)
         await db.flush()
         recording_ids[leg_name] = rec.id
 

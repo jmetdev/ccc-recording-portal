@@ -28,7 +28,7 @@ export function LoginPage() {
   return (
     <Stack align="center" justify="center" mih="100vh" bg="var(--mantine-color-body)">
       <Card withBorder shadow="md" padding="xl" radius="md" w={400}>
-        <Title order={2} mb="lg" c="momentum.6">Call Recording Portal</Title>
+        <Title order={2} mb="lg" c="blue.6">Call Recording Portal</Title>
         <form onSubmit={submit}>
           <Stack>
             {error && <Alert color="red">{error}</Alert>}

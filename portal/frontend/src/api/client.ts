@@ -21,7 +21,7 @@ export type Call = {
   started_at: string;
   ended_at: string | null;
   duration_s: number | null;
-  status: string;
+  status: 'recording' | 'processing' | 'transcribing' | 'completed' | 'failed' | string;
   sentiment: string | null;
   group_id: number | null;
 };
@@ -34,6 +34,24 @@ export type Recording = {
   has_peaks: boolean;
 };
 
+export type LiveChannel = {
+  uuid: string;
+  refci: string | null;
+  near_addr: string | null;
+  far_addr: string | null;
+  leg: string | null;
+  dest: string | null;
+  direction: string | null;
+  cid_num: string | null;
+  cid_name: string | null;
+  application: string | null;
+  read_codec: string | null;
+  write_codec: string | null;
+  callstate: string | null;
+  created_epoch: number | null;
+  duration_s: number | null;
+};
+
 export type DashboardStats = {
   calls_today: number;
   calls_total: number;
@@ -41,7 +59,7 @@ export type DashboardStats = {
   extensions_enabled: number;
 };
 
-function authHeaders(): HeadersInit {
+export function authHeaders(): HeadersInit {
   const token = localStorage.getItem('access_token');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
@@ -78,6 +96,7 @@ export const api = {
   me: () => request<User>('/auth/me'),
   dashboardStats: () => request<DashboardStats>('/dashboard/stats'),
   currentlyRecording: () => request<Call[]>('/calls/live'),
+  freeswitchLiveChannels: () => request<LiveChannel[]>('/freeswitch/live-channels'),
   listCalls: (params: Record<string, string>) => {
     const q = new URLSearchParams(params).toString();
     return request<{ items: Call[]; total: number }>(`/calls?${q}`);
@@ -111,8 +130,12 @@ export const api = {
     extensions: () => request<Extension[]>('/admin/recorded-extensions'),
     createExtension: (body: unknown) =>
       request<Extension>('/admin/recorded-extensions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    updateExtension: (id: number, body: unknown) =>
+      request<Extension>(`/admin/recorded-extensions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
     deleteExtension: (id: number) =>
       request<void>(`/admin/recorded-extensions/${id}`, { method: 'DELETE' }),
+    purgeCallData: () =>
+      request<{ status: string }>('/admin/purge-call-data', { method: 'POST' }),
   },
 };
 
@@ -139,7 +162,7 @@ export type TagCreate = {
 
 export type Group = { id: number; name: string };
 export type Role = { id: number; name: string; description: string | null; permissions: string[] };
-export type Extension = { id: number; extension: string; label: string | null; enabled: boolean; group_id: number | null };
+export type Extension = { id: number; extension: string; label: string | null; enabled: boolean; group_ids: number[] };
 
 export type TranscriptSearchResult = {
   transcript_id: number;

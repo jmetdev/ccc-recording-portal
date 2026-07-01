@@ -1,5 +1,5 @@
 from sqlalchemy import func, or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import Call, CallStatus, RecordedExtension, Transcript
 
@@ -10,10 +10,11 @@ def resolve_group_for_call(db: Session, near_addr: str | None, far_addr: str | N
         return None
     ext = (
         db.query(RecordedExtension)
+        .options(selectinload(RecordedExtension.groups))
         .filter(RecordedExtension.extension.in_(addrs), RecordedExtension.enabled.is_(True))
         .first()
     )
-    return ext.group_id if ext else None
+    return ext.groups[0].id if ext and ext.groups else None
 
 
 def search_transcripts(

@@ -30,6 +30,8 @@ class Permission(str, enum.Enum):
 
 class CallStatus(str, enum.Enum):
     RECORDING = "recording"
+    PROCESSING = "processing"
+    TRANSCRIBING = "transcribing"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -61,6 +63,18 @@ class UserRole(Base):
 
 user_roles = UserRole.__table__
 
+class RecordedExtensionGroup(Base):
+    __tablename__ = "recorded_extension_groups"
+
+    extension_id: Mapped[int] = mapped_column(
+        ForeignKey("recorded_extensions.id", ondelete="CASCADE"), primary_key=True
+    )
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
+
+
+recorded_extension_groups = RecordedExtensionGroup.__table__
+
+
 class Group(Base):
     __tablename__ = "groups"
 
@@ -70,6 +84,9 @@ class Group(Base):
 
     users: Mapped[list["User"]] = relationship(back_populates="group")
     calls: Mapped[list["Call"]] = relationship(back_populates="group")
+    recorded_extensions: Mapped[list["RecordedExtension"]] = relationship(
+        secondary=recorded_extension_groups, back_populates="groups"
+    )
 
 
 class Role(Base):
@@ -118,8 +135,11 @@ class RecordedExtension(Base):
     extension: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     label: Mapped[str | None] = mapped_column(String(128))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    groups: Mapped[list["Group"]] = relationship(
+        secondary=recorded_extension_groups, back_populates="recorded_extensions"
+    )
 
 
 class Call(Base):

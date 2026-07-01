@@ -52,13 +52,12 @@ async def bootstrap(db: AsyncSession) -> None:
 
     ext = (await db.execute(select(RecordedExtension).where(RecordedExtension.extension == "1034"))).scalar_one_or_none()
     if not ext:
-        db.add(
-            RecordedExtension(
-                extension="1034",
-                label="CUCM BIB Recording",
-                enabled=True,
-                group_id=group.id,
-            )
+        ext = RecordedExtension(
+            extension="1034",
+            label="CUCM BIB Recording",
+            enabled=True,
         )
+        ext.groups = [group]
+        db.add(ext)
 
     await db.commit()

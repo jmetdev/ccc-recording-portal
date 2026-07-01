@@ -8,6 +8,7 @@ import glob
 import os
 import subprocess
 import sys
+import wave
 
 
 RECORDINGS_DIR = os.environ.get("RECORDINGS_DIR", "/var/lib/freeswitch/recordings")
@@ -21,6 +22,28 @@ def find_latest(pattern: str) -> str | None:
 def rel_path(path: str) -> str:
     name = os.path.basename(path)
     return name
+
+
+def wav_duration(path: str) -> float | None:
+    try:
+        with wave.open(path, "rb") as wf:
+            rate = wf.getframerate()
+            if rate <= 0:
+                return None
+            return wf.getnframes() / float(rate)
+    except (OSError, wave.Error):
+        return None
+
+
+def longest_duration(paths: list[str]) -> float | None:
+    best: float | None = None
+    for path in paths:
+        if not path or not os.path.isfile(path):
+            continue
+        duration = wav_duration(path)
+        if duration is not None:
+            best = max(best or 0.0, duration)
+    return best
 
 
 def main() -> None:
@@ -63,18 +86,26 @@ def main() -> None:
         print(f"bib-hangup-hook: no recordings found for refci={args.refci}", file=sys.stderr)
         return
 
-    subprocess.run(
-        [
-            sys.executable,
-            f"{sbin}/notify-recording.py",
-            "complete",
-            "--refci",
-            args.refci,
-            "--files",
-            ",".join(file_pairs),
-        ],
-        check=False,
-    )
+    wav_paths = []
+    for pair in file_pairs:
+        _, _, rel = pair.partition("=")
+        if rel:
+            wav_paths.append(os.path.join(recordings_dir, rel))
+    duration_s = longest_duration(wav_paths)
+
+    complete_cmd = [
+        sys.executable,
+        f"{sbin}/notify-recording.py",
+        "complete",
+        "--refci",
+        args.refci,
+        "--files",
+        ",".join(file_pairs),
+    ]
+    if duration_s is not None:
+        complete_cmd.extend(["--duration-s", f"{duration_s:.3f}"])
+
+    subprocess.run(complete_cmd, check=False)
 
 
 if __name__ == "__main__":

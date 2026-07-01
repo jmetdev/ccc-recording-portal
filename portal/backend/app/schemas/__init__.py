@@ -80,16 +80,21 @@ class RecordedExtensionOut(BaseModel):
     extension: str
     label: str | None
     enabled: bool
-    group_id: int | None
-
-    model_config = {"from_attributes": True}
+    group_ids: list[int]
 
 
 class RecordedExtensionCreate(BaseModel):
     extension: str
     label: str | None = None
     enabled: bool = True
-    group_id: int | None = None
+    group_ids: list[int] = []
+
+
+class RecordedExtensionUpdate(BaseModel):
+    extension: str | None = None
+    label: str | None = None
+    enabled: bool | None = None
+    group_ids: list[int] | None = None
 
 
 class IngestStartPayload(BaseModel):
@@ -205,6 +210,24 @@ class DashboardStats(BaseModel):
     calls_total: int
     recording_now: int
     extensions_enabled: int
+
+
+class LiveChannelOut(BaseModel):
+    uuid: str
+    refci: str | None = None
+    near_addr: str | None = None
+    far_addr: str | None = None
+    leg: str | None = None
+    dest: str | None = None
+    direction: str | None = None
+    cid_num: str | None = None
+    cid_name: str | None = None
+    application: str | None = None
+    read_codec: str | None = None
+    write_codec: str | None = None
+    callstate: str | None = None
+    created_epoch: float | None = None
+    duration_s: float | None = None
 
 
 class JobClaim(BaseModel):

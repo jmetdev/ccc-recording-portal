@@ -19,6 +19,8 @@
         <action application="set" data="bib_near_addr=${regex(${sip_full_from}|x-nearendaddr=([^;>]+)|%1)}" condition="${bib_near_addr} == ''"/>
         <action application="set" data="bib_far_addr=${regex(${sip_full_from}|x-farendaddr=([^;>]+)|%1)}" condition="${bib_far_addr} == ''"/>
 
+        <action application="set" data="bib_session=${regex(${sip_full_from}|x-sessionid=([^;>]+)|%1)}" condition="${bib_session} == ''"/>
+
         <action application="set" data="bib_leg=${regex(${sip_full_from}|;x-nearend;|near)}"/>
         <action application="set" data="bib_leg=${regex(${sip_full_from}|;x-farend;|far)}" condition="${bib_leg} != near"/>
 
@@ -28,10 +30,11 @@
 
         <action application="log" data="CRIT CUCM-BIB-1034 src=${network_addr} leg=${bib_leg} refci=${bib_refci} near=${bib_near_addr} far=${bib_far_addr} file=${recording_file}"/>
 
-        <action application="set" data="execute_on_answer=bgsystem /usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}"/>
-        <action application="set" data="execute_on_hangup=bgsystem /usr/local/sbin/bib-notify-hangup.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}"/>
+        <action application="set" data="session_in_hangup_hook=true" condition="${regex(${sip_full_from}|;x-farend;|yes)} == yes"/>
+        <action application="set" data="api_hangup_hook=bgapi system /usr/local/sbin/bib-notify-hangup.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${regex(${sip_full_from}|;x-farend;|yes)} == yes"/>
 
         <action application="answer"/>
+        <action application="system" data="/usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${regex(${sip_full_from}|;x-farend;|yes)} == yes"/>
         <action application="record_session" data="${recording_file}"/>
 
         <action application="sleep" data="3600000"/>

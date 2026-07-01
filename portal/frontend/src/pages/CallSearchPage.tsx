@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Group, Select, Stack, Table, TextInput, Title } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
+import { Button, Group, Select, Stack, Table, TextInput, Title } from '@mantine/core';
 import { api } from '../api/client';
+import { CallStatusBadge } from '../components/CallStatusBadge';
+import { useCallPlayer } from '../components/CallPlayerContext';
 
 export function CallSearchPage() {
-  const navigate = useNavigate();
+  const { openCall } = useCallPlayer();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [near, setNear] = useState('');
@@ -64,13 +65,13 @@ export function CallSearchPage() {
             </Table.Tr>
           )}
           {data?.items.map((c) => (
-            <Table.Tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/calls/${c.id}`)}>
+            <Table.Tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => openCall(c.id)}>
               <Table.Td>{new Date(c.started_at).toLocaleString()}</Table.Td>
               <Table.Td>{c.near_name || c.near_addr}</Table.Td>
               <Table.Td>{c.far_name || c.far_addr}</Table.Td>
               <Table.Td>{c.duration_s ? `${Math.round(c.duration_s)}s` : '—'}</Table.Td>
               <Table.Td>
-                <Badge size="sm">{c.status}</Badge>
+                <CallStatusBadge status={c.status} />
               </Table.Td>
               <Table.Td>{c.sentiment || '—'}</Table.Td>
             </Table.Tr>

@@ -4,7 +4,7 @@ import { RequireAuth, RequirePermission } from './auth/RouteGuards';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { CallSearchPage } from './pages/CallSearchPage';
-import { CallPlayerPage } from './pages/CallPlayerPage';
+import { CallPlayerRedirect } from './pages/CallPlayerRedirect';
 import { TranscriptionSearchPage } from './pages/TranscriptionSearchPage';
 import { AdminPage } from './pages/AdminPage';
 
@@ -17,7 +17,7 @@ export function App() {
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="calls" element={<CallSearchPage />} />
-            <Route path="calls/:id" element={<CallPlayerPage />} />
+            <Route path="calls/:id" element={<CallPlayerRedirect />} />
             <Route element={<RequirePermission permission="view_transcripts" />}>
               <Route path="transcripts" element={<TranscriptionSearchPage />} />
             </Route>

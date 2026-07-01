@@ -4,33 +4,40 @@ import { IconDashboard, IconSearch, IconFileText, IconUsers, IconSun, IconMoon, 
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasPermission } from '../api/client';
-import { useEffect } from 'react';
+import { CallPlayerProvider, useCallPlayer } from './CallPlayerContext';
+import { CallPlayerDrawer } from './CallPlayerDrawer';
+
+const DRAWER_HEIGHT = 220;
 
 const nav = [
-  { to: '/', label: 'Dashboard', icon: IconDashboard },
-  { to: '/calls', label: 'Call Search', icon: IconSearch },
-  { to: '/transcripts', label: 'Transcription Search', icon: IconFileText, perm: 'view_transcripts' },
-  { to: '/admin', label: 'Admin', icon: IconUsers, perm: 'manage_users' },
+  { to: '/', label: 'Dashboard', icon: IconDashboard, end: true },
+  { to: '/calls', label: 'Call Search', icon: IconSearch, end: false },
+  { to: '/transcripts', label: 'Transcription Search', icon: IconFileText, perm: 'view_transcripts', end: false },
+  { to: '/admin', label: 'Admin', icon: IconUsers, perm: 'manage_users', end: false },
 ];
 
-export function AppLayout() {
+function AppLayoutInner() {
   const [opened, { toggle }] = useDisclosure();
   const { user, logout } = useAuth();
   const location = useLocation();
   const { colorScheme, setColorScheme } = useMantineColorScheme();
-
-  useEffect(() => {
-    document.body.classList.remove('theme-webex-light', 'theme-webex-dark');
-    document.body.classList.add(colorScheme === 'dark' ? 'theme-webex-dark' : 'theme-webex-light');
-  }, [colorScheme]);
+  const { callId } = useCallPlayer();
 
   return (
     <AppShell
       header={{ height: 56 }}
       navbar={{ width: 240, breakpoint: 'sm', collapsed: { mobile: !opened } }}
       padding="md"
+      styles={{
+        main: {
+          paddingBottom: callId != null ? DRAWER_HEIGHT + 16 : undefined,
+        },
+        navbar: {
+          zIndex: 300,
+        },
+      }}
     >
-      <AppShell.Header>
+      <AppShell.Header style={{ zIndex: 300 }}>
         <Group h="100%" px="md" justify="space-between">
           <Group>
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
@@ -56,10 +63,13 @@ export function AppLayout() {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="md">
+      <AppShell.Navbar p="md" style={{ zIndex: 300 }}>
         {nav.map((item) => {
           if (item.perm && !hasPermission(user, item.perm)) return null;
           const Icon = item.icon;
+          const active = item.end
+            ? location.pathname === item.to
+            : location.pathname === item.to || location.pathname.startsWith(item.to + '/');
           return (
             <NavLink
               key={item.to}
@@ -67,7 +77,7 @@ export function AppLayout() {
               to={item.to}
               label={item.label}
               leftSection={<Icon size={18} />}
-              active={location.pathname === item.to || location.pathname.startsWith(item.to + '/')}
+              active={active}
             />
           );
         })}
@@ -76,6 +86,16 @@ export function AppLayout() {
       <AppShell.Main>
         <Outlet />
       </AppShell.Main>
+
+      <CallPlayerDrawer />
     </AppShell>
+  );
+}
+
+export function AppLayout() {
+  return (
+    <CallPlayerProvider>
+      <AppLayoutInner />
+    </CallPlayerProvider>
   );
 }

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Grid, Group, Loader, Stack, Table, Text, Title, Badge } from '@mantine/core';
-import { api, Call } from '../api/client';
+import { Card, Grid, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
+import { api, LiveChannel } from '../api/client';
+import { CallStatusBadge } from '../components/CallStatusBadge';
 
-function useLiveRecording(initial: Call[]) {
-  const [live, setLive] = useState<Call[]>(initial);
+function useLiveChannels(initial: LiveChannel[]) {
+  const [live, setLive] = useState<LiveChannel[]>(initial);
 
   useEffect(() => {
     setLive(initial);
@@ -16,12 +17,19 @@ function useLiveRecording(initial: Call[]) {
     const qs = token ? `?token=${encodeURIComponent(token)}` : '';
     const ws = new WebSocket(`${proto}://${window.location.host}/api/ws/live${qs}`);
     ws.onmessage = () => {
-      api.currentlyRecording().then(setLive).catch(() => undefined);
+      api.freeswitchLiveChannels().then(setLive).catch(() => undefined);
     };
     return () => ws.close();
   }, []);
 
   return live;
+}
+
+function formatDuration(seconds: number | null | undefined) {
+  if (seconds == null) return '—';
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
 export function DashboardPage() {
@@ -31,13 +39,13 @@ export function DashboardPage() {
     refetchInterval: 30000,
   });
 
-  const { data: recording = [], isLoading: recLoading } = useQuery({
-    queryKey: ['currently-recording'],
-    queryFn: api.currentlyRecording,
-    refetchInterval: 10000,
+  const { data: channels = [], isLoading: recLoading } = useQuery({
+    queryKey: ['freeswitch-live-channels'],
+    queryFn: api.freeswitchLiveChannels,
+    refetchInterval: 5000,
   });
 
-  const live = useLiveRecording(recording);
+  const live = useLiveChannels(channels);
 
   if (statsLoading) return <Loader />;
 
@@ -62,13 +70,13 @@ export function DashboardPage() {
 
       <Card withBorder padding="lg" radius="md">
         <Group justify="space-between" mb="md">
-          <Title order={4}>Currently Recording</Title>
-          <Badge color="red" variant="dot">Live</Badge>
+          <Title order={4}>Currently Recording (FreeSWITCH)</Title>
+          <CallStatusBadge status="recording" />
         </Group>
         {recLoading ? (
           <Loader size="sm" />
         ) : live.length === 0 ? (
-          <Text c="dimmed">No active recordings</Text>
+          <Text c="dimmed">No active BIB recording channels on FreeSWITCH</Text>
         ) : (
           <Table>
             <Table.Thead>
@@ -76,16 +84,20 @@ export function DashboardPage() {
                 <Table.Th>Near</Table.Th>
                 <Table.Th>Far</Table.Th>
                 <Table.Th>Ref CI</Table.Th>
-                <Table.Th>Started</Table.Th>
+                <Table.Th>Leg</Table.Th>
+                <Table.Th>Codec</Table.Th>
+                <Table.Th>Duration</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {live.map((c) => (
-                <Table.Tr key={c.id}>
-                  <Table.Td>{c.near_name || c.near_addr}</Table.Td>
-                  <Table.Td>{c.far_name || c.far_addr}</Table.Td>
-                  <Table.Td>{c.refci}</Table.Td>
-                  <Table.Td>{new Date(c.started_at).toLocaleString()}</Table.Td>
+                <Table.Tr key={c.uuid}>
+                  <Table.Td>{c.near_addr || c.cid_num || '—'}</Table.Td>
+                  <Table.Td>{c.far_addr || '—'}</Table.Td>
+                  <Table.Td>{c.refci || '—'}</Table.Td>
+                  <Table.Td>{c.leg || '—'}</Table.Td>
+                  <Table.Td>{c.read_codec || '—'}</Table.Td>
+                  <Table.Td>{formatDuration(c.duration_s)}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

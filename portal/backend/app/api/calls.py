@@ -14,6 +14,7 @@ from app.schemas import (
     CallListResponse,
     CallOut,
     DashboardStats,
+    LiveChannelOut,
     PeaksOut,
     RecordingOut,
     TagCreate,
@@ -21,6 +22,7 @@ from app.schemas import (
     TranscriptOut,
     TranscriptSearchResult,
 )
+from app.services.freeswitch import list_active_recording_channels
 
 router = APIRouter(tags=["calls"])
 
@@ -47,7 +49,8 @@ async def dashboard_stats(
         await db.execute(call_filter(select(func.count()).select_from(Call).where(Call.started_at >= today)))
     ).scalar_one()
     calls_total = (await db.execute(call_filter(select(func.count()).select_from(Call)))).scalar_one()
-    recording_now = (
+    fs_channels = await list_active_recording_channels()
+    recording_now = len(fs_channels) if fs_channels or settings.freeswitch_fs_cli.strip() else (
         await db.execute(
             call_filter(select(func.count()).select_from(Call).where(Call.status == CallStatus.RECORDING))
         )
@@ -76,6 +79,12 @@ async def live_calls(user=Depends(get_current_user), db: AsyncSession = Depends(
         CallOut.model_validate(c, from_attributes=True).model_copy(update={"sentiment": call_sentiment(c)})
         for c in calls
     ]
+
+
+@router.get("/freeswitch/live-channels", response_model=list[LiveChannelOut])
+async def freeswitch_live_channels(user=Depends(get_current_user)):
+    channels = await list_active_recording_channels()
+    return [LiveChannelOut.model_validate(c) for c in channels]
 
 
 @router.get("/calls", response_model=CallListResponse)

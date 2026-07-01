@@ -2,18 +2,21 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ActionIcon,
+  Alert,
   Button,
   Checkbox,
   Group,
   Modal,
+  MultiSelect,
   Select,
   Stack,
   Table,
   Tabs,
+  Text,
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconEdit, IconPlus, IconTrash } from '@tabler/icons-react';
 import { api } from '../api/client';
 
 export function AdminPage() {
@@ -54,10 +57,30 @@ export function AdminPage() {
     },
   });
 
-  const [extForm, setExtForm] = useState({ extension: '', label: '', enabled: true, group_id: null as number | null });
+  const [extForm, setExtForm] = useState({ extension: '', label: '', enabled: true, group_ids: [] as number[] });
   const createExt = useMutation({
     mutationFn: () => api.admin.createExtension(extForm),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-extensions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-extensions'] });
+      setExtForm({ extension: '', label: '', enabled: true, group_ids: [] });
+    },
+  });
+
+  const [editExt, setEditExt] = useState<{ id: number; extension: string; label: string; enabled: boolean; group_ids: number[] } | null>(null);
+  const updateExt = useMutation({
+    mutationFn: () => {
+      if (!editExt) throw new Error('No extension selected');
+      return api.admin.updateExtension(editExt.id, {
+        extension: editExt.extension,
+        label: editExt.label || null,
+        enabled: editExt.enabled,
+        group_ids: editExt.group_ids,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-extensions'] });
+      setEditExt(null);
+    },
   });
 
   const deleteExt = useMutation({
@@ -65,9 +88,39 @@ export function AdminPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-extensions'] }),
   });
 
+  const purgeCallData = useMutation({
+    mutationFn: api.admin.purgeCallData,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calls'] });
+      qc.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      qc.invalidateQueries({ queryKey: ['freeswitch-live'] });
+    },
+  });
+
   return (
     <Stack gap="lg">
       <Title order={2}>Administration</Title>
+      <Alert color="red" title="Danger zone">
+        <Group justify="space-between" align="center">
+          <Text size="sm">
+            Permanently delete all calls, recordings metadata, and transcription jobs. Audio files on disk are not removed.
+          </Text>
+          <Button
+            color="red"
+            variant="outline"
+            loading={purgeCallData.isPending}
+            onClick={() => {
+              if (window.confirm('Delete ALL call data? This cannot be undone.')) {
+                purgeCallData.mutate();
+              }
+            }}
+          >
+            Purge call data
+          </Button>
+        </Group>
+        {purgeCallData.isSuccess && <Text size="sm" mt="xs" c="green">Call data purged.</Text>}
+        {purgeCallData.isError && <Text size="sm" mt="xs" c="red">{(purgeCallData.error as Error).message}</Text>}
+      </Alert>
       <Tabs defaultValue="users">
         <Tabs.List>
           <Tabs.Tab value="users">Users</Tabs.Tab>
@@ -149,21 +202,22 @@ export function AdminPage() {
           <Group mb="md" align="flex-end">
             <TextInput label="Extension" value={extForm.extension} onChange={(e) => setExtForm({ ...extForm, extension: e.target.value })} />
             <TextInput label="Label" value={extForm.label} onChange={(e) => setExtForm({ ...extForm, label: e.target.value })} />
-            <Select
-              label="Group"
+            <MultiSelect
+              label="Groups"
               clearable
               data={groups.data?.map((g) => ({ value: String(g.id), label: g.name })) ?? []}
-              value={extForm.group_id ? String(extForm.group_id) : null}
-              onChange={(v) => setExtForm({ ...extForm, group_id: v ? Number(v) : null })}
+              value={extForm.group_ids.map(String)}
+              onChange={(v) => setExtForm({ ...extForm, group_ids: v.map(Number) })}
             />
             <Checkbox label="Enabled" checked={extForm.enabled} onChange={(e) => setExtForm({ ...extForm, enabled: e.currentTarget.checked })} />
-            <Button onClick={() => createExt.mutate()}>Add</Button>
+            <Button onClick={() => createExt.mutate()} disabled={!extForm.extension}>Add</Button>
           </Group>
           <Table striped>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Extension</Table.Th>
                 <Table.Th>Label</Table.Th>
+                <Table.Th>Groups</Table.Th>
                 <Table.Th>Enabled</Table.Th>
                 <Table.Th />
               </Table.Tr>
@@ -173,11 +227,32 @@ export function AdminPage() {
                 <Table.Tr key={e.id}>
                   <Table.Td>{e.extension}</Table.Td>
                   <Table.Td>{e.label}</Table.Td>
+                  <Table.Td>
+                    {e.group_ids
+                      .map((gid) => groups.data?.find((g) => g.id === gid)?.name ?? String(gid))
+                      .join(', ') || '—'}
+                  </Table.Td>
                   <Table.Td>{e.enabled ? 'Yes' : 'No'}</Table.Td>
                   <Table.Td>
-                    <ActionIcon color="red" variant="subtle" onClick={() => deleteExt.mutate(e.id)}>
-                      <IconTrash size={16} />
-                    </ActionIcon>
+                    <Group gap={4} justify="flex-end">
+                      <ActionIcon
+                        variant="subtle"
+                        onClick={() =>
+                          setEditExt({
+                            id: e.id,
+                            extension: e.extension,
+                            label: e.label ?? '',
+                            enabled: e.enabled,
+                            group_ids: e.group_ids,
+                          })
+                        }
+                      >
+                        <IconEdit size={16} />
+                      </ActionIcon>
+                      <ActionIcon color="red" variant="subtle" onClick={() => deleteExt.mutate(e.id)}>
+                        <IconTrash size={16} />
+                      </ActionIcon>
+                    </Group>
                   </Table.Td>
                 </Table.Tr>
               ))}
@@ -185,6 +260,38 @@ export function AdminPage() {
           </Table>
         </Tabs.Panel>
       </Tabs>
+
+      <Modal opened={!!editExt} onClose={() => setEditExt(null)} title="Edit extension">
+        {editExt && (
+          <Stack gap="sm">
+            <TextInput
+              label="Extension"
+              value={editExt.extension}
+              onChange={(e) => setEditExt({ ...editExt, extension: e.target.value })}
+            />
+            <TextInput
+              label="Label"
+              value={editExt.label}
+              onChange={(e) => setEditExt({ ...editExt, label: e.target.value })}
+            />
+            <MultiSelect
+              label="Groups"
+              clearable
+              data={groups.data?.map((g) => ({ value: String(g.id), label: g.name })) ?? []}
+              value={editExt.group_ids.map(String)}
+              onChange={(v) => setEditExt({ ...editExt, group_ids: v.map(Number) })}
+            />
+            <Checkbox
+              label="Enabled"
+              checked={editExt.enabled}
+              onChange={(e) => setEditExt({ ...editExt, enabled: e.currentTarget.checked })}
+            />
+            <Button onClick={() => updateExt.mutate()} loading={updateExt.isPending} disabled={!editExt.extension}>
+              Save
+            </Button>
+          </Stack>
+        )}
+      </Modal>
 
       <Modal opened={userModal} onClose={() => setUserModal(false)} title="New user">
         <Stack gap="sm">

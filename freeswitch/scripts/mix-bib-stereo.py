@@ -73,28 +73,49 @@ def mix_by_refci(refci: str) -> int:
 
         near = find_latest(os.path.join(RECORDINGS_DIR, f"cucm_{refci}_near_*.wav"))
         far = find_latest(os.path.join(RECORDINGS_DIR, f"cucm_{refci}_far_*.wav"))
-        if not near or not far:
+        if not near and not far:
             return 0
 
-        idx = os.path.basename(near).find("_near_")
+        if near and far:
+            idx = os.path.basename(near).find("_near_")
+            if idx < 0:
+                return 1
+            suffix = os.path.basename(near)[idx + len("_near_") :]
+            out = os.path.join(RECORDINGS_DIR, f"cucm_{refci}_stereo_{suffix}")
+            if os.path.exists(out):
+                chown_fs(out)
+                return 0
+
+            rate_n, near_pcm = read_mono(near)
+            rate_f, far_pcm = read_mono(far)
+            if rate_n != rate_f:
+                print(f"sample rate mismatch: {near} vs {far}", file=sys.stderr)
+                return 1
+            write_stereo(out, rate_n, near_pcm, far_pcm)
+            chown_fs(out)
+            chown_fs(near)
+            chown_fs(far)
+            return 0
+
+        single = far or near
+        leg = "far" if far else "near"
+        idx = os.path.basename(single).find(f"_{leg}_")
         if idx < 0:
             return 1
-        suffix = os.path.basename(near)[idx + len("_near_") :]
+        suffix = os.path.basename(single)[idx + len(f"_{leg}_") :]
         out = os.path.join(RECORDINGS_DIR, f"cucm_{refci}_stereo_{suffix}")
         if os.path.exists(out):
             chown_fs(out)
             return 0
 
-        rate_n, near_pcm = read_mono(near)
-        rate_f, far_pcm = read_mono(far)
-        if rate_n != rate_f:
-            print(f"sample rate mismatch: {near} vs {far}", file=sys.stderr)
-            return 1
-
-        write_stereo(out, rate_n, near_pcm, far_pcm)
+        rate, pcm = read_mono(single)
+        silence = b"\x00\x00" * (len(pcm) // 2)
+        if leg == "far":
+            write_stereo(out, rate, silence, pcm)
+        else:
+            write_stereo(out, rate, pcm, silence)
         chown_fs(out)
-        chown_fs(near)
-        chown_fs(far)
+        chown_fs(single)
     return 0
 
 

@@ -8,7 +8,6 @@ import { App } from './App';
 import { theme } from './theme';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
-import './theme/momentum.css';
 
 const queryClient = new QueryClient();
 

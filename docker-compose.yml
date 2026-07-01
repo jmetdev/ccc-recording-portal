@@ -34,8 +34,10 @@ services:
       RECORDINGS_DIR: /recordings
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      FREESWITCH_FS_CLI: ${FREESWITCH_FS_CLI:-}
     volumes:
       - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "${BACKEND_PORT:-8000}:8000"
 
