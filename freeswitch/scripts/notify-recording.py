@@ -82,6 +82,8 @@ def cmd_fail(args: argparse.Namespace) -> None:
     payload = {"refci": args.refci}
     if args.reason:
         payload["reason"] = args.reason
+    if args.duration_s:
+        payload["duration_s"] = float(args.duration_s)
     post("/api/ingest/fail", payload)
 
 
@@ -109,6 +111,7 @@ def main() -> None:
     p_fail = sub.add_parser("fail")
     p_fail.add_argument("--refci", required=True)
     p_fail.add_argument("--reason")
+    p_fail.add_argument("--duration-s", dest="duration_s")
     p_fail.set_defaults(func=cmd_fail)
 
     args = parser.parse_args()

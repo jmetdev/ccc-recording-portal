@@ -8,6 +8,7 @@ LOG="${RECORDINGS_DIR}/.bib-hook.log"
 /usr/local/sbin/bib-debug-log.sh "bib-notify-start.sh" "start hook invoked" "{\"refci\":\"$1\",\"near\":\"$2\",\"far\":\"$3\",\"session\":\"$4\",\"pid\":$$}" "H1" "post-fix2"
 # #endregion
 printf '%s start refci=%s near=%s far=%s session=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$4" >> "$LOG"
+date +%s > "${RECORDINGS_DIR}/.bib_start_${1}"
 exec /usr/bin/python3 /usr/local/sbin/notify-recording.py start \
   --refci "$1" \
   --near-addr "$2" \

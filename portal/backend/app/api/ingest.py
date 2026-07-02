@@ -33,7 +33,7 @@ def _ingest_debug(message: str, data: dict, hypothesis_id: str = "H5") -> None:
             "message": message,
             "data": data,
             "hypothesisId": hypothesis_id,
-            "runId": "post-fix2",
+            "runId": "post-fix4",
         }
         with open(DEBUG_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
@@ -180,16 +180,28 @@ async def ingest_fail(payload: IngestFailPayload, db: AsyncSession = Depends(get
     updated_ids: list[int] = []
     for call in calls:
         call.status = CallStatus.FAILED
-        call.ended_at = now
         call.status_message = f"Ingest: {payload.reason or 'hangup reported failure'}"
-        if call.started_at:
-            call.duration_s = max(0.0, (now - call.started_at).total_seconds())
+        if payload.duration_s is not None:
+            call.duration_s = max(0.0, payload.duration_s)
+            if call.started_at:
+                call.ended_at = call.started_at + timedelta(seconds=call.duration_s)
+            else:
+                call.ended_at = now
+        else:
+            call.ended_at = now
+            if call.started_at:
+                call.duration_s = max(0.0, (now - call.started_at).total_seconds())
         updated_ids.append(call.id)
 
     await db.commit()
     _ingest_debug(
         "ingest fail",
-        {"refci": payload.refci, "reason": payload.reason, "call_ids": updated_ids},
+        {
+            "refci": payload.refci,
+            "reason": payload.reason,
+            "call_ids": updated_ids,
+            "duration_s": payload.duration_s,
+        },
         "H4",
     )
     for call_id in updated_ids:

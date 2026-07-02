@@ -26,7 +26,7 @@ def _debug_log(message: str, data: dict | None = None, hypothesis_id: str = "H3"
             "message": message,
             "data": data or {},
             "hypothesisId": hypothesis_id,
-            "runId": "post-fix2",
+            "runId": "post-fix4",
         }
         with open(DEBUG_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
@@ -99,11 +99,29 @@ def collect_file_pairs(refci: str, recordings_dir: str, base: str | None) -> lis
     return file_pairs
 
 
-def notify_fail(refci: str, reason: str) -> None:
-    subprocess.run(
-        [sys.executable, "/usr/local/sbin/notify-recording.py", "fail", "--refci", refci, "--reason", reason],
-        check=False,
-    )
+def call_duration_at_hangup(refci: str, recordings_dir: str, hangup_at: float) -> float | None:
+    start_file = os.path.join(recordings_dir, f".bib_start_{refci}")
+    try:
+        with open(start_file, encoding="utf-8") as f:
+            started_at = float(f.read().strip())
+        return max(0.0, hangup_at - started_at)
+    except (OSError, ValueError):
+        return None
+
+
+def notify_fail(refci: str, reason: str, duration_s: float | None = None) -> None:
+    cmd = [
+        sys.executable,
+        "/usr/local/sbin/notify-recording.py",
+        "fail",
+        "--refci",
+        refci,
+        "--reason",
+        reason,
+    ]
+    if duration_s is not None:
+        cmd.extend(["--duration-s", f"{duration_s:.3f}"])
+    subprocess.run(cmd, check=False)
 
 
 def main() -> None:
@@ -114,12 +132,14 @@ def main() -> None:
     args = parser.parse_args()
 
     recordings_dir = args.recordings_dir
+    hangup_at = time.time()
     _debug_log(
         "hangup hook started",
         {
             "refci": args.refci,
             "recordings_dir": recordings_dir,
             "dir_exists": os.path.isdir(recordings_dir),
+            "hangup_at": hangup_at,
         },
         hypothesis_id="H2",
     )
@@ -146,9 +166,14 @@ def main() -> None:
 
     if not file_pairs:
         reason = "no recordings found after hangup retries"
-        _debug_log("hangup failed - no recordings", {"refci": args.refci}, hypothesis_id="H4")
+        fail_duration_s = call_duration_at_hangup(args.refci, recordings_dir, hangup_at)
+        _debug_log(
+            "hangup failed - no recordings",
+            {"refci": args.refci, "fail_duration_s": fail_duration_s},
+            hypothesis_id="H4",
+        )
         print(f"bib-hangup-hook: {reason} for refci={args.refci}", file=sys.stderr)
-        notify_fail(args.refci, reason)
+        notify_fail(args.refci, reason, duration_s=fail_duration_s)
         return
 
     wav_paths = []
