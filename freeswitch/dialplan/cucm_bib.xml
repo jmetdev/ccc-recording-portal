@@ -25,16 +25,18 @@
 
         <action application="set" data="record_sample_rate=8000"/>
         <action application="set" data="RECORD_STEREO=false"/>
+        <action application="set" data="RECORD_READ_ONLY=true"/>
+        <action application="set" data="media_bug_answer_req=true"/>
         <action application="set" data="recording_file=$${recordings_dir}/cucm_${bib_refci}_${bib_leg}_${bib_near_addr}-${bib_far_addr}_${strftime(%Y%m%d-%H%M%S)}_${uuid}.wav"/>
 
         <action application="log" data="CRIT CUCM-BIB-1034 src=${network_addr} leg=${bib_leg} refci=${bib_refci} near=${bib_near_addr} far=${bib_far_addr} file=${recording_file}"/>
 
-        <action application="set" data="session_in_hangup_hook=true" condition="${regex(${sip_full_from}|;x-farend;|yes)} == yes"/>
-        <action application="set" data="api_hangup_hook=bgapi system /usr/local/sbin/bib-notify-hangup.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${regex(${sip_full_from}|;x-farend;|yes)} == yes"/>
+        <!-- Portal hooks on far leg only; hangup after channel teardown so WAV is flushed -->
+        <action application="set" data="execute_on_hangup=bgsystem /usr/local/sbin/bib-notify-hangup.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${regex(${sip_full_from}|;x-farend;|yes)} == yes"/>
 
+        <action application="export" data="nolocal:execute_on_answer=record_session ${recording_file}"/>
         <action application="answer"/>
-        <action application="system" data="/usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${regex(${sip_full_from}|;x-farend;|yes)} == yes"/>
-        <action application="record_session" data="${recording_file}"/>
+        <action application="bgsystem" data="/usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${regex(${sip_full_from}|;x-farend;|yes)} == yes"/>
 
         <action application="sleep" data="3600000"/>
         <action application="hangup"/>

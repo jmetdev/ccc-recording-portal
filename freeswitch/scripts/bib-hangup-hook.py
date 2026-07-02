@@ -26,7 +26,7 @@ def _debug_log(message: str, data: dict | None = None, hypothesis_id: str = "H3"
             "message": message,
             "data": data or {},
             "hypothesisId": hypothesis_id,
-            "runId": "post-fix",
+            "runId": "post-fix2",
         }
         with open(DEBUG_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
@@ -124,7 +124,8 @@ def main() -> None:
         hypothesis_id="H2",
     )
     file_pairs: list[str] = []
-    for attempt in range(6):
+    time.sleep(2)
+    for attempt in range(12):
         file_pairs = collect_file_pairs(args.refci, recordings_dir, args.base)
         near_glob = glob.glob(os.path.join(recordings_dir, f"cucm_{args.refci}_near_*.wav"))
         far_glob = glob.glob(os.path.join(recordings_dir, f"cucm_{args.refci}_far_*.wav"))
@@ -141,7 +142,7 @@ def main() -> None:
         )
         if file_pairs:
             break
-        time.sleep(1)
+        time.sleep(2)
 
     if not file_pairs:
         reason = "no recordings found after hangup retries"
