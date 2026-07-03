@@ -226,7 +226,7 @@ export function HealthStatusPage() {
             />
             <ServiceRow
               ok={fs.fs_cli_configured}
-              label="FreeSWITCH fs_cli"
+              label="SIP switch CLI"
               detail={
                 fs.fs_cli_configured
                   ? `${fs.active_recording_channels} active recording channel(s)`
@@ -311,7 +311,7 @@ export function HealthStatusPage() {
             value={logSource}
             onChange={setLogSource}
             data={status.log_sources.map((source) => ({
-              label: source.replace('portal-', '').replace('freeswitch', 'FreeSWITCH'),
+              label: source.replace('portal-', '').replace('freeswitch', 'SIP switch'),
               value: source,
             }))}
           />
