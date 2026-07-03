@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-remote-api",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd portal/frontend && VITE_API_URL=http://172.25.100.83:8001 npm run dev"
+      ],
+      "port": 3000
+    }
+  ]
+}

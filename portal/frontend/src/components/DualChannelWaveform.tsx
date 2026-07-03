@@ -120,41 +120,52 @@ export function DualChannelWaveform({
   const farUrl = useAudioBlobUrl(dualMono ? farRecording!.id : null, audioUrl);
   const singleUrl = useAudioBlobUrl(singleRecording ? singleRecording.id : null, audioUrl);
 
-  const renderTags = useCallback(
-    (regions: ReturnType<typeof RegionsPlugin.create>) => {
-      regions.clearRegions();
-      tags.forEach((t) => {
-        regions.addRegion({
-          start: t.start_s,
-          end: t.end_s,
-          color: 'rgba(43, 135, 212, 0.25)',
-          content: t.note || undefined,
-          drag: false,
-          resize: false,
-        });
+  // Parents pass inline callbacks and freshly-built arrays on every render.
+  // Route them through refs so the player-creation effects depend only on the
+  // audio URLs — otherwise each render destroys and recreates the player,
+  // which kills playback, regions, and eventually React itself.
+  const callbacksRef = useRef({ onRegionSelected, onTimeUpdate, onDuration, onPlayingChange });
+  useEffect(() => {
+    callbacksRef.current = { onRegionSelected, onTimeUpdate, onDuration, onPlayingChange };
+  });
+  const tagsRef = useRef(tags);
+  useEffect(() => {
+    tagsRef.current = tags;
+  });
+  const tagsKey = JSON.stringify(tags.map((t) => [t.id, t.start_s, t.end_s, t.note]));
+
+  const renderTags = useCallback((regions: ReturnType<typeof RegionsPlugin.create>) => {
+    regions.clearRegions();
+    tagsRef.current.forEach((t) => {
+      regions.addRegion({
+        start: t.start_s,
+        end: t.end_s,
+        color: 'rgba(43, 135, 212, 0.25)',
+        content: t.note || undefined,
+        drag: false,
+        resize: false,
       });
-    },
-    [tags],
-  );
+    });
+  }, []);
 
   const wireWsEvents = useCallback(
     (ws: WaveSurfer, regions?: ReturnType<typeof RegionsPlugin.create>) => {
-      ws.on('play', () => onPlayingChange?.(true));
-      ws.on('pause', () => onPlayingChange?.(false));
-      ws.on('finish', () => onPlayingChange?.(false));
-      ws.on('timeupdate', (t) => onTimeUpdate?.(t));
+      ws.on('play', () => callbacksRef.current.onPlayingChange?.(true));
+      ws.on('pause', () => callbacksRef.current.onPlayingChange?.(false));
+      ws.on('finish', () => callbacksRef.current.onPlayingChange?.(false));
+      ws.on('timeupdate', (t) => callbacksRef.current.onTimeUpdate?.(t));
       ws.on('ready', () => {
-        onDuration?.(ws.getDuration());
+        callbacksRef.current.onDuration?.(ws.getDuration());
         if (regions) renderTags(regions);
       });
       if (canTag && regions) {
         regions.on('region-created', (region) => {
-          onRegionSelected?.(region.start, region.end);
+          callbacksRef.current.onRegionSelected?.(region.start, region.end);
           region.remove();
         });
       }
     },
-    [canTag, onDuration, onPlayingChange, onRegionSelected, onTimeUpdate, renderTags],
+    [canTag, renderTags],
   );
 
   // Preferred: stereo mix — split L/R waveforms, Web Audio per-channel mute.
@@ -170,7 +181,8 @@ export function DualChannelWaveform({
     const ws = WaveSurfer.create({
       container: mainContainerRef.current,
       url: stereoUrl,
-      height: 112,
+      // splitChannels renders each channel at `height`, so the total is 2×.
+      height: 64,
       barWidth: 2,
       normalize: true,
       splitChannels: [
@@ -304,7 +316,8 @@ export function DualChannelWaveform({
 
   useEffect(() => {
     if (regionsRef.current) renderTags(regionsRef.current);
-  }, [tags, renderTags]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tagsKey, renderTags]);
 
   useEffect(() => {
     muteRef.current = { near: nearMuted, far: farMuted };
@@ -376,7 +389,7 @@ export function DualChannelWaveform({
           <Box ref={farContainerRef} style={{ height: 56, minHeight: 56 }} />
         </Stack>
       ) : (
-        <Box ref={mainContainerRef} style={{ height: stereoMode ? 112 : 96, minHeight: stereoMode ? 112 : 96 }} />
+        <Box ref={mainContainerRef} style={{ minHeight: stereoMode ? 128 : 96 }} />
       )}
     </Stack>
   );
