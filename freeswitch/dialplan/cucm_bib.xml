@@ -30,6 +30,8 @@
         <action application="set" data="recording_file=$${recordings_dir}/cucm_${bib_refci}_${bib_leg}_${bib_near_addr}-${bib_far_addr}_${strftime(%Y%m%d-%H%M%S)}_${uuid}.wav"/>
 
         <action application="log" data="CRIT CUCM-BIB-1034 src=${network_addr} leg=${bib_leg} refci=${bib_refci} near=${bib_near_addr} far=${bib_far_addr} file=${recording_file}"/>
+        <!-- Per-channel diagnostics independent of FS log config -->
+        <action application="bgsystem" data="echo '${strftime(%Y-%m-%dT%H:%M:%S)} uuid=${uuid} leg=${bib_leg} refci=${bib_refci} from=${sip_full_from} file=${recording_file}' >> $${recordings_dir}/.dialplan-debug.log"/>
 
         <!-- Portal hooks on far leg only; run after channel teardown so WAV is flushed -->
         <action application="set" data="execute_on_hangup=bgsystem /usr/local/sbin/bib-notify-hangup.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${bib_leg} == far"/>

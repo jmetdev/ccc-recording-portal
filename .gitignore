@@ -6,3 +6,4 @@ portal/frontend/dist/
 __pycache__/
 *.pyc
 .venv/
+*.tsbuildinfo
