@@ -38,6 +38,42 @@ function applyStereoMute(graph: { nearGain: GainNode; farGain: GainNode } | null
   graph.farGain.gain.value = mute.far ? 0 : 1;
 }
 
+/**
+ * The audio endpoint requires an Authorization header, which an <audio src=…>
+ * element cannot send. Fetch the file with auth and expose it as a blob URL.
+ */
+function useAudioBlobUrl(recordingId: number | null, audioUrl: (id: number) => string): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (recordingId == null) {
+      setUrl(null);
+      return;
+    }
+    let cancelled = false;
+    let objUrl: string | null = null;
+    (async () => {
+      try {
+        const resp = await fetch(audioUrl(recordingId), { headers: authHeaders() });
+        if (!resp.ok) throw new Error(`audio fetch failed: ${resp.status}`);
+        const blob = await resp.blob();
+        if (cancelled) return;
+        objUrl = URL.createObjectURL(blob);
+        setUrl(objUrl);
+      } catch {
+        if (!cancelled) setUrl(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+      setUrl(null);
+    };
+  }, [recordingId, audioUrl]);
+
+  return url;
+}
+
 export function DualChannelWaveform({
   nearRecording,
   farRecording,
@@ -79,6 +115,11 @@ export function DualChannelWaveform({
     : null;
   const singleLeg: 'near' | 'far' = singleRecording === nearRecording ? 'near' : 'far';
 
+  const stereoUrl = useAudioBlobUrl(stereoMode ? stereoRecording!.id : null, audioUrl);
+  const nearUrl = useAudioBlobUrl(dualMono ? nearRecording!.id : null, audioUrl);
+  const farUrl = useAudioBlobUrl(dualMono ? farRecording!.id : null, audioUrl);
+  const singleUrl = useAudioBlobUrl(singleRecording ? singleRecording.id : null, audioUrl);
+
   const renderTags = useCallback(
     (regions: ReturnType<typeof RegionsPlugin.create>) => {
       regions.clearRegions();
@@ -118,7 +159,7 @@ export function DualChannelWaveform({
 
   // Preferred: stereo mix — split L/R waveforms, Web Audio per-channel mute.
   useEffect(() => {
-    if (!stereoMode || !mainContainerRef.current || !stereoRecording?.path_m4a) return;
+    if (!stereoMode || !mainContainerRef.current || !stereoUrl) return;
 
     mainContainerRef.current.replaceChildren();
     audioGraphRef.current = null;
@@ -128,8 +169,7 @@ export function DualChannelWaveform({
 
     const ws = WaveSurfer.create({
       container: mainContainerRef.current,
-      url: audioUrl(stereoRecording.id),
-      fetchParams: { headers: authHeaders() },
+      url: stereoUrl,
       height: 112,
       barWidth: 2,
       normalize: true,
@@ -146,7 +186,6 @@ export function DualChannelWaveform({
     ws.on('ready', () => {
       try {
         const media = ws.getMediaElement();
-        media.crossOrigin = 'anonymous';
         const ctx = new AudioContext();
         const source = ctx.createMediaElementSource(media);
         const splitter = ctx.createChannelSplitter(2);
@@ -176,12 +215,12 @@ export function DualChannelWaveform({
       audioGraphRef.current?.ctx.close().catch(() => undefined);
       audioGraphRef.current = null;
     };
-  }, [stereoMode, stereoRecording?.id, stereoRecording?.path_m4a, audioUrl, wireWsEvents]);
+  }, [stereoMode, stereoUrl, wireWsEvents]);
 
   // Fallback: separate near + far files, far drives the clock.
   useEffect(() => {
     if (!dualMono || !nearContainerRef.current || !farContainerRef.current) return;
-    if (!nearRecording?.path_m4a || !farRecording?.path_m4a) return;
+    if (!nearUrl || !farUrl) return;
 
     nearContainerRef.current.replaceChildren();
     farContainerRef.current.replaceChildren();
@@ -191,8 +230,7 @@ export function DualChannelWaveform({
 
     const nearWs = WaveSurfer.create({
       container: nearContainerRef.current,
-      url: audioUrl(nearRecording.id),
-      fetchParams: { headers: authHeaders() },
+      url: nearUrl,
       height: 56,
       barWidth: 2,
       waveColor: NEAR_COLOR,
@@ -201,8 +239,7 @@ export function DualChannelWaveform({
     });
     const farWs = WaveSurfer.create({
       container: farContainerRef.current,
-      url: audioUrl(farRecording.id),
-      fetchParams: { headers: authHeaders() },
+      url: farUrl,
       height: 56,
       barWidth: 2,
       waveColor: FAR_COLOR,
@@ -235,19 +272,11 @@ export function DualChannelWaveform({
       farWsRef.current = null;
       regionsRef.current = null;
     };
-  }, [
-    dualMono,
-    nearRecording?.id,
-    farRecording?.id,
-    nearRecording?.path_m4a,
-    farRecording?.path_m4a,
-    audioUrl,
-    wireWsEvents,
-  ]);
+  }, [dualMono, nearUrl, farUrl, wireWsEvents]);
 
   // Fallback: a single leg only.
   useEffect(() => {
-    if (stereoMode || dualMono || !mainContainerRef.current || !singleRecording?.path_m4a) return;
+    if (stereoMode || dualMono || !mainContainerRef.current || !singleUrl) return;
 
     mainContainerRef.current.replaceChildren();
     const regions = RegionsPlugin.create();
@@ -255,8 +284,7 @@ export function DualChannelWaveform({
 
     const ws = WaveSurfer.create({
       container: mainContainerRef.current,
-      url: audioUrl(singleRecording.id),
-      fetchParams: { headers: authHeaders() },
+      url: singleUrl,
       height: 96,
       barWidth: 2,
       waveColor: singleLeg === 'near' ? NEAR_COLOR : FAR_COLOR,
@@ -272,7 +300,7 @@ export function DualChannelWaveform({
       mainWsRef.current = null;
       regionsRef.current = null;
     };
-  }, [stereoMode, dualMono, singleRecording?.id, singleRecording?.path_m4a, singleLeg, audioUrl, wireWsEvents]);
+  }, [stereoMode, dualMono, singleUrl, singleLeg, wireWsEvents]);
 
   useEffect(() => {
     if (regionsRef.current) renderTags(regionsRef.current);

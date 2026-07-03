@@ -4,11 +4,7 @@ import { IconDashboard, IconSearch, IconFileText, IconUsers, IconLogout, IconHea
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasPermission } from '../api/client';
-import { CallPlayerProvider, useCallPlayer } from './CallPlayerContext';
-import { CallPlayerDrawer, CALL_PLAYER_DRAWER_MIN_HEIGHT } from './CallPlayerDrawer';
 import { ThemeSwitcher } from './ThemeSwitcher';
-
-const DRAWER_HEIGHT = CALL_PLAYER_DRAWER_MIN_HEIGHT + 120;
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: IconDashboard, end: true },
@@ -22,7 +18,6 @@ function AppLayoutInner() {
   const [opened, { toggle }] = useDisclosure();
   const { user, logout } = useAuth();
   const location = useLocation();
-  const { callId } = useCallPlayer();
 
   return (
     <AppShell
@@ -30,9 +25,6 @@ function AppLayoutInner() {
       navbar={{ width: 240, breakpoint: 'sm', collapsed: { mobile: !opened } }}
       padding="md"
       styles={{
-        main: {
-          paddingBottom: callId != null ? DRAWER_HEIGHT + 16 : undefined,
-        },
         navbar: {
           zIndex: 300,
         },
@@ -81,16 +73,10 @@ function AppLayoutInner() {
       <AppShell.Main>
         <Outlet />
       </AppShell.Main>
-
-      <CallPlayerDrawer />
     </AppShell>
   );
 }
 
 export function AppLayout() {
-  return (
-    <CallPlayerProvider>
-      <AppLayoutInner />
-    </CallPlayerProvider>
-  );
+  return <AppLayoutInner />;
 }
