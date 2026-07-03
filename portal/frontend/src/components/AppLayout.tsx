@@ -5,10 +5,10 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasPermission } from '../api/client';
 import { CallPlayerProvider, useCallPlayer } from './CallPlayerContext';
-import { CallPlayerDrawer } from './CallPlayerDrawer';
+import { CallPlayerDrawer, CALL_PLAYER_DRAWER_MIN_HEIGHT } from './CallPlayerDrawer';
 import { ThemeSwitcher } from './ThemeSwitcher';
 
-const DRAWER_HEIGHT = 220;
+const DRAWER_HEIGHT = CALL_PLAYER_DRAWER_MIN_HEIGHT + 180;
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: IconDashboard, end: true },

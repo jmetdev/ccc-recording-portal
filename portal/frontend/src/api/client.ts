@@ -162,6 +162,7 @@ export const api = {
   audioUrl: (recordingId: number) => `${API_BASE}/recordings/${recordingId}/audio`,
   listTags: (callId: number) => request<Tag[]>(`/calls/${callId}/tags`),
   getTags: (callId: number) => request<Tag[]>(`/calls/${callId}/tags`),
+  listTranscripts: (callId: number) => request<Transcript[]>(`/calls/${callId}/transcripts`),
   createTag: (body: TagCreate) =>
     request<Tag>('/tags', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   searchTranscripts: (q: string, sentiment?: string) => {
@@ -228,6 +229,17 @@ export type TranscriptSearchResult = {
   headline: string;
   sentiment: string | null;
   rank: number;
+};
+
+export type Transcript = {
+  id: number;
+  call_id: number;
+  leg: string;
+  language: string | null;
+  text: string;
+  segments_json: unknown[] | null;
+  sentiment: string | null;
+  sentiment_score: number | null;
 };
 
 export function hasPermission(user: User | null, permission: string): boolean {

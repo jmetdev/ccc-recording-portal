@@ -28,8 +28,8 @@ fi
 cp -f "$REMOTE_DIR/freeswitch/scripts/"* "$FS_DIR/scripts/"
 chmod +x "$FS_DIR/scripts/"*.sh "$FS_DIR/scripts/"*.py 2>/dev/null || true
 cp -f "$REMOTE_DIR/freeswitch/dialplan/cucm_bib.xml" "$FS_DIR/runtime/config/dialplan/cucm_bib.xml"
-# Restore Sofia external profile from stock template (call #18 worked before Jul-1 profile edits).
-cat "$FS_DIR/config/sip_profiles/external.xml" | docker exec -i -u root freeswitch tee /etc/freeswitch/sip_profiles/external.xml >/dev/null
+# Deploy BIB-tuned Sofia external profile (near-leg RTP + ACL).
+cat "$REMOTE_DIR/freeswitch/sip_profiles/external.xml" | docker exec -i -u root freeswitch tee /etc/freeswitch/sip_profiles/external.xml >/dev/null
 docker exec freeswitch fs_cli -x "reloadxml" >/dev/null
 docker exec freeswitch fs_cli -x "sofia profile external restart" >/dev/null
 

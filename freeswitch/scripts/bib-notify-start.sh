@@ -9,11 +9,15 @@ LOG="${RECORDINGS_DIR}/.bib-hook.log"
 # #endregion
 printf '%s start refci=%s near=%s far=%s session=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$4" >> "$LOG"
 START_FILE="${RECORDINGS_DIR}/.bib_start_${1}"
-if [ ! -f "$START_FILE" ]; then
-  date +%s > "$START_FILE"
-fi
-exec /usr/bin/python3 /usr/local/sbin/notify-recording.py start \
-  --refci "$1" \
-  --near-addr "$2" \
-  --far-addr "$3" \
-  --session "$4"
+LOCK_FILE="${RECORDINGS_DIR}/.bib_start_${1}.lock"
+(
+  flock -n 9 || exit 0
+  if [ ! -f "$START_FILE" ]; then
+    date +%s > "$START_FILE"
+  fi
+  /usr/bin/python3 /usr/local/sbin/notify-recording.py start \
+    --refci "$1" \
+    --near-addr "$2" \
+    --far-addr "$3" \
+    --session "$4"
+) 9>"$LOCK_FILE"

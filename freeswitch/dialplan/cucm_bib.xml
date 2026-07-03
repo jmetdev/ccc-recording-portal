@@ -35,7 +35,8 @@
         <action application="set" data="execute_on_hangup=bgsystem /usr/local/sbin/bib-notify-hangup.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${bib_leg} == far"/>
 
         <action application="answer"/>
-        <action application="record_session" data="${recording_file}"/>
+        <!-- + prefix: record inbound RTP only (CUCM BIB forks are sendonly toward FS) -->
+        <action application="record_session" data="+${recording_file}"/>
         <action application="bgsystem" data="/usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${bib_leg} == far"/>
 
         <action application="sleep" data="3600000"/>
