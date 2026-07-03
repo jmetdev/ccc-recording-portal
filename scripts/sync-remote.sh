@@ -6,6 +6,11 @@ REMOTE="${REMOTE:-hyetech@172.25.100.83}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/ccc-recording-portal}"
 FS_DIR="${FS_DIR:-/home/hyetech/ccc-freeswitch-docker}"
 FS_RECORDINGS="${FS_RECORDINGS:-$FS_DIR/runtime/recordings}"
+# Our FreeSWITCH ESL is on 8022; port 8021 belongs to the unrelated
+# alertoffice_bridge container (both are host-networked). Never use plain fs_cli.
+FS_ESL_PORT="${FS_ESL_PORT:-8022}"
+FS_ESL_PASSWORD="${FS_ESL_PASSWORD:-ChangeMe-ESL-Password}"
+FS_CLI="docker exec freeswitch fs_cli -H 127.0.0.1 -P $FS_ESL_PORT -p $FS_ESL_PASSWORD"
 
 ssh "$REMOTE" bash -s <<EOF
 set -euo pipefail
@@ -18,11 +23,10 @@ if grep -q '^#.*RECORDINGS_HOST_PATH' .env 2>/dev/null || ! grep -q '^RECORDINGS
   echo "RECORDINGS_HOST_PATH=$FS_RECORDINGS" >> .env.tmp
   mv .env.tmp .env
 fi
-if grep -q '^#.*FREESWITCH_FS_CLI' .env 2>/dev/null || ! grep -q '^FREESWITCH_FS_CLI=' .env 2>/dev/null; then
-  grep -v '^FREESWITCH_FS_CLI=' .env | grep -v '^# FREESWITCH_FS_CLI' > .env.tmp || true
-  echo "FREESWITCH_FS_CLI=docker exec freeswitch fs_cli" >> .env.tmp
-  mv .env.tmp .env
-fi
+# Always (re)write FREESWITCH_FS_CLI so it targets our ESL on $FS_ESL_PORT.
+grep -v '^FREESWITCH_FS_CLI=' .env | grep -v '^# FREESWITCH_FS_CLI' > .env.tmp || true
+echo "FREESWITCH_FS_CLI=docker exec freeswitch fs_cli -H 127.0.0.1 -P $FS_ESL_PORT -p $FS_ESL_PASSWORD" >> .env.tmp
+mv .env.tmp .env
 
 # Sync FreeSWITCH integration (scripts + dialplan) — not covered by portal compose alone.
 cp -f "$REMOTE_DIR/freeswitch/scripts/"* "$FS_DIR/scripts/"
@@ -30,8 +34,8 @@ chmod +x "$FS_DIR/scripts/"*.sh "$FS_DIR/scripts/"*.py 2>/dev/null || true
 cp -f "$REMOTE_DIR/freeswitch/dialplan/cucm_bib.xml" "$FS_DIR/runtime/config/dialplan/cucm_bib.xml"
 # Deploy BIB-tuned Sofia external profile (near-leg RTP + ACL).
 cat "$REMOTE_DIR/freeswitch/sip_profiles/external.xml" | docker exec -i -u root freeswitch tee /etc/freeswitch/sip_profiles/external.xml >/dev/null
-docker exec freeswitch fs_cli -x "reloadxml" >/dev/null
-docker exec freeswitch fs_cli -x "sofia profile external restart" >/dev/null
+$FS_CLI -x "reloadxml" >/dev/null
+$FS_CLI -x "sofia profile external restart" >/dev/null
 
 docker compose up -d --build
 docker compose --profile whisper up -d --build whisper
