@@ -9,8 +9,39 @@ export const NEAR_COLOR = '#2b87d4';
 export const FAR_COLOR = '#e8590c';
 const NEAR_PROGRESS = '#195184';
 const FAR_PROGRESS = '#a63f08';
+const MUTED_WAVE_COLOR = '#adb5bd';
+const MUTED_PROGRESS_COLOR = '#868e96';
 
 type ChannelMute = { near: boolean; far: boolean };
+type ChannelLeg = 'near' | 'far';
+
+function channelWaveColors(leg: ChannelLeg, muted: boolean) {
+  if (muted) return { waveColor: MUTED_WAVE_COLOR, progressColor: MUTED_PROGRESS_COLOR };
+  if (leg === 'near') return { waveColor: NEAR_COLOR, progressColor: NEAR_PROGRESS };
+  return { waveColor: FAR_COLOR, progressColor: FAR_PROGRESS };
+}
+
+function applyWaveformMuteColors(
+  stereoMode: boolean,
+  dualMono: boolean,
+  nearMuted: boolean,
+  farMuted: boolean,
+  mainWs: WaveSurfer | null,
+  nearWs: WaveSurfer | null,
+  farWs: WaveSurfer | null,
+) {
+  if (stereoMode && mainWs) {
+    mainWs.setOptions({
+      splitChannels: [
+        { overlay: false, ...channelWaveColors('near', nearMuted) },
+        { overlay: false, ...channelWaveColors('far', farMuted) },
+      ],
+    });
+  } else if (dualMono) {
+    nearWs?.setOptions(channelWaveColors('near', nearMuted));
+    farWs?.setOptions(channelWaveColors('far', farMuted));
+  }
+}
 
 type Props = {
   nearRecording: Recording | null;
@@ -327,6 +358,15 @@ export function DualChannelWaveform({
       nearWsRef.current?.setVolume(nearMuted ? 0 : 1);
       farWsRef.current?.setVolume(farMuted ? 0 : 1);
     }
+    applyWaveformMuteColors(
+      stereoMode,
+      dualMono,
+      nearMuted,
+      farMuted,
+      mainWsRef.current,
+      nearWsRef.current,
+      farWsRef.current,
+    );
   }, [nearMuted, farMuted, stereoMode, dualMono]);
 
   useEffect(() => {
