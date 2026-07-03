@@ -1,7 +1,14 @@
 import { useState } from 'react';
-import { Button, Card, Group, Select, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Badge, Button, Card, Group, Select, Stack, Text, TextInput, Title } from '@mantine/core';
 import { api, TranscriptSearchResult } from '../api/client';
 import { useCallPlayer } from '../components/CallPlayerContext';
+import { FAR_COLOR, NEAR_COLOR } from '../components/DualChannelWaveform';
+
+const SENTIMENT_COLORS: Record<string, string> = {
+  positive: 'green',
+  negative: 'red',
+  neutral: 'gray',
+};
 
 export function TranscriptionSearchPage() {
   const { openCall } = useCallPlayer();
@@ -37,10 +44,24 @@ export function TranscriptionSearchPage() {
       {results.map((r) => (
         <Card key={r.transcript_id} withBorder padding="md">
           <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed">
-              Call #{r.call_id} · {r.leg}
-              {r.sentiment && ` · ${r.sentiment}`}
-            </Text>
+            <Group gap={6}>
+              <Text size="sm" c="dimmed">
+                Call #{r.call_id}
+              </Text>
+              <Badge
+                size="xs"
+                variant="light"
+                color="gray"
+                style={{ color: r.leg === 'near' ? NEAR_COLOR : r.leg === 'far' ? FAR_COLOR : undefined }}
+              >
+                {r.leg} leg
+              </Badge>
+              {r.sentiment && (
+                <Badge size="xs" variant="light" color={SENTIMENT_COLORS[r.sentiment] ?? 'gray'}>
+                  {r.sentiment}
+                </Badge>
+              )}
+            </Group>
             <Button size="xs" variant="light" onClick={() => openCall(r.call_id)}>
               Open call
             </Button>

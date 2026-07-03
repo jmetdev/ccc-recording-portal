@@ -5,10 +5,10 @@ import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import { authHeaders, Recording, Tag } from '../api/client';
 
-const NEAR_COLOR = '#2b87d4';
-const FAR_COLOR = '#43a3eb';
+export const NEAR_COLOR = '#2b87d4';
+export const FAR_COLOR = '#e8590c';
 const NEAR_PROGRESS = '#195184';
-const FAR_PROGRESS = '#226cac';
+const FAR_PROGRESS = '#a63f08';
 
 type ChannelMute = { near: boolean; far: boolean };
 
@@ -56,12 +56,12 @@ export function DualChannelWaveform({
   pauseSignal,
   tagSelectSignal,
 }: Props) {
+  const mainContainerRef = useRef<HTMLDivElement>(null);
   const nearContainerRef = useRef<HTMLDivElement>(null);
   const farContainerRef = useRef<HTMLDivElement>(null);
-  const stereoContainerRef = useRef<HTMLDivElement>(null);
+  const mainWsRef = useRef<WaveSurfer | null>(null);
   const nearWsRef = useRef<WaveSurfer | null>(null);
   const farWsRef = useRef<WaveSurfer | null>(null);
-  const stereoWsRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
   const audioGraphRef = useRef<{ ctx: AudioContext; nearGain: GainNode; farGain: GainNode } | null>(null);
   const muteRef = useRef<ChannelMute>({ near: false, far: false });
@@ -69,9 +69,15 @@ export function DualChannelWaveform({
   const [nearMuted, setNearMuted] = useState(false);
   const [farMuted, setFarMuted] = useState(false);
 
-  const dualMono = !!(nearRecording?.path_m4a && farRecording?.path_m4a);
-  const stereoMode = !dualMono && !!stereoRecording?.path_m4a;
-  const singleRecording = dualMono ? null : farRecording?.path_m4a ? farRecording : nearRecording?.path_m4a ? nearRecording : stereoRecording;
+  // The stereo mix is one audio element with near on L / far on R, so it plays
+  // in perfect sync and supports per-channel mute via a channel splitter.
+  // Separate leg files are only a fallback for calls without a stereo mix.
+  const stereoMode = !!stereoRecording?.path_m4a;
+  const dualMono = !stereoMode && !!(nearRecording?.path_m4a && farRecording?.path_m4a);
+  const singleRecording = !stereoMode && !dualMono
+    ? (farRecording?.path_m4a ? farRecording : nearRecording?.path_m4a ? nearRecording : null)
+    : null;
+  const singleLeg: 'near' | 'far' = singleRecording === nearRecording ? 'near' : 'far';
 
   const renderTags = useCallback(
     (regions: ReturnType<typeof RegionsPlugin.create>) => {
@@ -94,6 +100,7 @@ export function DualChannelWaveform({
     (ws: WaveSurfer, regions?: ReturnType<typeof RegionsPlugin.create>) => {
       ws.on('play', () => onPlayingChange?.(true));
       ws.on('pause', () => onPlayingChange?.(false));
+      ws.on('finish', () => onPlayingChange?.(false));
       ws.on('timeupdate', (t) => onTimeUpdate?.(t));
       ws.on('ready', () => {
         onDuration?.(ws.getDuration());
@@ -109,7 +116,69 @@ export function DualChannelWaveform({
     [canTag, onDuration, onPlayingChange, onRegionSelected, onTimeUpdate, renderTags],
   );
 
-  // Dual mono: separate near + far recordings, synced playback
+  // Preferred: stereo mix — split L/R waveforms, Web Audio per-channel mute.
+  useEffect(() => {
+    if (!stereoMode || !mainContainerRef.current || !stereoRecording?.path_m4a) return;
+
+    mainContainerRef.current.replaceChildren();
+    audioGraphRef.current = null;
+
+    const regions = RegionsPlugin.create();
+    regionsRef.current = regions;
+
+    const ws = WaveSurfer.create({
+      container: mainContainerRef.current,
+      url: audioUrl(stereoRecording.id),
+      fetchParams: { headers: authHeaders() },
+      height: 112,
+      barWidth: 2,
+      normalize: true,
+      splitChannels: [
+        { overlay: false, waveColor: NEAR_COLOR, progressColor: NEAR_PROGRESS },
+        { overlay: false, waveColor: FAR_COLOR, progressColor: FAR_PROGRESS },
+      ],
+      plugins: [regions],
+    });
+    mainWsRef.current = ws;
+
+    wireWsEvents(ws, regions);
+
+    ws.on('ready', () => {
+      try {
+        const media = ws.getMediaElement();
+        media.crossOrigin = 'anonymous';
+        const ctx = new AudioContext();
+        const source = ctx.createMediaElementSource(media);
+        const splitter = ctx.createChannelSplitter(2);
+        const merger = ctx.createChannelMerger(2);
+        const nearGain = ctx.createGain();
+        const farGain = ctx.createGain();
+        source.connect(splitter);
+        splitter.connect(nearGain, 0);
+        splitter.connect(farGain, 1);
+        nearGain.connect(merger, 0, 0);
+        nearGain.connect(merger, 0, 1);
+        farGain.connect(merger, 0, 0);
+        farGain.connect(merger, 0, 1);
+        merger.connect(ctx.destination);
+        audioGraphRef.current = { ctx, nearGain, farGain };
+        applyStereoMute(audioGraphRef.current, muteRef.current);
+      } catch {
+        // Fallback: whole-track volume only if graph setup fails
+        audioGraphRef.current = null;
+      }
+    });
+
+    return () => {
+      ws.destroy();
+      mainWsRef.current = null;
+      regionsRef.current = null;
+      audioGraphRef.current?.ctx.close().catch(() => undefined);
+      audioGraphRef.current = null;
+    };
+  }, [stereoMode, stereoRecording?.id, stereoRecording?.path_m4a, audioUrl, wireWsEvents]);
+
+  // Fallback: separate near + far files, far drives the clock.
   useEffect(() => {
     if (!dualMono || !nearContainerRef.current || !farContainerRef.current) return;
     if (!nearRecording?.path_m4a || !farRecording?.path_m4a) return;
@@ -152,12 +221,12 @@ export function DualChannelWaveform({
     };
 
     wireWsEvents(farWs, regions);
-    wireWsEvents(nearWs);
     farWs.on('timeupdate', syncFromFar);
     farWs.on('seeking', syncFromFar);
 
-    nearWs.setVolume(nearMuted ? 0 : 1);
-    farWs.setVolume(farMuted ? 0 : 1);
+    // Apply current mute state without re-creating players on toggle.
+    nearWs.setVolume(muteRef.current.near ? 0 : 1);
+    farWs.setVolume(muteRef.current.far ? 0 : 1);
 
     return () => {
       nearWs.destroy();
@@ -174,96 +243,36 @@ export function DualChannelWaveform({
     farRecording?.path_m4a,
     audioUrl,
     wireWsEvents,
-    nearMuted,
-    farMuted,
   ]);
 
-  // Stereo: split L/R waveforms with Web Audio per-channel mute
+  // Fallback: a single leg only.
   useEffect(() => {
-    if (!stereoMode || !stereoContainerRef.current || !stereoRecording?.path_m4a) return;
+    if (stereoMode || dualMono || !mainContainerRef.current || !singleRecording?.path_m4a) return;
 
-    stereoContainerRef.current.replaceChildren();
-    audioGraphRef.current = null;
-
+    mainContainerRef.current.replaceChildren();
     const regions = RegionsPlugin.create();
     regionsRef.current = regions;
 
     const ws = WaveSurfer.create({
-      container: stereoContainerRef.current,
-      url: audioUrl(stereoRecording.id),
-      fetchParams: { headers: authHeaders() },
-      height: 112,
-      barWidth: 2,
-      normalize: true,
-      splitChannels: [
-        { overlay: false, waveColor: NEAR_COLOR, progressColor: NEAR_PROGRESS },
-        { overlay: false, waveColor: FAR_COLOR, progressColor: FAR_PROGRESS },
-      ],
-      plugins: [regions],
-    });
-    stereoWsRef.current = ws;
-
-    wireWsEvents(ws, regions);
-
-    ws.on('ready', () => {
-      try {
-        const media = ws.getMediaElement();
-        media.crossOrigin = 'anonymous';
-        const ctx = new AudioContext();
-        const source = ctx.createMediaElementSource(media);
-        const splitter = ctx.createChannelSplitter(2);
-        const nearGain = ctx.createGain();
-        const farGain = ctx.createGain();
-        source.connect(splitter);
-        splitter.connect(nearGain, 0);
-        splitter.connect(farGain, 1);
-        nearGain.connect(ctx.destination);
-        farGain.connect(ctx.destination);
-        audioGraphRef.current = { ctx, nearGain, farGain };
-        applyStereoMute(audioGraphRef.current, muteRef.current);
-      } catch {
-        // Fallback: whole-track volume only if graph setup fails
-        audioGraphRef.current = null;
-      }
-    });
-
-    return () => {
-      ws.destroy();
-      stereoWsRef.current = null;
-      regionsRef.current = null;
-      audioGraphRef.current?.ctx.close().catch(() => undefined);
-      audioGraphRef.current = null;
-    };
-  }, [stereoMode, stereoRecording?.id, stereoRecording?.path_m4a, audioUrl, wireWsEvents]);
-
-  // Single channel fallback
-  useEffect(() => {
-    if (dualMono || stereoMode || !stereoContainerRef.current || !singleRecording?.path_m4a) return;
-
-    stereoContainerRef.current.replaceChildren();
-    const regions = RegionsPlugin.create();
-    regionsRef.current = regions;
-
-    const ws = WaveSurfer.create({
-      container: stereoContainerRef.current,
+      container: mainContainerRef.current,
       url: audioUrl(singleRecording.id),
       fetchParams: { headers: authHeaders() },
       height: 96,
       barWidth: 2,
-      waveColor: FAR_COLOR,
-      progressColor: FAR_PROGRESS,
+      waveColor: singleLeg === 'near' ? NEAR_COLOR : FAR_COLOR,
+      progressColor: singleLeg === 'near' ? NEAR_PROGRESS : FAR_PROGRESS,
       normalize: true,
       plugins: [regions],
     });
-    stereoWsRef.current = ws;
+    mainWsRef.current = ws;
     wireWsEvents(ws, regions);
 
     return () => {
       ws.destroy();
-      stereoWsRef.current = null;
+      mainWsRef.current = null;
       regionsRef.current = null;
     };
-  }, [dualMono, stereoMode, singleRecording?.id, singleRecording?.path_m4a, audioUrl, wireWsEvents]);
+  }, [stereoMode, dualMono, singleRecording?.id, singleRecording?.path_m4a, singleLeg, audioUrl, wireWsEvents]);
 
   useEffect(() => {
     if (regionsRef.current) renderTags(regionsRef.current);
@@ -271,19 +280,19 @@ export function DualChannelWaveform({
 
   useEffect(() => {
     muteRef.current = { near: nearMuted, far: farMuted };
-    if (dualMono) {
+    if (stereoMode) {
+      applyStereoMute(audioGraphRef.current, muteRef.current);
+    } else if (dualMono) {
       nearWsRef.current?.setVolume(nearMuted ? 0 : 1);
       farWsRef.current?.setVolume(farMuted ? 0 : 1);
-    } else if (stereoMode) {
-      applyStereoMute(audioGraphRef.current, { near: nearMuted, far: farMuted });
     }
-  }, [nearMuted, farMuted, dualMono, stereoMode]);
+  }, [nearMuted, farMuted, stereoMode, dualMono]);
 
   useEffect(() => {
     if (seekTo == null) return;
+    mainWsRef.current?.setTime(seekTo);
     nearWsRef.current?.setTime(seekTo);
     farWsRef.current?.setTime(seekTo);
-    stereoWsRef.current?.setTime(seekTo);
   }, [seekTo]);
 
   useEffect(() => {
@@ -294,7 +303,7 @@ export function DualChannelWaveform({
         await nearWsRef.current?.play();
         await farWsRef.current?.play();
       } else {
-        await stereoWsRef.current?.play();
+        await mainWsRef.current?.play();
       }
     };
     resume().catch(() => undefined);
@@ -302,9 +311,9 @@ export function DualChannelWaveform({
 
   useEffect(() => {
     if (pauseSignal == null) return;
+    mainWsRef.current?.pause();
     nearWsRef.current?.pause();
     farWsRef.current?.pause();
-    stereoWsRef.current?.pause();
   }, [pauseSignal]);
 
   useEffect(() => {
@@ -312,104 +321,79 @@ export function DualChannelWaveform({
     regionsRef.current?.enableDragSelection({ color: 'rgba(43, 135, 212, 0.3)' });
   }, [tagSelectSignal]);
 
-  const toggleNearMute = () => setNearMuted((v) => !v);
-  const toggleFarMute = () => setFarMuted((v) => !v);
-
-  const showMuteControls = dualMono || stereoMode;
+  const nearAvailable = stereoMode || dualMono || singleLeg === 'near';
+  const farAvailable = stereoMode || dualMono || singleLeg === 'far';
 
   return (
     <Stack gap={4}>
-      {dualMono && (
-        <Stack gap={2}>
-          <ChannelRow
-            label={`Near · ${nearLabel}`}
-            color={NEAR_COLOR}
-            muted={nearMuted}
-            onToggleMute={toggleNearMute}
-            showMute={showMuteControls}
-          />
-          <Box ref={nearContainerRef} style={{ height: 56 }} />
-          <ChannelRow
-            label={`Far · ${farLabel}`}
-            color={FAR_COLOR}
-            muted={farMuted}
-            onToggleMute={toggleFarMute}
-            showMute={showMuteControls}
-          />
-          <Box ref={farContainerRef} style={{ height: 56 }} />
+      <Group gap="lg" wrap="nowrap">
+        <ChannelHeader
+          label={`Near · ${nearLabel}`}
+          color={NEAR_COLOR}
+          muted={nearMuted}
+          onToggle={() => setNearMuted((v) => !v)}
+          available={nearAvailable}
+        />
+        <ChannelHeader
+          label={`Far · ${farLabel}`}
+          color={FAR_COLOR}
+          muted={farMuted}
+          onToggle={() => setFarMuted((v) => !v)}
+          available={farAvailable}
+        />
+      </Group>
+      {dualMono ? (
+        <Stack gap={6}>
+          <Box ref={nearContainerRef} style={{ height: 56, minHeight: 56 }} />
+          <Box ref={farContainerRef} style={{ height: 56, minHeight: 56 }} />
         </Stack>
-      )}
-      {!dualMono && (
-        <>
-          {stereoMode && (
-            <Group justify="space-between" wrap="nowrap">
-              <Group gap="lg">
-                <ChannelMuteLabel label={`Near · ${nearLabel}`} color={NEAR_COLOR} muted={nearMuted} onToggle={toggleNearMute} />
-                <ChannelMuteLabel label={`Far · ${farLabel}`} color={FAR_COLOR} muted={farMuted} onToggle={toggleFarMute} />
-              </Group>
-            </Group>
-          )}
-          <Box ref={stereoContainerRef} style={{ height: stereoMode ? 112 : 96 }} />
-        </>
+      ) : (
+        <Box ref={mainContainerRef} style={{ height: stereoMode ? 112 : 96, minHeight: stereoMode ? 112 : 96 }} />
       )}
     </Stack>
   );
 }
 
-function ChannelRow({
-  label,
-  color,
-  muted,
-  onToggleMute,
-  showMute,
-}: {
-  label: string;
-  color: string;
-  muted: boolean;
-  onToggleMute: () => void;
-  showMute: boolean;
-}) {
-  return (
-    <Group justify="space-between" gap="xs">
-      <Text size="xs" c={color} fw={600}>
-        {label}
-      </Text>
-      {showMute && <MuteButton muted={muted} onToggle={onToggleMute} label={label} />}
-    </Group>
-  );
-}
-
-function ChannelMuteLabel({
+function ChannelHeader({
   label,
   color,
   muted,
   onToggle,
+  available,
 }: {
   label: string;
   color: string;
   muted: boolean;
   onToggle: () => void;
+  available: boolean;
 }) {
+  if (!available) {
+    return (
+      <Group gap={4}>
+        <Text size="xs" c="dimmed" fw={600} td="line-through">
+          {label}
+        </Text>
+        <Text size="xs" c="dimmed">
+          (not recorded)
+        </Text>
+      </Group>
+    );
+  }
   return (
     <Group gap={4}>
-      <Text size="xs" c={color} fw={600}>
+      <Box w={10} h={10} style={{ borderRadius: 3, background: color }} />
+      <Text size="xs" c={muted ? 'dimmed' : undefined} fw={600} td={muted ? 'line-through' : undefined}>
         {label}
       </Text>
-      <MuteButton muted={muted} onToggle={onToggle} label={label} />
+      <ActionIcon
+        size="sm"
+        variant={muted ? 'filled' : 'subtle'}
+        color={muted ? 'gray' : 'blue'}
+        onClick={onToggle}
+        aria-label={muted ? `Unmute ${label}` : `Mute ${label}`}
+      >
+        {muted ? <IconVolumeOff size={14} /> : <IconVolume size={14} />}
+      </ActionIcon>
     </Group>
-  );
-}
-
-function MuteButton({ muted, onToggle, label }: { muted: boolean; onToggle: () => void; label: string }) {
-  return (
-    <ActionIcon
-      size="sm"
-      variant={muted ? 'filled' : 'subtle'}
-      color={muted ? 'gray' : 'blue'}
-      onClick={onToggle}
-      aria-label={muted ? `Unmute ${label}` : `Mute ${label}`}
-    >
-      {muted ? <IconVolumeOff size={14} /> : <IconVolume size={14} />}
-    </ActionIcon>
   );
 }

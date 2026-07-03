@@ -15,11 +15,12 @@ import {
   Textarea,
 } from '@mantine/core';
 import { IconPlayerPause, IconPlayerPlay, IconTag, IconX } from '@tabler/icons-react';
-import { api, hasPermission, Transcript } from '../api/client';
+import { api, hasPermission } from '../api/client';
 import { CallStatusBadge } from './CallStatusBadge';
 import { useCallPlayer } from './CallPlayerContext';
 import { useAuth } from '../auth/AuthContext';
 import { DualChannelWaveform } from './DualChannelWaveform';
+import { ConversationTranscript } from './ConversationTranscript';
 
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -280,27 +281,13 @@ export function CallPlayerDrawer() {
               {!transcripts.isLoading && transcriptList.length === 0 && call.data?.status === 'completed' && (
                 <Text size="sm" c="dimmed">No transcript available for this call.</Text>
               )}
-              {transcriptList.length > 0 && (
-                <ScrollArea.Autosize mah={140}>
-                  <Stack gap="xs">
-                    {transcriptList.map((t: Transcript) => (
-                      <Paper key={t.id} withBorder p="xs" radius="sm">
-                        <Group gap="xs" mb={4}>
-                          <Badge size="xs" variant="outline">
-                            {t.leg}
-                          </Badge>
-                          {t.sentiment && (
-                            <Badge size="xs" color="gray" variant="light">
-                              {t.sentiment}
-                            </Badge>
-                          )}
-                        </Group>
-                        <Text size="sm">{t.text}</Text>
-                      </Paper>
-                    ))}
-                  </Stack>
-                </ScrollArea.Autosize>
-              )}
+              <ConversationTranscript
+                transcripts={transcriptList}
+                nearLabel={nearLabel}
+                farLabel={farLabel}
+                currentTime={currentTime}
+                onSeek={(t) => setSeekTo(t + Math.random() * 1e-6)}
+              />
             </Box>
           )}
         </Stack>

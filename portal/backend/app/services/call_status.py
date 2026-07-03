@@ -16,8 +16,10 @@ async def sync_call_status_from_jobs(db: AsyncSession, call_id: int) -> None:
     call = result.scalar_one_or_none()
     if not call or call.status == CallStatus.RECORDING:
         return
-    if call.status in (CallStatus.COMPLETED, CallStatus.FAILED):
+    if call.status == CallStatus.COMPLETED:
         return
+    # FAILED is not terminal here: if ingest completes late (hangup hook re-run
+    # after a stuck-recording repair) and the jobs finish, the call recovers.
 
     jobs_result = await db.execute(
         select(Job).where(Job.payload["call_id"].as_integer() == call_id)
@@ -50,6 +52,7 @@ async def sync_call_status_from_jobs(db: AsyncSession, call_id: int) -> None:
         call.status = CallStatus.TRANSCRIBING
     elif all(j.status == JobStatus.COMPLETED for j in jobs):
         call.status = CallStatus.COMPLETED
+        call.status_message = None
 
 
 async def repair_stuck_transcribing_calls(db: AsyncSession) -> int:

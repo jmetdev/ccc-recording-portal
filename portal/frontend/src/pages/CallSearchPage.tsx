@@ -1,9 +1,23 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Group, Select, Stack, Table, TextInput, Title } from '@mantine/core';
+import { Badge, Button, Group, Select, Stack, Table, TextInput, Title, Tooltip } from '@mantine/core';
 import { api } from '../api/client';
 import { CallStatusBadge } from '../components/CallStatusBadge';
 import { useCallPlayer } from '../components/CallPlayerContext';
+
+function formatDuration(seconds: number | null): string {
+  if (seconds == null) return '—';
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+const SENTIMENT_COLORS: Record<string, string> = {
+  positive: 'green',
+  negative: 'red',
+  neutral: 'gray',
+};
 
 export function CallSearchPage() {
   const { openCall } = useCallPlayer();
@@ -69,11 +83,27 @@ export function CallSearchPage() {
               <Table.Td>{new Date(c.started_at).toLocaleString()}</Table.Td>
               <Table.Td>{c.near_name || c.near_addr}</Table.Td>
               <Table.Td>{c.far_name || c.far_addr}</Table.Td>
-              <Table.Td>{c.duration_s ? `${Math.round(c.duration_s)}s` : '—'}</Table.Td>
+              <Table.Td>{formatDuration(c.duration_s)}</Table.Td>
               <Table.Td>
-                <CallStatusBadge status={c.status} />
+                {c.status === 'failed' && c.status_message ? (
+                  <Tooltip label={c.status_message} maw={360} multiline withArrow>
+                    <span>
+                      <CallStatusBadge status={c.status} />
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <CallStatusBadge status={c.status} />
+                )}
               </Table.Td>
-              <Table.Td>{c.sentiment || '—'}</Table.Td>
+              <Table.Td>
+                {c.sentiment ? (
+                  <Badge size="sm" variant="light" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
+                    {c.sentiment}
+                  </Badge>
+                ) : (
+                  '—'
+                )}
+              </Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
