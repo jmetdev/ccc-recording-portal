@@ -8,7 +8,7 @@ import { CallPlayerProvider, useCallPlayer } from './CallPlayerContext';
 import { CallPlayerDrawer, CALL_PLAYER_DRAWER_MIN_HEIGHT } from './CallPlayerDrawer';
 import { ThemeSwitcher } from './ThemeSwitcher';
 
-const DRAWER_HEIGHT = CALL_PLAYER_DRAWER_MIN_HEIGHT + 180;
+const DRAWER_HEIGHT = CALL_PLAYER_DRAWER_MIN_HEIGHT + 120;
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: IconDashboard, end: true },

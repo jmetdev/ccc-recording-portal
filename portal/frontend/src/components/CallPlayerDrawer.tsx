@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ActionIcon,
@@ -15,15 +15,11 @@ import {
   Textarea,
 } from '@mantine/core';
 import { IconPlayerPause, IconPlayerPlay, IconTag, IconX } from '@tabler/icons-react';
-import WaveSurfer from 'wavesurfer.js';
-import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { api, authHeaders, hasPermission, Tag, Transcript } from '../api/client';
+import { api, hasPermission, Transcript } from '../api/client';
 import { CallStatusBadge } from './CallStatusBadge';
 import { useCallPlayer } from './CallPlayerContext';
 import { useAuth } from '../auth/AuthContext';
-
-const NEAR_COLOR = '#2b87d4';
-const FAR_COLOR = '#43a3eb';
+import { DualChannelWaveform } from './DualChannelWaveform';
 
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -31,18 +27,18 @@ function formatTime(seconds: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-
 export function CallPlayerDrawer() {
   const { callId, closeCall } = useCallPlayer();
   const { user } = useAuth();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WaveSurfer | null>(null);
-  const regionsRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [regionModal, setRegionModal] = useState<{ start: number; end: number } | null>(null);
   const [tagNote, setTagNote] = useState('');
+  const [seekTo, setSeekTo] = useState<number | null>(null);
+  const [playSignal, setPlaySignal] = useState<number | undefined>();
+  const [pauseSignal, setPauseSignal] = useState<number | undefined>();
+  const [tagSelectSignal, setTagSelectSignal] = useState(0);
 
   const canManageTags = hasPermission(user, 'manage_tags');
   const canViewTranscripts = hasPermission(user, 'view_transcripts');
@@ -82,127 +78,44 @@ export function CallPlayerDrawer() {
   });
 
   const items = recordings.data ?? [];
-  const hasNear = items.some((r) => r.leg === 'near' && r.path_m4a);
-  const hasFar = items.some((r) => r.leg === 'far' && r.path_m4a);
-  const hasStereo = items.some((r) => r.leg === 'stereo' && r.path_m4a);
+  const nearRecording = items.find((r) => r.leg === 'near' && r.path_m4a) ?? null;
+  const farRecording = items.find((r) => r.leg === 'far' && r.path_m4a) ?? null;
+  const stereoRecording = items.find((r) => r.leg === 'stereo' && r.path_m4a) ?? null;
 
-  const playback = useMemo(() => {
-    if (!hasNear) {
-      return (
-        items.find((r) => r.leg === 'stereo' && r.path_m4a) ??
-        items.find((r) => r.leg === 'far' && r.path_m4a) ??
-        items.find((r) => r.leg === 'near' && r.path_m4a) ??
-        null
-      );
-    }
-    return (
-      items.find((r) => r.leg === 'stereo' && r.path_m4a) ??
-      items.find((r) => r.leg === 'far' && r.path_m4a) ??
-      items.find((r) => r.leg === 'near' && r.path_m4a) ??
-      null
-    );
-  }, [items, hasNear]);
+  const hasNear = !!nearRecording;
+  const hasFar = !!farRecording;
+  const hasStereo = !!stereoRecording;
+  const hasAudio = hasNear || hasFar || hasStereo;
 
-  const useSplitChannels = playback?.leg === 'stereo' && hasNear;
-
-  const renderTagRegions = useCallback(
-    (regions: ReturnType<typeof RegionsPlugin.create>, tagList: Tag[]) => {
-      regions.clearRegions();
-      tagList.forEach((t) => {
-        regions.addRegion({
-          start: t.start_s,
-          end: t.end_s,
-          color: 'rgba(43, 135, 212, 0.25)',
-          content: t.note || undefined,
-          drag: false,
-          resize: false,
-        });
-      });
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!callId || !playback?.path_m4a || !containerRef.current) return;
-
-    containerRef.current.replaceChildren();
-
-    const regions = RegionsPlugin.create();
-    regionsRef.current = regions;
-
-    const ws = WaveSurfer.create({
-      container: containerRef.current,
-      url: api.audioUrl(playback.id),
-      fetchParams: { headers: authHeaders() },
-      waveColor: '#128feb',
-      progressColor: '#0a558d',
-      height: 96,
-      barWidth: 2,
-      splitChannels: useSplitChannels
-        ? [
-            { overlay: false, waveColor: NEAR_COLOR, progressColor: '#195184' },
-            { overlay: false, waveColor: FAR_COLOR, progressColor: '#226cac' },
-          ]
-        : undefined,
-      normalize: true,
-      plugins: [regions],
-    });
-    wsRef.current = ws;
-
-    ws.on('play', () => setPlaying(true));
-    ws.on('pause', () => setPlaying(false));
-    ws.on('timeupdate', (t) => setCurrentTime(t));
-    ws.on('ready', () => {
-      setDuration(ws.getDuration());
-      if (tags.data) renderTagRegions(regions, tags.data);
-    });
-
-    if (canManageTags) {
-      regions.on('region-created', (region) => {
-        setRegionModal({ start: region.start, end: region.end });
-        region.remove();
-      });
-    }
-
-    return () => {
-      ws.destroy();
-      wsRef.current = null;
-      regionsRef.current = null;
-      setPlaying(false);
-      setCurrentTime(0);
-      setDuration(0);
-    };
-  }, [callId, playback?.id, playback?.path_m4a, playback?.leg, useSplitChannels, canManageTags, renderTagRegions]);
-
-  useEffect(() => {
-    if (regionsRef.current && tags.data) {
-      renderTagRegions(regionsRef.current, tags.data);
-    }
-  }, [tags.data, renderTagRegions]);
+  const tagRecordingId = useMemo(() => {
+    if (stereoRecording) return stereoRecording.id;
+    if (farRecording) return farRecording.id;
+    if (nearRecording) return nearRecording.id;
+    return null;
+  }, [stereoRecording, farRecording, nearRecording]);
 
   const togglePlay = useCallback(() => {
-    wsRef.current?.playPause();
-  }, []);
+    if (playing) {
+      setPauseSignal((n) => (n ?? 0) + 1);
+    } else {
+      setPlaySignal((n) => (n ?? 0) + 1);
+    }
+  }, [playing]);
 
   const onSeek = useCallback(
     (value: number) => {
-      const ws = wsRef.current;
-      if (!ws || !duration) return;
-      ws.setTime((value / 100) * duration);
+      if (!duration) return;
+      setSeekTo((value / 100) * duration);
     },
     [duration],
   );
 
-  const enableTagSelection = () => {
-    regionsRef.current?.enableDragSelection({ color: 'rgba(43, 135, 212, 0.3)' });
-  };
-
   const saveTag = async () => {
-    if (!regionModal || !playback || callId == null) return;
+    if (!regionModal || callId == null || tagRecordingId == null) return;
     await api.createTag({
       call_id: callId,
-      recording_id: playback.id,
-      channel: useSplitChannels ? 'mix' : playback.leg,
+      recording_id: tagRecordingId,
+      channel: hasNear && hasFar ? 'mix' : 'mix',
       start_s: regionModal.start,
       end_s: regionModal.end,
       note: tagNote || null,
@@ -212,14 +125,12 @@ export function CallPlayerDrawer() {
     await tags.refetch();
   };
 
-  const seekTo = (seconds: number) => {
-    wsRef.current?.setTime(seconds);
-  };
-
   if (callId == null) return null;
 
   const tagList = tags.data ?? [];
   const transcriptList = transcripts.data ?? [];
+  const nearLabel = call.data?.near_name || call.data?.near_addr || 'agent';
+  const farLabel = call.data?.far_name || call.data?.far_addr || 'remote';
 
   return (
     <>
@@ -254,8 +165,7 @@ export function CallPlayerDrawer() {
                 )}
               </Group>
               <Text size="sm" c="dimmed" mt={4}>
-                Near: {call.data?.near_name || call.data?.near_addr || '—'} · Far:{' '}
-                {call.data?.far_name || call.data?.far_addr || '—'}
+                Near: {nearLabel} · Far: {farLabel}
                 {call.data?.duration_s != null ? ` · ${Math.round(call.data.duration_s)}s` : ''}
               </Text>
               <Group gap={6} mt={6}>
@@ -268,11 +178,6 @@ export function CallPlayerDrawer() {
                 <Badge size="xs" color={hasStereo ? 'blue' : 'gray'} variant={hasStereo ? 'filled' : 'light'}>
                   Stereo {hasStereo ? '✓' : '—'}
                 </Badge>
-                {!hasNear && hasFar && (
-                  <Text size="xs" c="orange">
-                    Near-end audio not received — check CUCM BIB near-leg fork / endpoint RTP
-                  </Text>
-                )}
               </Group>
             </Box>
             <ActionIcon variant="subtle" onClick={closeCall} aria-label="Close player">
@@ -280,30 +185,37 @@ export function CallPlayerDrawer() {
             </ActionIcon>
           </Group>
 
-          <Box
-            ref={containerRef}
-            style={{ height: useSplitChannels ? 120 : 96, overflow: 'hidden', position: 'relative', isolation: 'isolate' }}
-          />
-          {useSplitChannels && (
-            <Group gap="md">
-              <Text size="xs" c={NEAR_COLOR}>
-                ■ Near ({call.data?.near_addr || 'agent'})
-              </Text>
-              <Text size="xs" c={FAR_COLOR}>
-                ■ Far ({call.data?.far_addr || 'remote'})
-              </Text>
-            </Group>
+          {hasAudio ? (
+            <DualChannelWaveform
+              nearRecording={nearRecording}
+              farRecording={farRecording}
+              stereoRecording={stereoRecording}
+              audioUrl={api.audioUrl}
+              nearLabel={nearLabel}
+              farLabel={farLabel}
+              tags={tagList}
+              canTag={canManageTags}
+              onRegionSelected={(start, end) => setRegionModal({ start, end })}
+              onTimeUpdate={setCurrentTime}
+              onDuration={setDuration}
+              onPlayingChange={setPlaying}
+              seekTo={seekTo}
+              playSignal={playSignal}
+              pauseSignal={pauseSignal}
+              tagSelectSignal={tagSelectSignal}
+            />
+          ) : (
+            <Text size="sm" c="dimmed">
+              {recordings.isLoading ? 'Loading recordings…' : 'Recording not ready yet'}
+            </Text>
           )}
-
-          {!playback && <Text size="sm" c="dimmed">Recording not ready yet</Text>}
-          {playback && !playback.path_m4a && <Text size="sm" c="dimmed">Audio is still converting…</Text>}
 
           <Group gap="sm" wrap="nowrap">
             <ActionIcon
               variant="light"
               size="lg"
               onClick={togglePlay}
-              disabled={!playback?.path_m4a}
+              disabled={!hasAudio}
               aria-label="Play or pause"
             >
               {playing ? <IconPlayerPause size={18} /> : <IconPlayerPlay size={18} />}
@@ -315,15 +227,20 @@ export function CallPlayerDrawer() {
               style={{ flex: 1 }}
               value={duration ? (currentTime / duration) * 100 : 0}
               onChange={onSeek}
-              disabled={!playback?.path_m4a || !duration}
+              disabled={!hasAudio || !duration}
               size="xs"
               label={null}
             />
             <Text size="xs" c="dimmed" style={{ width: 44, textAlign: 'right' }}>
               {formatTime(duration)}
             </Text>
-            {canManageTags && playback?.path_m4a && (
-              <Button size="xs" variant="light" leftSection={<IconTag size={14} />} onClick={enableTagSelection}>
+            {canManageTags && hasAudio && (
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconTag size={14} />}
+                onClick={() => setTagSelectSignal((n) => n + 1)}
+              >
                 Tag region
               </Button>
             )}
@@ -340,7 +257,7 @@ export function CallPlayerDrawer() {
                     key={t.id}
                     variant="light"
                     style={{ cursor: 'pointer' }}
-                    onClick={() => seekTo(t.start_s)}
+                    onClick={() => setSeekTo(t.start_s)}
                     title={t.note || undefined}
                   >
                     {formatTime(t.start_s)}–{formatTime(t.end_s)}
@@ -409,4 +326,4 @@ export function CallPlayerDrawer() {
   );
 }
 
-export const CALL_PLAYER_DRAWER_MIN_HEIGHT = 220;
+export const CALL_PLAYER_DRAWER_MIN_HEIGHT = 280;
