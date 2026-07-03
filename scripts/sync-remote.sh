@@ -28,7 +28,10 @@ fi
 cp -f "$REMOTE_DIR/freeswitch/scripts/"* "$FS_DIR/scripts/"
 chmod +x "$FS_DIR/scripts/"*.sh "$FS_DIR/scripts/"*.py 2>/dev/null || true
 cp -f "$REMOTE_DIR/freeswitch/dialplan/cucm_bib.xml" "$FS_DIR/runtime/config/dialplan/cucm_bib.xml"
+# Restore Sofia external profile from stock template (call #18 worked before Jul-1 profile edits).
+cp -f "$FS_DIR/config/sip_profiles/external.xml" "$FS_DIR/runtime/config/sip_profiles/external.xml"
 docker exec freeswitch fs_cli -x "reloadxml" >/dev/null
+docker exec freeswitch fs_cli -x "sofia profile external restart" >/dev/null
 
 docker compose up -d --build
 docker compose --profile whisper up -d --build whisper

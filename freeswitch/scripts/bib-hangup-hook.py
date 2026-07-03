@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import glob
 import json
 import os
@@ -26,7 +27,7 @@ def _debug_log(message: str, data: dict | None = None, hypothesis_id: str = "H3"
             "message": message,
             "data": data or {},
             "hypothesisId": hypothesis_id,
-            "runId": "post-fix4",
+            "runId": "post-fix5",
         }
         with open(DEBUG_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
@@ -132,6 +133,15 @@ def main() -> None:
     args = parser.parse_args()
 
     recordings_dir = args.recordings_dir
+    lock_path = os.path.join(recordings_dir, f".hangup_{args.refci}.lock")
+    os.makedirs(recordings_dir, exist_ok=True)
+    lockf = open(lock_path, "w", encoding="utf-8")
+    try:
+        fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        _debug_log("hangup hook skipped duplicate", {"refci": args.refci}, hypothesis_id="H2")
+        return
+
     hangup_at = time.time()
     _debug_log(
         "hangup hook started",
