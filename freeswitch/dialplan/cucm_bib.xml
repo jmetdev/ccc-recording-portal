@@ -1,6 +1,14 @@
 <include>
   <context name="public">
-    <!-- CUCM BIB recording: destination 1034 from CCM cluster nodes -->
+    <!-- CUCM BIB recording: destination 1034 from CCM cluster nodes.
+
+         Hard-won quirks of this FreeSWITCH build (1.11.1):
+         - Inline condition= attributes on <action> tags are IGNORED (the action
+           always runs). All branching must use <condition>/<anti-action> blocks.
+         - execute_on_hangup is never executed at teardown; api_hangup_hook works.
+         - A leading '+' on a record_session path makes FS treat it as relative
+           and record under /usr/share/freeswitch/sounds/. Never prefix the path.
+    -->
     <extension name="cucm_bib_1034">
       <condition field="destination_number" expression="^1034$"/>
       <condition field="${network_addr}" expression="^172\.25\.100\.(10|11|30|31)$">
@@ -14,15 +22,34 @@
         <action application="set" data="bib_cisco_guid=${sip_h_Cisco-Guid}"/>
         <action application="set" data="bib_near_name=${caller_id_name}"/>
         <action application="set" data="bib_far_name=${caller_id_name}"/>
+      </condition>
 
-        <action application="set" data="bib_refci=${regex(${sip_full_from}|x-refci=([^;>]+)|%1)}" condition="${bib_refci} == ''"/>
-        <action application="set" data="bib_near_addr=${regex(${sip_full_from}|x-nearendaddr=([^;>]+)|%1)}" condition="${bib_near_addr} == ''"/>
-        <action application="set" data="bib_far_addr=${regex(${sip_full_from}|x-farendaddr=([^;>]+)|%1)}" condition="${bib_far_addr} == ''"/>
-        <action application="set" data="bib_session=${regex(${sip_full_from}|x-sessionid=([^;>]+)|%1)}" condition="${bib_session} == ''"/>
+      <!-- CUCM does not reliably expose the x- URI params as sip_from_* vars;
+           fall back to parsing the raw From header. -->
+      <condition field="${bib_refci}" expression="^$" break="never">
+        <action application="set" data="bib_refci=${regex(${sip_full_from}|x-refci=([^;>]+)|%1)}"/>
+      </condition>
+      <condition field="${bib_near_addr}" expression="^$" break="never">
+        <action application="set" data="bib_near_addr=${regex(${sip_full_from}|x-nearendaddr=([^;>]+)|%1)}"/>
+      </condition>
+      <condition field="${bib_far_addr}" expression="^$" break="never">
+        <action application="set" data="bib_far_addr=${regex(${sip_full_from}|x-farendaddr=([^;>]+)|%1)}"/>
+      </condition>
+      <condition field="${bib_session}" expression="^$" break="never">
+        <action application="set" data="bib_session=${regex(${sip_full_from}|x-sessionid=([^;>]+)|%1)}"/>
+      </condition>
 
-        <action application="set" data="bib_leg=far"/>
-        <action application="set" data="bib_leg=near" condition="${regex(${sip_full_from}|;x-nearend;|near)} == near"/>
+      <!-- The near-end media fork carries ';x-nearend;' in the From URI, the
+           far-end fork ';x-farend;'. Portal hooks run once per call, on the
+           far fork only (anti-action branch). -->
+      <condition field="${sip_full_from}" expression=";x-nearend[;>]" break="never">
+        <action application="set" data="bib_leg=near"/>
+        <anti-action application="set" data="bib_leg=far"/>
+        <anti-action application="set" data="api_hangup_hook=system /usr/local/sbin/bib-notify-hangup.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}"/>
+        <anti-action application="bgsystem" data="/usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}"/>
+      </condition>
 
+      <condition field="destination_number" expression="^1034$">
         <action application="set" data="record_sample_rate=8000"/>
         <action application="set" data="RECORD_STEREO=false"/>
         <action application="set" data="RECORD_MIN_SEC=0"/>
@@ -33,23 +60,18 @@
         <!-- Per-channel diagnostics independent of FS log config -->
         <action application="bgsystem" data="echo '${strftime(%Y-%m-%dT%H:%M:%S)} uuid=${uuid} leg=${bib_leg} refci=${bib_refci} from=${sip_full_from} file=${recording_file}' >> $${recordings_dir}/.dialplan-debug.log"/>
 
-        <!-- Portal hooks on far leg only; run after channel teardown so WAV is flushed -->
-        <action application="set" data="execute_on_hangup=bgsystem /usr/local/sbin/bib-notify-hangup.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${bib_leg} == far"/>
-
         <action application="answer"/>
-        <!-- + prefix: record inbound RTP only (CUCM BIB forks are sendonly toward FS) -->
-        <action application="record_session" data="+${recording_file}"/>
-        <action application="bgsystem" data="/usr/local/sbin/bib-notify-start.sh ${bib_refci} ${bib_near_addr} ${bib_far_addr} ${bib_session}" condition="${bib_leg} == far"/>
-
+        <action application="record_session" data="${recording_file}"/>
         <action application="sleep" data="3600000"/>
         <action application="hangup"/>
       </condition>
     </extension>
 
     <extension name="cucm_bib_1034_reject">
-      <condition field="destination_number" expression="^1034$"/>
-      <action application="log" data="CRIT CUCM-BIB-1034-REJECTED src=${network_addr} from=${sip_from_user}@${sip_from_host}"/>
-      <action application="respond" data="403 Forbidden"/>
+      <condition field="destination_number" expression="^1034$">
+        <action application="log" data="CRIT CUCM-BIB-1034-REJECTED src=${network_addr} from=${sip_from_user}@${sip_from_host}"/>
+        <action application="respond" data="403 Forbidden"/>
+      </condition>
     </extension>
 
     <extension name="cucm_bib_other">

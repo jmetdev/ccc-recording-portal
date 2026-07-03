@@ -54,17 +54,23 @@ def process_job(client: httpx.Client, model, payload: dict) -> dict:
     paths = payload.get("paths", {})
     results = {}
 
+    available: dict[str, str] = {}
     for leg in ("near", "far", "stereo"):
-        rec_id = recording_ids.get(leg)
-        if not rec_id:
-            continue
         wav_rel = paths.get(leg)
-        if not wav_rel:
+        if not recording_ids.get(leg) or not wav_rel:
             continue
         path = full_path(wav_rel)
-        if not os.path.isfile(path):
-            continue
+        if os.path.isfile(path):
+            available[leg] = path
 
+    # Transcribe per-speaker legs when present; the stereo mix duplicates their
+    # content, so it is only used as a fallback when no leg file exists.
+    selected = [leg for leg in ("near", "far") if leg in available]
+    if not selected and "stereo" in available:
+        selected = ["stereo"]
+
+    for leg in selected:
+        path = available[leg]
         text, segments, language = transcribe_file(model, path)
         if not text:
             continue

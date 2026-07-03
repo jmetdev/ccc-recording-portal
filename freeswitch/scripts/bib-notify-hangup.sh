@@ -8,4 +8,8 @@ LOG="${RECORDINGS_DIR}/.bib-hook.log"
 /usr/local/sbin/bib-debug-log.sh "bib-notify-hangup.sh" "hangup hook invoked" "{\"refci\":\"$1\",\"near\":\"$2\",\"far\":\"$3\",\"session\":\"$4\",\"pid\":$$}" "H2" "post-fix2"
 # #endregion
 printf '%s hangup refci=%s near=%s far=%s session=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$4" >> "$LOG"
-exec /usr/bin/python3 /usr/local/sbin/bib-hangup-hook.py --refci "$1"
+# Background the worker: this script is invoked via api_hangup_hook=system,
+# which blocks the FS hangup thread until we return. The python hook polls
+# for flushed WAVs for up to ~30s, so it must not run in the foreground.
+nohup /usr/bin/python3 /usr/local/sbin/bib-hangup-hook.py --refci "$1" >/dev/null 2>&1 &
+exit 0

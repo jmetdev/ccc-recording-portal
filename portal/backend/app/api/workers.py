@@ -75,9 +75,16 @@ async def update_recording(recording_id: int, body: RecordingUpdate, db: AsyncSe
 
 @router.post("/transcripts", dependencies=[Depends(verify_worker_token)])
 async def create_transcript(body: TranscriptCreate, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import delete
+
     from app.models import RecordingLeg, Transcript
 
     leg = RecordingLeg(body.leg)
+    # Upsert per (call, leg): a re-run job replaces the transcript instead of
+    # accumulating duplicates.
+    await db.execute(
+        delete(Transcript).where(Transcript.call_id == body.call_id, Transcript.leg == leg)
+    )
     transcript = Transcript(
         call_id=body.call_id,
         leg=leg,
