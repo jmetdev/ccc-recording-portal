@@ -138,9 +138,8 @@ async def create_connector(
     )
     await db.commit()
     await db.refresh(cred)
-    out = ConnectorCredentialCreated.model_validate(cred, from_attributes=True)
-    out.token = token
-    return out
+    base = ConnectorCredentialOut.model_validate(cred, from_attributes=True)
+    return ConnectorCredentialCreated(**base.model_dump(), token=token)
 
 
 @router.delete("/connectors/{connector_id}")
