@@ -38,6 +38,16 @@ services:
       TRANSCRIPTION_ENABLED: ${TRANSCRIPTION_ENABLED:-}
       WHISPER_CONTAINER_NAME: ${WHISPER_CONTAINER_NAME:-portal-whisper}
       SYSTEM_CONTAINERS: ${SYSTEM_CONTAINERS:-portal-backend,portal-db,portal-frontend,portal-media-handler,portal-whisper,freeswitch}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PREFIX: ${S3_PREFIX:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-ccc-portal}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      RETENTION_SWEEP_INTERVAL_S: ${RETENTION_SWEEP_INTERVAL_S:-3600}
     volumes:
       - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -83,6 +93,27 @@ services:
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
     volumes:
       - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:ro
+
+  keycloak:
+    profiles: [sso]
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: portal-keycloak
+    restart: unless-stopped
+    command: start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change-me-keycloak}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/${KEYCLOAK_DB:-keycloak}
+      KC_DB_USERNAME: ${POSTGRES_USER:-portal}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-portal}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://localhost:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${KEYCLOAK_PORT:-8080}:8080"
 
 volumes:
   portal_pgdata:
