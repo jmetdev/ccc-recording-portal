@@ -140,7 +140,9 @@ async def v2_call_start(
     db.add(call)
     await db.commit()
     await db.refresh(call)
-    await live_hub.broadcast({"event": "call_started", "call_id": call.id, "refci": call.refci})
+    await live_hub.broadcast(
+        {"event": "call_started", "call_id": call.id, "refci": call.refci}, cred.tenant_id
+    )
     return {"status": "ok", "call_id": call.id}
 
 
@@ -180,7 +182,9 @@ async def v2_call_complete(
             )
 
     await db.commit()
-    await live_hub.broadcast({"event": "call_completed", "call_id": call.id, "refci": call.refci})
+    await live_hub.broadcast(
+        {"event": "call_completed", "call_id": call.id, "refci": call.refci}, cred.tenant_id
+    )
     return {"status": "ok", "call_id": call.id}
 
 

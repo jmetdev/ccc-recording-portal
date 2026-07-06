@@ -105,7 +105,7 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
     await db.refresh(call)
     _ingest_debug("ingest start created call", {"call_id": call.id, "refci": payload.refci}, "H5")
 
-    await live_hub.broadcast({"event": "call_started", "call_id": call.id, "refci": call.refci})
+    await live_hub.broadcast({"event": "call_started", "call_id": call.id, "refci": call.refci}, tenant_id)
     return {"status": "ok", "call_id": call.id}
 
 
@@ -173,7 +173,7 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         {"call_id": call.id, "refci": payload.refci, "files": payload.files, "recording_ids": recording_ids},
         "H1",
     )
-    await live_hub.broadcast({"event": "call_completed", "call_id": call.id, "refci": call.refci})
+    await live_hub.broadcast({"event": "call_completed", "call_id": call.id, "refci": call.refci}, tenant_id)
     return {"status": "ok", "call_id": call.id, "recording_ids": recording_ids}
 
 
@@ -216,5 +216,7 @@ async def ingest_fail(payload: IngestFailPayload, db: AsyncSession = Depends(get
         "H4",
     )
     for call_id in updated_ids:
-        await live_hub.broadcast({"event": "call_completed", "call_id": call_id, "refci": payload.refci})
+        await live_hub.broadcast(
+            {"event": "call_completed", "call_id": call_id, "refci": payload.refci}, tenant_id
+        )
     return {"status": "ok", "call_ids": updated_ids}
