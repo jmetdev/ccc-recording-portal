@@ -55,13 +55,17 @@ async def verify_oidc_token(token: str) -> dict:
         key = next((k for k in jwks.get("keys", []) if k.get("kid") == header.get("kid")), None)
         if key is None:
             raise unauthorized
-    audience = settings.oidc_audience or settings.oidc_client_id
+    # Audience is only enforced when OIDC_AUDIENCE is set explicitly: Keycloak
+    # access tokens carry aud=account by default, so requiring the client id
+    # would need an audience mapper on every realm. Configure one and set
+    # OIDC_AUDIENCE to harden production deployments.
+    audience = settings.oidc_audience
     try:
         return jwt.decode(
             token,
             key,
             algorithms=[header.get("alg", "RS256")],
-            audience=audience,
+            audience=audience or None,
             issuer=settings.oidc_issuer.rstrip("/"),
             options={"verify_aud": bool(audience)},
         )

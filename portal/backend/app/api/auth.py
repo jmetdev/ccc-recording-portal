@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.rbac import get_current_user, user_permissions
 from app.core.security import (
@@ -95,6 +97,60 @@ async def login(
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):
     return serialize_user(user)
+
+
+class SsoConfigOut(BaseModel):
+    enabled: bool
+    issuer: str | None = None
+    client_id: str | None = None
+
+
+class SsoExchangeIn(BaseModel):
+    token: str
+
+
+@router.get("/sso/config", response_model=SsoConfigOut)
+async def sso_config():
+    """Public: tells the login page whether/where to start the OIDC flow."""
+    if not settings.oidc_enabled:
+        return SsoConfigOut(enabled=False)
+    return SsoConfigOut(
+        enabled=True,
+        issuer=settings.oidc_issuer.rstrip("/"),
+        client_id=settings.oidc_client_id,
+    )
+
+
+@router.post("/sso/exchange", response_model=TokenResponse)
+async def sso_exchange(body: SsoExchangeIn, request: Request, db: AsyncSession = Depends(get_db)):
+    """Trade a verified IdP access token for portal-issued JWTs.
+
+    The SPA completes the PKCE code flow against Keycloak, then exchanges here
+    so the rest of the app (REST, websockets, refresh) runs on one local token
+    format that always carries the tenant claim.
+    """
+    if not settings.oidc_enabled:
+        raise HTTPException(status_code=404, detail="SSO not enabled")
+    from app.core.oidc import resolve_oidc_user
+
+    user = await resolve_oidc_user(db, body.token)
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User inactive")
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="auth.login_sso",
+        user=user,
+        resource_type="user",
+        resource_id=user.id,
+        request=request,
+        commit=True,
+    )
+    sub = str(user.id)
+    return TokenResponse(
+        access_token=create_access_token(sub, tenant_id=user.tenant_id),
+        refresh_token=create_refresh_token(sub),
+    )
 
 
 @router.post("/refresh", response_model=TokenResponse)

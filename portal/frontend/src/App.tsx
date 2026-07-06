@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { RequireAuth, RequirePermission } from './auth/RouteGuards';
 import { LoginPage } from './pages/LoginPage';
+import { SsoCallbackPage } from './pages/SsoCallbackPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { CallSearchPage } from './pages/CallSearchPage';
 import { CallDetailPage } from './pages/CallDetailPage';
@@ -14,6 +15,7 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/callback" element={<SsoCallbackPage />} />
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />

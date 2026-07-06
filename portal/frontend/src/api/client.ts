@@ -136,6 +136,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type SsoConfig = {
+  enabled: boolean;
+  issuer: string | null;
+  client_id: string | null;
+};
+
 export const api = {
   login: async (username: string, password: string) => {
     const body = new URLSearchParams({ username, password });
@@ -145,6 +151,23 @@ export const api = {
       body,
     });
     if (!res.ok) throw new Error('Invalid credentials');
+    return res.json() as Promise<{ access_token: string; refresh_token: string }>;
+  },
+  ssoConfig: async () => {
+    const res = await fetch(`${API_BASE}/auth/sso/config`);
+    if (!res.ok) return { enabled: false, issuer: null, client_id: null } as SsoConfig;
+    return res.json() as Promise<SsoConfig>;
+  },
+  ssoExchange: async (idpToken: string) => {
+    const res = await fetch(`${API_BASE}/auth/sso/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: idpToken }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'SSO sign-in was rejected by the portal');
+    }
     return res.json() as Promise<{ access_token: string; refresh_token: string }>;
   },
   me: () => request<User>('/auth/me'),
