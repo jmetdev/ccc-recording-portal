@@ -12,3 +12,4 @@ passlib[argon2]==1.7.4
 python-multipart==0.0.20
 httpx==0.28.1
 pgvector==0.3.6
+boto3==1.35.90

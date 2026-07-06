@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from app.core.security import (
 )
 from app.models import Role, User
 from app.schemas import TokenResponse, UserOut
+from app.services.audit import record_audit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -25,30 +26,68 @@ def serialize_user(user: User) -> UserOut:
         email=user.email,
         username=user.username,
         is_active=user.is_active,
+        is_superadmin=user.is_superadmin,
+        tenant_id=user.tenant_id,
         group_id=user.group_id,
         roles=[r.name for r in user.roles],
         permissions=sorted(user_permissions(user)),
     )
 
 
+async def _find_login_user(db: AsyncSession, identifier: str) -> User | None:
+    """Resolve a login identifier: email (globally unique) or username.
+
+    Usernames are only unique per tenant; if the same username exists in more
+    than one tenant the caller must log in with their email instead.
+    """
+    opts = selectinload(User.roles).selectinload(Role.permissions)
+    if "@" in identifier:
+        result = await db.execute(select(User).options(opts).where(User.email == identifier))
+        return result.scalar_one_or_none()
+    result = await db.execute(select(User).options(opts).where(User.username == identifier))
+    users = result.scalars().all()
+    if len(users) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ambiguous username; log in with your email address",
+        )
+    return users[0] if users else None
+
+
 @router.post("/token", response_model=TokenResponse)
 async def login(
+    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(User)
-        .options(selectinload(User.roles).selectinload(Role.permissions))
-        .where(User.username == form.username)
-    )
-    user = result.scalar_one_or_none()
+    user = await _find_login_user(db, form.username)
     if not user or not verify_password(form.password, user.password_hash):
+        if user:
+            await record_audit(
+                db,
+                tenant_id=user.tenant_id,
+                action="auth.login_failed",
+                resource_type="user",
+                resource_id=user.id,
+                request=request,
+                commit=True,
+            )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User inactive")
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="auth.login",
+        user=user,
+        resource_type="user",
+        resource_id=user.id,
+        request=request,
+        commit=True,
+    )
     sub = str(user.id)
     return TokenResponse(
-        access_token=create_access_token(sub),
+        access_token=create_access_token(sub, tenant_id=user.tenant_id),
         refresh_token=create_refresh_token(sub),
     )
 
@@ -74,6 +113,6 @@ async def refresh(token: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="User not found")
     sub = str(user.id)
     return TokenResponse(
-        access_token=create_access_token(sub),
+        access_token=create_access_token(sub, tenant_id=user.tenant_id),
         refresh_token=create_refresh_token(sub),
     )

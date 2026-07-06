@@ -16,3 +16,18 @@ class Base(DeclarativeBase):
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
+
+
+async def set_tenant_context(session: AsyncSession, tenant_id: int) -> None:
+    """Scope this transaction's row-level-security policies to one tenant.
+
+    Transaction-local (`set_config(..., true)`): after a commit the connection
+    reverts to system context, so pooled connections never leak the setting.
+    Application queries must still filter by tenant_id explicitly — RLS is
+    defense-in-depth, not the primary isolation mechanism.
+    """
+    from sqlalchemy import text
+
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+    )

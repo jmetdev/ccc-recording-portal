@@ -77,7 +77,13 @@ async def update_recording(recording_id: int, body: RecordingUpdate, db: AsyncSe
 async def create_transcript(body: TranscriptCreate, db: AsyncSession = Depends(get_db)):
     from sqlalchemy import delete
 
-    from app.models import RecordingLeg, Transcript
+    from app.models import Call, RecordingLeg, Transcript
+
+    call_tenant = (
+        await db.execute(select(Call.tenant_id).where(Call.id == body.call_id))
+    ).scalar_one_or_none()
+    if call_tenant is None:
+        raise HTTPException(status_code=404, detail="Call not found")
 
     leg = RecordingLeg(body.leg)
     # Upsert per (call, leg): a re-run job replaces the transcript instead of
@@ -86,6 +92,7 @@ async def create_transcript(body: TranscriptCreate, db: AsyncSession = Depends(g
         delete(Transcript).where(Transcript.call_id == body.call_id, Transcript.leg == leg)
     )
     transcript = Transcript(
+        tenant_id=call_tenant,
         call_id=body.call_id,
         leg=leg,
         language=body.language,

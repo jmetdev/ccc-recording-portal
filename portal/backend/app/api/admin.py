@@ -72,24 +72,37 @@ async def set_extension_groups(db: AsyncSession, ext: RecordedExtension, group_i
         )
 
 
-@router.get("/groups", response_model=list[GroupOut], dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def list_groups(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Group).order_by(Group.name))
+@router.get("/groups", response_model=list[GroupOut])
+async def list_groups(
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Group).where(Group.tenant_id == user.tenant_id).order_by(Group.name))
     return result.scalars().all()
 
 
-@router.post("/groups", response_model=GroupOut, dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def create_group(body: GroupCreate, db: AsyncSession = Depends(get_db)):
-    group = Group(name=body.name)
+@router.post("/groups", response_model=GroupOut)
+async def create_group(
+    body: GroupCreate,
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    group = Group(name=body.name, tenant_id=user.tenant_id)
     db.add(group)
     await db.commit()
     await db.refresh(group)
     return group
 
 
-@router.delete("/groups/{group_id}", dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def delete_group(group_id: int, db: AsyncSession = Depends(get_db)):
-    group = (await db.execute(select(Group).where(Group.id == group_id))).scalar_one_or_none()
+@router.delete("/groups/{group_id}")
+async def delete_group(
+    group_id: int,
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    group = (
+        await db.execute(select(Group).where(Group.id == group_id, Group.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
     await db.delete(group)
@@ -97,15 +110,27 @@ async def delete_group(group_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
-@router.get("/roles", response_model=list[RoleOut], dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def list_roles(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Role).options(selectinload(Role.permissions)).order_by(Role.name))
+@router.get("/roles", response_model=list[RoleOut])
+async def list_roles(
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Role)
+        .options(selectinload(Role.permissions))
+        .where(Role.tenant_id == user.tenant_id)
+        .order_by(Role.name)
+    )
     return [serialize_role(r) for r in result.scalars().all()]
 
 
-@router.post("/roles", response_model=RoleOut, dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def create_role(body: RoleCreate, db: AsyncSession = Depends(get_db)):
-    role = Role(name=body.name, description=body.description)
+@router.post("/roles", response_model=RoleOut)
+async def create_role(
+    body: RoleCreate,
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    role = Role(name=body.name, description=body.description, tenant_id=user.tenant_id)
     db.add(role)
     await db.flush()
     for perm in body.permissions:
@@ -116,9 +141,15 @@ async def create_role(body: RoleCreate, db: AsyncSession = Depends(get_db)):
     return serialize_role(result.scalar_one())
 
 
-@router.delete("/roles/{role_id}", dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def delete_role(role_id: int, db: AsyncSession = Depends(get_db)):
-    role = (await db.execute(select(Role).where(Role.id == role_id))).scalar_one_or_none()
+@router.delete("/roles/{role_id}")
+async def delete_role(
+    role_id: int,
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    role = (
+        await db.execute(select(Role).where(Role.id == role_id, Role.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
     await db.delete(role)
@@ -126,15 +157,27 @@ async def delete_role(role_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
-@router.get("/users", response_model=list[UserOut], dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def list_users(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).options(selectinload(User.roles).selectinload(Role.permissions)))
+@router.get("/users", response_model=list[UserOut])
+async def list_users(
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.roles).selectinload(Role.permissions))
+        .where(User.tenant_id == admin.tenant_id)
+    )
     return [serialize_user(u) for u in result.scalars().all()]
 
 
-@router.post("/users", response_model=UserOut, dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def create_user(body: UserCreate, db: AsyncSession = Depends(get_db)):
+@router.post("/users", response_model=UserOut)
+async def create_user(
+    body: UserCreate,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
     user = User(
+        tenant_id=admin.tenant_id,
         email=body.email,
         username=body.username,
         password_hash=hash_password(body.password),
@@ -152,10 +195,17 @@ async def create_user(body: UserCreate, db: AsyncSession = Depends(get_db)):
     return serialize_user(result.scalar_one())
 
 
-@router.patch("/users/{user_id}", response_model=UserOut, dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def update_user(user_id: int, body: UserUpdate, db: AsyncSession = Depends(get_db)):
+@router.patch("/users/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: int,
+    body: UserUpdate,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
-        select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == user_id)
+        select(User)
+        .options(selectinload(User.roles).selectinload(Role.permissions))
+        .where(User.id == user_id, User.tenant_id == admin.tenant_id)
     )
     user = result.scalar_one_or_none()
     if not user:
@@ -181,9 +231,15 @@ async def update_user(user_id: int, body: UserUpdate, db: AsyncSession = Depends
     return serialize_user(result.scalar_one())
 
 
-@router.delete("/users/{user_id}", dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (
+        await db.execute(select(User).where(User.id == user_id, User.tenant_id == admin.tenant_id))
+    ).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     await db.delete(user)
@@ -191,28 +247,28 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
-@router.get(
-    "/recorded-extensions",
-    response_model=list[RecordedExtensionOut],
-    dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))],
-)
-async def list_extensions(db: AsyncSession = Depends(get_db)):
+@router.get("/recorded-extensions", response_model=list[RecordedExtensionOut])
+async def list_extensions(
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(RecordedExtension)
         .options(selectinload(RecordedExtension.groups))
+        .where(RecordedExtension.tenant_id == admin.tenant_id)
         .order_by(RecordedExtension.extension)
     )
     return [serialize_extension(e) for e in result.scalars().all()]
 
 
-@router.post(
-    "/recorded-extensions",
-    response_model=RecordedExtensionOut,
-    dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))],
-)
-async def create_extension(body: RecordedExtensionCreate, db: AsyncSession = Depends(get_db)):
+@router.post("/recorded-extensions", response_model=RecordedExtensionOut)
+async def create_extension(
+    body: RecordedExtensionCreate,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
     data = body.model_dump(exclude={"group_ids"})
-    ext = RecordedExtension(**data)
+    ext = RecordedExtension(**data, tenant_id=admin.tenant_id)
     db.add(ext)
     await db.flush()
     await set_extension_groups(db, ext, body.group_ids)
@@ -225,16 +281,17 @@ async def create_extension(body: RecordedExtensionCreate, db: AsyncSession = Dep
     return serialize_extension(result.scalar_one())
 
 
-@router.patch(
-    "/recorded-extensions/{ext_id}",
-    response_model=RecordedExtensionOut,
-    dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))],
-)
-async def update_extension(ext_id: int, body: RecordedExtensionUpdate, db: AsyncSession = Depends(get_db)):
+@router.patch("/recorded-extensions/{ext_id}", response_model=RecordedExtensionOut)
+async def update_extension(
+    ext_id: int,
+    body: RecordedExtensionUpdate,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(RecordedExtension)
         .options(selectinload(RecordedExtension.groups))
-        .where(RecordedExtension.id == ext_id)
+        .where(RecordedExtension.id == ext_id, RecordedExtension.tenant_id == admin.tenant_id)
     )
     ext = result.scalar_one_or_none()
     if not ext:
@@ -252,12 +309,19 @@ async def update_extension(ext_id: int, body: RecordedExtensionUpdate, db: Async
     return serialize_extension(result.scalar_one())
 
 
-@router.delete(
-    "/recorded-extensions/{ext_id}",
-    dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))],
-)
-async def delete_extension(ext_id: int, db: AsyncSession = Depends(get_db)):
-    ext = (await db.execute(select(RecordedExtension).where(RecordedExtension.id == ext_id))).scalar_one_or_none()
+@router.delete("/recorded-extensions/{ext_id}")
+async def delete_extension(
+    ext_id: int,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    ext = (
+        await db.execute(
+            select(RecordedExtension).where(
+                RecordedExtension.id == ext_id, RecordedExtension.tenant_id == admin.tenant_id
+            )
+        )
+    ).scalar_one_or_none()
     if not ext:
         raise HTTPException(status_code=404, detail="Extension not found")
     await db.delete(ext)
@@ -265,12 +329,15 @@ async def delete_extension(ext_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
-@router.post("/purge-call-data", dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))])
-async def purge_call_data(db: AsyncSession = Depends(get_db)):
-    """Remove all calls, recordings, tags, transcripts, and media jobs."""
+@router.post("/purge-call-data")
+async def purge_call_data(
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove this tenant's calls, recordings, tags, transcripts, and media jobs."""
     from app.models import Call
 
-    await db.execute(delete(Job))
-    await db.execute(delete(Call))
+    await db.execute(delete(Job).where(Job.tenant_id == admin.tenant_id))
+    await db.execute(delete(Call).where(Call.tenant_id == admin.tenant_id))
     await db.commit()
     return {"status": "ok"}

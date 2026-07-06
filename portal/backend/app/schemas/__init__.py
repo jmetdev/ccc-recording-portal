@@ -23,6 +23,8 @@ class UserOut(BaseModel):
     email: str
     username: str
     is_active: bool
+    is_superadmin: bool = False
+    tenant_id: int | None = None
     group_id: int | None
     roles: list[str]
     permissions: list[str]
@@ -135,6 +137,8 @@ class CallOut(BaseModel):
     duration_s: float | None
     status: str
     status_message: str | None = None
+    source: str = "cucm"
+    legal_hold: bool = False
     group_id: int | None
     sentiment: str | None = None
 
@@ -154,6 +158,8 @@ class RecordingOut(BaseModel):
     leg: str
     path_wav: str | None
     path_m4a: str | None
+    media_path: str | None = None
+    media_mime: str | None = None
     sample_rate: int | None
     channels: int | None
     bytes: int | None
@@ -265,3 +271,111 @@ class TranscriptCreate(BaseModel):
     sentiment: str | None = None
     sentiment_score: float | None = None
     embedding: list[float] | None = None
+
+
+# --- Tenancy / platform administration ---
+
+
+class TenantOut(BaseModel):
+    id: int
+    slug: str
+    name: str
+    is_active: bool
+    retention_days: int | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TenantCreate(BaseModel):
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,62}$")
+    name: str
+    retention_days: int | None = None
+
+
+class TenantUpdate(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
+    retention_days: int | None = None
+
+
+class ConnectorCredentialOut(BaseModel):
+    id: int
+    tenant_id: int
+    name: str
+    kind: str
+    enabled: bool
+    last_seen_at: datetime | None
+    version: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConnectorCredentialCreate(BaseModel):
+    name: str
+    kind: str  # cucm | webex
+
+
+class ConnectorCredentialCreated(ConnectorCredentialOut):
+    # Plaintext token, returned exactly once at creation.
+    token: str
+
+
+class AuditLogOut(BaseModel):
+    id: int
+    tenant_id: int
+    user_id: int | None
+    action: str
+    resource_type: str | None
+    resource_id: str | None
+    detail: dict | None
+    ip: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# --- Ingest v2 (connector-facing API) ---
+
+
+class V2CallStart(BaseModel):
+    refci: str
+    source: str = "cucm"  # cucm | webex
+    external_id: str | None = None
+    session: str | None = None
+    guid: str | None = None
+    near_addr: str | None = None
+    far_addr: str | None = None
+    near_name: str | None = None
+    far_name: str | None = None
+    direction: str | None = None
+    started_at: datetime | None = None
+
+
+class V2CallComplete(BaseModel):
+    refci: str | None = None
+    external_id: str | None = None
+    duration_s: float | None = None
+    ended_at: datetime | None = None
+    # True when the connector already produced final media/transcripts, so the
+    # portal must not enqueue transcode/whisper jobs (Webex path, and on-prem
+    # connectors running the local media pipeline).
+    processed: bool = False
+
+
+class V2TranscriptCreate(BaseModel):
+    leg: str = "mix"
+    source: str = "connector"  # webex | connector | whisper
+    language: str | None = None
+    text: str
+    segments_json: list | None = None
+
+
+class ConnectorHeartbeat(BaseModel):
+    version: str | None = None
+    stats: dict | None = None
+
+
+class LegalHoldUpdate(BaseModel):
+    legal_hold: bool

@@ -26,6 +26,7 @@ class Permission(str, enum.Enum):
     MANAGE_USERS = "manage_users"
     MANAGE_TAGS = "manage_tags"
     VIEW_TRANSCRIPTS = "view_transcripts"
+    MANAGE_RETENTION = "manage_retention"
 
 
 class CallStatus(str, enum.Enum):
@@ -36,10 +37,27 @@ class CallStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class CallSource(str, enum.Enum):
+    CUCM = "cucm"
+    WEBEX = "webex"
+
+
+class ConnectorKind(str, enum.Enum):
+    CUCM = "cucm"
+    WEBEX = "webex"
+
+
 class RecordingLeg(str, enum.Enum):
     NEAR = "near"
     FAR = "far"
     STEREO = "stereo"
+    MIX = "mix"
+
+
+class TranscriptSource(str, enum.Enum):
+    WHISPER = "whisper"
+    WEBEX = "webex"
+    CONNECTOR = "connector"
 
 
 class JobType(str, enum.Enum):
@@ -52,6 +70,63 @@ class JobStatus(str, enum.Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # None = retain forever. Calls past retention are purged unless legal_hold.
+    retention_days: Mapped[int | None] = mapped_column(Integer)
+    settings_json: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    users: Mapped[list["User"]] = relationship(back_populates="tenant")
+    connectors: Mapped[list["ConnectorCredential"]] = relationship(back_populates="tenant")
+
+
+class ConnectorCredential(Base):
+    """Per-tenant credential presented by an on-prem or hosted connector.
+
+    The plaintext token (format ``ccck_<id>_<secret>``) is returned exactly once
+    at creation time; only its SHA-256 digest is stored.
+    """
+
+    __tablename__ = "connector_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[ConnectorKind] = mapped_column(
+        Enum(ConnectorKind, name="connector_kind_enum", native_enum=False)
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[str | None] = mapped_column(String(64))
+    stats_json: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    tenant: Mapped["Tenant"] = relationship(back_populates="connectors")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    resource_type: Mapped[str | None] = mapped_column(String(32))
+    resource_id: Mapped[str | None] = mapped_column(String(64))
+    detail: Mapped[dict | None] = mapped_column(JSONB)
+    ip: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
 
 
 class UserRole(Base):
@@ -77,9 +152,11 @@ recorded_extension_groups = RecordedExtensionGroup.__table__
 
 class Group(Base):
     __tablename__ = "groups"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_groups_tenant_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="group")
@@ -91,9 +168,11 @@ class Group(Base):
 
 class Role(Base):
     __tablename__ = "roles"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_roles_tenant_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str | None] = mapped_column(String(256))
 
     users: Mapped[list["User"]] = relationship(secondary=user_roles, back_populates="roles")
@@ -115,24 +194,36 @@ class RolePermission(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("tenant_id", "username", name="uq_users_tenant_username"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    # Email stays globally unique so login-by-email can resolve the tenant.
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Platform operator: may manage tenants and connector credentials across tenants.
+    is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Set when the account is provisioned/matched via an external IdP (Keycloak).
+    oidc_subject: Mapped[str | None] = mapped_column(String(255), index=True)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    tenant: Mapped["Tenant"] = relationship(back_populates="users")
     group: Mapped["Group | None"] = relationship(back_populates="users")
     roles: Mapped[list["Role"]] = relationship(secondary=user_roles, back_populates="users")
 
 
 class RecordedExtension(Base):
     __tablename__ = "recorded_extensions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "extension", name="uq_recorded_extensions_tenant_extension"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    extension: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    extension: Mapped[str] = mapped_column(String(32), nullable=False)
     label: Mapped[str | None] = mapped_column(String(128))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -146,9 +237,17 @@ class Call(Base):
     __tablename__ = "calls"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     refci: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     session_id: Mapped[str | None] = mapped_column(String(128))
     guid: Mapped[str | None] = mapped_column(String(128))
+    # Upstream identifier for cloud sources (e.g. Webex recording id) for dedup.
+    external_id: Mapped[str | None] = mapped_column(String(256), index=True)
+    source: Mapped[CallSource] = mapped_column(
+        Enum(CallSource, name="call_source_enum", native_enum=False),
+        default=CallSource.CUCM,
+        index=True,
+    )
     near_addr: Mapped[str | None] = mapped_column(String(64))
     far_addr: Mapped[str | None] = mapped_column(String(64))
     near_name: Mapped[str | None] = mapped_column(String(128))
@@ -163,6 +262,8 @@ class Call(Base):
         index=True,
     )
     status_message: Mapped[str | None] = mapped_column(Text)
+    # Excluded from retention sweeps while true (litigation/public-records hold).
+    legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), index=True)
 
     group: Mapped["Group | None"] = relationship(back_populates="calls")
@@ -175,10 +276,15 @@ class Recording(Base):
     __tablename__ = "recordings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     call_id: Mapped[int] = mapped_column(ForeignKey("calls.id", ondelete="CASCADE"), index=True)
     leg: Mapped[RecordingLeg] = mapped_column(Enum(RecordingLeg, name="recording_leg_enum", native_enum=False))
     path_wav: Mapped[str | None] = mapped_column(String(512))
     path_m4a: Mapped[str | None] = mapped_column(String(512))
+    # Storage key of connector-finished media (e.g. Webex MP3, on-prem M4A) and its
+    # MIME type. When set, playback serves this and skips the legacy wav/m4a paths.
+    media_path: Mapped[str | None] = mapped_column(String(512))
+    media_mime: Mapped[str | None] = mapped_column(String(64))
     sample_rate: Mapped[int | None] = mapped_column(Integer)
     channels: Mapped[int | None] = mapped_column(Integer)
     bytes: Mapped[int | None] = mapped_column(Integer)
@@ -193,6 +299,7 @@ class Tag(Base):
     __tablename__ = "tags"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     call_id: Mapped[int] = mapped_column(ForeignKey("calls.id", ondelete="CASCADE"), index=True)
     recording_id: Mapped[int | None] = mapped_column(ForeignKey("recordings.id", ondelete="SET NULL"))
     channel: Mapped[str] = mapped_column(String(16), default="mix")
@@ -210,8 +317,13 @@ class Transcript(Base):
     __tablename__ = "transcripts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     call_id: Mapped[int] = mapped_column(ForeignKey("calls.id", ondelete="CASCADE"), index=True)
     leg: Mapped[RecordingLeg] = mapped_column(Enum(RecordingLeg, name="recording_leg_enum", native_enum=False))
+    source: Mapped[TranscriptSource] = mapped_column(
+        Enum(TranscriptSource, name="transcript_source_enum", native_enum=False),
+        default=TranscriptSource.WHISPER,
+    )
     language: Mapped[str | None] = mapped_column(String(16))
     text: Mapped[str] = mapped_column(Text, nullable=False)
     segments_json: Mapped[list | None] = mapped_column(JSONB)
@@ -229,6 +341,7 @@ class Job(Base):
     __table_args__ = (UniqueConstraint("job_type", "payload_hash", name="uq_job_type_payload"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     job_type: Mapped[JobType] = mapped_column(Enum(JobType, name="job_type_enum", native_enum=False), index=True)
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, name="job_status_enum", native_enum=False), default=JobStatus.PENDING, index=True

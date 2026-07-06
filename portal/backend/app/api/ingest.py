@@ -16,6 +16,7 @@ from app.schemas import IngestCompletePayload, IngestFailPayload, IngestStartPay
 from app.services.audio_meta import duration_from_recording_files
 from app.services.live_hub import live_hub
 from app.services.media_jobs import enqueue_job
+from app.services.tenancy import get_default_tenant_id
 from app.services.transcription import is_transcription_enabled
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -66,10 +67,13 @@ async def resolve_group_id(db: AsyncSession, near_addr: str | None, far_addr: st
 @router.post("/start", dependencies=[Depends(verify_ingest_token)])
 async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(get_db)):
     now = datetime.now(timezone.utc)
+    tenant_id = await get_default_tenant_id(db)
     lock_key = abs(hash(payload.refci)) % (2**31)
     await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
 
-    existing = await db.execute(select(Call).where(Call.refci == payload.refci).order_by(Call.id.desc()))
+    existing = await db.execute(
+        select(Call).where(Call.refci == payload.refci, Call.tenant_id == tenant_id).order_by(Call.id.desc())
+    )
     calls = existing.scalars().all()
 
     for call in calls:
@@ -84,6 +88,7 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
 
     group_id = await resolve_group_id(db, payload.near_addr, payload.far_addr)
     call = Call(
+        tenant_id=tenant_id,
         refci=payload.refci,
         session_id=payload.session,
         guid=payload.guid,
@@ -106,7 +111,10 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
 
 @router.post("/complete", dependencies=[Depends(verify_ingest_token)])
 async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Call).where(Call.refci == payload.refci).order_by(Call.id.desc()))
+    tenant_id = await get_default_tenant_id(db)
+    result = await db.execute(
+        select(Call).where(Call.refci == payload.refci, Call.tenant_id == tenant_id).order_by(Call.id.desc())
+    )
     call = result.scalars().first()
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
@@ -142,7 +150,7 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         if rec:
             rec.path_wav = rel_path
         else:
-            rec = Recording(call_id=call.id, leg=leg, path_wav=rel_path)
+            rec = Recording(tenant_id=tenant_id, call_id=call.id, leg=leg, path_wav=rel_path)
             db.add(rec)
         await db.flush()
         recording_ids[leg_name] = rec.id
@@ -171,7 +179,10 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
 
 @router.post("/fail", dependencies=[Depends(verify_ingest_token)])
 async def ingest_fail(payload: IngestFailPayload, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Call).where(Call.refci == payload.refci).order_by(Call.id.desc()))
+    tenant_id = await get_default_tenant_id(db)
+    result = await db.execute(
+        select(Call).where(Call.refci == payload.refci, Call.tenant_id == tenant_id).order_by(Call.id.desc())
+    )
     calls = [c for c in result.scalars().all() if c.status == CallStatus.RECORDING]
     if not calls:
         return {"status": "ignored", "refci": payload.refci}

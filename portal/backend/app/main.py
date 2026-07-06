@@ -1,14 +1,16 @@
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, calls, ingest, system, workers, ws
+from app.api import admin, auth, calls, ingest, ingest_v2, system, tenants, workers, ws
 from app.core.config import settings
 from app.core.database import async_session
 from app.services.bootstrap import bootstrap
 from app.services.call_status import repair_stuck_recording_calls, repair_stuck_transcribing_calls
+from app.services.retention import retention_sweep_loop
 from app.services.transcription import init_transcription_enabled
 
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +25,9 @@ async def lifespan(app: FastAPI):
         repaired += await repair_stuck_recording_calls(db)
         if repaired:
             await db.commit()
+    sweep_task = asyncio.create_task(retention_sweep_loop())
     yield
+    sweep_task.cancel()
 
 
 app = FastAPI(title="Call Recording Portal API", version="1.0.0", lifespan=lifespan)
@@ -38,6 +42,8 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(ingest.router, prefix="/api")
+app.include_router(ingest_v2.router, prefix="/api")
+app.include_router(tenants.router, prefix="/api")
 app.include_router(workers.router, prefix="/api")
 app.include_router(calls.router, prefix="/api")
 app.include_router(system.router, prefix="/api")

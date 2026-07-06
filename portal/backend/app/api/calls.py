@@ -1,12 +1,11 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.rbac import can_view_call, get_current_user, require_permission, scoped_call_filter, user_permissions
 from app.models import Call, CallStatus, Permission, RecordedExtension, Recording, RecordingLeg, Tag, Transcript
@@ -14,6 +13,7 @@ from app.schemas import (
     CallListResponse,
     CallOut,
     DashboardStats,
+    LegalHoldUpdate,
     LiveChannelOut,
     PeaksOut,
     RecordingOut,
@@ -22,7 +22,9 @@ from app.schemas import (
     TranscriptOut,
     TranscriptSearchResult,
 )
+from app.services.audit import record_audit
 from app.services.freeswitch import list_active_recording_channels
+from app.services.storage import get_storage
 
 router = APIRouter(tags=["calls"])
 
@@ -41,6 +43,7 @@ async def dashboard_stats(
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
     def call_filter(stmt):
+        stmt = stmt.where(Call.tenant_id == user.tenant_id)
         if group_id is not None:
             return stmt.where(Call.group_id == group_id)
         return stmt
@@ -59,7 +62,11 @@ async def dashboard_stats(
             )
         ).scalar_one()
     extensions_enabled = (
-        await db.execute(select(func.count()).select_from(RecordedExtension).where(RecordedExtension.enabled.is_(True)))
+        await db.execute(
+            select(func.count())
+            .select_from(RecordedExtension)
+            .where(RecordedExtension.enabled.is_(True), RecordedExtension.tenant_id == user.tenant_id)
+        )
     ).scalar_one()
 
     return DashboardStats(
@@ -73,7 +80,11 @@ async def dashboard_stats(
 @router.get("/calls/live", response_model=list[CallOut])
 async def live_calls(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     group_id = await scoped_call_filter(user)
-    stmt = select(Call).where(Call.status == CallStatus.RECORDING).order_by(Call.started_at.desc())
+    stmt = (
+        select(Call)
+        .where(Call.status == CallStatus.RECORDING, Call.tenant_id == user.tenant_id)
+        .order_by(Call.started_at.desc())
+    )
     if group_id is not None:
         stmt = stmt.where(Call.group_id == group_id)
     result = await db.execute(stmt.options(selectinload(Call.transcripts)))
@@ -91,7 +102,11 @@ async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSess
         return [LiveChannelOut.model_validate(c) for c in channels]
 
     group_id = await scoped_call_filter(user)
-    stmt = select(Call).where(Call.status == CallStatus.RECORDING).order_by(Call.started_at.desc())
+    stmt = (
+        select(Call)
+        .where(Call.status == CallStatus.RECORDING, Call.tenant_id == user.tenant_id)
+        .order_by(Call.started_at.desc())
+    )
     if group_id is not None:
         stmt = stmt.where(Call.group_id == group_id)
     result = await db.execute(stmt)
@@ -130,7 +145,7 @@ async def list_calls(
     db: AsyncSession = Depends(get_db),
 ):
     group_id = await scoped_call_filter(user)
-    filters = []
+    filters = [Call.tenant_id == user.tenant_id]
     if group_id is not None:
         filters.append(Call.group_id == group_id)
     if q:
@@ -184,7 +199,11 @@ async def list_calls(
 
 @router.get("/calls/{call_id}", response_model=CallOut)
 async def get_call(call_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Call).options(selectinload(Call.transcripts)).where(Call.id == call_id))
+    result = await db.execute(
+        select(Call)
+        .options(selectinload(Call.transcripts))
+        .where(Call.id == call_id, Call.tenant_id == user.tenant_id)
+    )
     call = result.scalar_one_or_none()
     if not call or not can_view_call(user, call.group_id):
         raise HTTPException(status_code=404, detail="Call not found")
@@ -193,7 +212,9 @@ async def get_call(call_id: int, user=Depends(get_current_user), db: AsyncSessio
 
 @router.get("/calls/{call_id}/recordings", response_model=list[RecordingOut])
 async def list_recordings(call_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    call = (await db.execute(select(Call).where(Call.id == call_id))).scalar_one_or_none()
+    call = (
+        await db.execute(select(Call).where(Call.id == call_id, Call.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
     if not call or not can_view_call(user, call.group_id):
         raise HTTPException(status_code=404, detail="Call not found")
     result = await db.execute(select(Recording).where(Recording.call_id == call_id))
@@ -210,7 +231,7 @@ async def get_peaks(recording_id: int, user=Depends(get_current_user), db: Async
     result = await db.execute(
         select(Recording, Call)
         .join(Call, Recording.call_id == Call.id)
-        .where(Recording.id == recording_id)
+        .where(Recording.id == recording_id, Call.tenant_id == user.tenant_id)
     )
     row = result.first()
     if not row:
@@ -225,12 +246,10 @@ async def get_peaks(recording_id: int, user=Depends(get_current_user), db: Async
 
 @router.get("/recordings/{recording_id}/audio")
 async def stream_audio(recording_id: int, request: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    import os
-
     result = await db.execute(
         select(Recording, Call)
         .join(Call, Recording.call_id == Call.id)
-        .where(Recording.id == recording_id)
+        .where(Recording.id == recording_id, Call.tenant_id == user.tenant_id)
     )
     row = result.first()
     if not row:
@@ -239,16 +258,39 @@ async def stream_audio(recording_id: int, request: Request, user=Depends(get_cur
     if not can_view_call(user, call.group_id):
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    rel = rec.path_m4a or rec.path_wav
-    if not rel:
+    if rec.media_path:
+        key, media_type = rec.media_path, rec.media_mime or "application/octet-stream"
+    elif rec.path_m4a:
+        key, media_type = rec.path_m4a, "audio/mp4"
+    elif rec.path_wav:
+        key, media_type = rec.path_wav, "audio/wav"
+    else:
         raise HTTPException(status_code=404, detail="Audio not available")
 
-    full_path = os.path.join(settings.recordings_dir, rel.lstrip("/"))
-    if not os.path.isfile(full_path):
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="recording.play",
+        user=user,
+        resource_type="recording",
+        resource_id=recording_id,
+        detail={"call_id": call.id, "refci": call.refci},
+        request=request,
+        commit=True,
+    )
+
+    storage = get_storage()
+    presigned = storage.presigned_url(key, media_type)
+    if presigned:
+        # S3-backed media never proxies through the API; the audio element
+        # follows the redirect and lets S3 handle range requests.
+        return RedirectResponse(presigned, status_code=307)
+
+    full_path = storage.local_path(key)
+    if not full_path:
         raise HTTPException(status_code=404, detail="Audio file missing on disk")
 
-    file_size = os.path.getsize(full_path)
-    media_type = "audio/mp4" if full_path.endswith(".m4a") else "audio/wav"
+    file_size = storage.size(key)
     range_header = request.headers.get("range")
 
     if range_header:
@@ -265,31 +307,23 @@ async def stream_audio(recording_id: int, request: Request, user=Depends(get_cur
             raise HTTPException(status_code=416, detail="Range not satisfiable")
 
         length = end - start + 1
-
-        def iter_file():
-            with open(full_path, "rb") as f:
-                f.seek(start)
-                remaining = length
-                while remaining > 0:
-                    chunk = f.read(min(65536, remaining))
-                    if not chunk:
-                        break
-                    remaining -= len(chunk)
-                    yield chunk
-
         headers = {
             "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Accept-Ranges": "bytes",
             "Content-Length": str(length),
         }
-        return StreamingResponse(iter_file(), status_code=206, media_type=media_type, headers=headers)
+        return StreamingResponse(
+            storage.iter_range(key, start, length), status_code=206, media_type=media_type, headers=headers
+        )
 
     return FileResponse(full_path, media_type=media_type, headers={"Accept-Ranges": "bytes"})
 
 
 @router.get("/calls/{call_id}/tags", response_model=list[TagOut])
 async def list_tags(call_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    call = (await db.execute(select(Call).where(Call.id == call_id))).scalar_one_or_none()
+    call = (
+        await db.execute(select(Call).where(Call.id == call_id, Call.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
     if not call or not can_view_call(user, call.group_id):
         raise HTTPException(status_code=404, detail="Call not found")
     result = await db.execute(select(Tag).where(Tag.call_id == call_id).order_by(Tag.start_s))
@@ -298,10 +332,13 @@ async def list_tags(call_id: int, user=Depends(get_current_user), db: AsyncSessi
 
 @router.post("/tags", response_model=TagOut, dependencies=[Depends(require_permission(Permission.MANAGE_TAGS.value))])
 async def create_tag(body: TagCreate, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    call = (await db.execute(select(Call).where(Call.id == body.call_id))).scalar_one_or_none()
+    call = (
+        await db.execute(select(Call).where(Call.id == body.call_id, Call.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
     if not call or not can_view_call(user, call.group_id):
         raise HTTPException(status_code=404, detail="Call not found")
     tag = Tag(
+        tenant_id=user.tenant_id,
         call_id=body.call_id,
         recording_id=body.recording_id,
         channel=body.channel,
@@ -318,7 +355,9 @@ async def create_tag(body: TagCreate, user=Depends(get_current_user), db: AsyncS
 
 @router.delete("/tags/{tag_id}", dependencies=[Depends(require_permission(Permission.MANAGE_TAGS.value))])
 async def delete_tag(tag_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    tag = (await db.execute(select(Tag).where(Tag.id == tag_id))).scalar_one_or_none()
+    tag = (
+        await db.execute(select(Tag).where(Tag.id == tag_id, Tag.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     call = (await db.execute(select(Call).where(Call.id == tag.call_id))).scalar_one_or_none()
@@ -349,7 +388,7 @@ async def search_transcripts(
             func.ts_headline("english", Transcript.text, ts_query).label("headline"),
         )
         .join(Call, Transcript.call_id == Call.id)
-        .where(Transcript.search_tsv.op("@@")(ts_query))
+        .where(Transcript.search_tsv.op("@@")(ts_query), Call.tenant_id == user.tenant_id)
     )
     if group_id is not None:
         stmt = stmt.where(Call.group_id == group_id)
@@ -377,8 +416,44 @@ async def list_transcripts(
     user=Depends(require_permission(Permission.VIEW_TRANSCRIPTS.value)),
     db: AsyncSession = Depends(get_db),
 ):
-    call = (await db.execute(select(Call).where(Call.id == call_id))).scalar_one_or_none()
+    call = (
+        await db.execute(select(Call).where(Call.id == call_id, Call.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
     if not call or not can_view_call(user, call.group_id):
         raise HTTPException(status_code=404, detail="Call not found")
     result = await db.execute(select(Transcript).where(Transcript.call_id == call_id))
     return result.scalars().all()
+
+
+@router.patch("/calls/{call_id}/legal-hold", response_model=CallOut)
+async def set_legal_hold(
+    call_id: int,
+    body: LegalHoldUpdate,
+    request: Request,
+    user=Depends(require_permission(Permission.MANAGE_RETENTION.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Call)
+        .options(selectinload(Call.transcripts))
+        .where(Call.id == call_id, Call.tenant_id == user.tenant_id)
+    )
+    call = result.scalar_one_or_none()
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+    call.legal_hold = body.legal_hold
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="call.legal_hold" if body.legal_hold else "call.legal_hold_released",
+        user=user,
+        resource_type="call",
+        resource_id=call.id,
+        detail={"refci": call.refci},
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(call, ["transcripts"])
+    return CallOut.model_validate(call, from_attributes=True).model_copy(
+        update={"sentiment": call_sentiment(call)}
+    )
