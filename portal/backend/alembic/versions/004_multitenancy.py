@@ -115,7 +115,7 @@ def upgrade() -> None:
     # Cloud-source and records-management columns.
     op.add_column("calls", sa.Column("external_id", sa.String(256)))
     op.create_index("ix_calls_external_id", "calls", ["external_id"])
-    op.add_column("calls", sa.Column("source", sa.String(16), nullable=False, server_default="cucm"))
+    op.add_column("calls", sa.Column("source", sa.String(16), nullable=False, server_default="CUCM"))
     op.create_index("ix_calls_source", "calls", ["source"])
     op.add_column("calls", sa.Column("legal_hold", sa.Boolean(), nullable=False, server_default=sa.text("false")))
     op.create_index("ix_calls_legal_hold", "calls", ["legal_hold"])
@@ -124,7 +124,7 @@ def upgrade() -> None:
     op.add_column("recordings", sa.Column("media_mime", sa.String(64)))
 
     op.add_column(
-        "transcripts", sa.Column("source", sa.String(16), nullable=False, server_default="whisper")
+        "transcripts", sa.Column("source", sa.String(16), nullable=False, server_default="WHISPER")
     )
 
     op.add_column("users", sa.Column("is_superadmin", sa.Boolean(), nullable=False, server_default=sa.text("false")))
