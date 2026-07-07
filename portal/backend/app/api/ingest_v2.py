@@ -36,6 +36,7 @@ from app.models import (
 from app.schemas import (
     ConnectorHeartbeat,
     V2CallComplete,
+    V2CallFail,
     V2CallStart,
     V2TranscriptCreate,
 )
@@ -287,6 +288,8 @@ async def v2_create_transcript(
         language=payload.language,
         text=payload.text,
         segments_json=payload.segments_json,
+        sentiment=payload.sentiment,
+        sentiment_score=payload.sentiment_score,
     )
     db.add(transcript)
     await db.flush()
@@ -297,6 +300,30 @@ async def v2_create_transcript(
     )
     await db.commit()
     return {"status": "ok", "transcript_id": transcript.id}
+
+
+@router.post("/ingest/calls/fail")
+async def v2_call_fail(
+    payload: V2CallFail,
+    cred: ConnectorCredential = Depends(get_connector),
+    db: AsyncSession = Depends(get_db),
+):
+    call = await _find_call(db, cred.tenant_id, payload.refci, payload.external_id)
+    if call is None or call.status not in (CallStatus.RECORDING, CallStatus.PROCESSING):
+        return {"status": "ignored"}
+    now = datetime.now(timezone.utc)
+    call.status = CallStatus.FAILED
+    call.status_message = f"Connector: {payload.reason or 'reported failure'}"
+    call.ended_at = now
+    if payload.duration_s is not None:
+        call.duration_s = max(0.0, payload.duration_s)
+    elif call.started_at:
+        call.duration_s = max(0.0, (now - call.started_at).total_seconds())
+    await db.commit()
+    await live_hub.broadcast(
+        {"event": "call_completed", "call_id": call.id, "refci": call.refci}, cred.tenant_id
+    )
+    return {"status": "ok", "call_id": call.id}
 
 
 @router.post("/connector/heartbeat")

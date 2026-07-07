@@ -370,6 +370,15 @@ class V2TranscriptCreate(BaseModel):
     language: str | None = None
     text: str
     segments_json: list | None = None
+    sentiment: str | None = None
+    sentiment_score: float | None = None
+
+
+class V2CallFail(BaseModel):
+    refci: str | None = None
+    external_id: str | None = None
+    reason: str | None = None
+    duration_s: float | None = None
 
 
 class ConnectorHeartbeat(BaseModel):
