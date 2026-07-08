@@ -26,14 +26,49 @@ import {
   IconHeartbeat,
   IconMicrophone,
   IconPhone,
+  IconPlugConnected,
   IconRefresh,
   IconServer,
   IconX,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
-import { api, SystemStatus } from '../api/client';
+import { api, ConnectorHealth, SystemStatus } from '../api/client';
 import { containerStateColor, LogViewer, overallColor, StageBadge } from '../components/health/LogViewer';
+import { SourceBadge } from '../components/SourceBadge';
 import classes from '../components/health/LogViewer.module.css';
+
+function connectorStatusColor(status: ConnectorHealth['status']): string {
+  switch (status) {
+    case 'healthy':
+      return 'teal';
+    case 'stale':
+      return 'orange';
+    default:
+      return 'gray';
+  }
+}
+
+function connectorStatusLabel(status: ConnectorHealth['status']): string {
+  switch (status) {
+    case 'healthy':
+      return 'Healthy';
+    case 'stale':
+      return 'Stale';
+    case 'unseen':
+      return 'Never connected';
+    case 'disabled':
+      return 'Disabled';
+    default:
+      return status;
+  }
+}
+
+function formatStats(stats: Record<string, unknown> | null): string {
+  if (!stats || Object.keys(stats).length === 0) return '—';
+  return Object.entries(stats)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(' · ');
+}
 
 function formatTime(value: string | null | undefined) {
   if (!value) return '—';
@@ -194,6 +229,66 @@ export function HealthStatusPage() {
           ))}
         </SimpleGrid>
       </div>
+
+      <Paper withBorder p="md" radius="md">
+        <Group mb="md" gap="xs">
+          <ThemeIcon variant="light" color="indigo">
+            <IconPlugConnected size={18} />
+          </ThemeIcon>
+          <Text fw={600}>Connectors</Text>
+        </Group>
+        {status.connectors.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            No connectors registered for this tenant yet. On-prem CUCM edge stacks and the Webex
+            connector both authenticate with a connector credential issued from the platform admin.
+          </Text>
+        ) : (
+          <Table striped highlightOnHover withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Name</Table.Th>
+                <Table.Th>Kind</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th>Last seen</Table.Th>
+                <Table.Th>Version</Table.Th>
+                <Table.Th>Stats</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {status.connectors.map((c) => (
+                <Table.Tr key={c.id}>
+                  <Table.Td>
+                    <Text size="sm" fw={500} td={!c.enabled ? 'line-through' : undefined}>
+                      {c.name}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <SourceBadge source={c.kind} />
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge color={connectorStatusColor(c.status)} variant="light" size="sm">
+                      {connectorStatusLabel(c.status)}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs">{formatTime(c.last_seen_at)}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed">
+                      {c.version || '—'}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed" lineClamp={1}>
+                      {formatStats(c.stats)}
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Paper>
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
         <Paper withBorder p="md" radius="md">

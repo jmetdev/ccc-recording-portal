@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, Group, Select, Stack, Table, TextInput, Title, Tooltip } from '@mantine/core';
 import { api } from '../api/client';
 import { CallStatusBadge } from '../components/CallStatusBadge';
+import { SourceBadge } from '../components/SourceBadge';
 import { useCallPlayer } from '../components/CallPlayerContext';
 
 function formatDuration(seconds: number | null): string {
@@ -65,6 +66,7 @@ export function CallSearchPage() {
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Started</Table.Th>
+            <Table.Th>Source</Table.Th>
             <Table.Th>Near</Table.Th>
             <Table.Th>Far</Table.Th>
             <Table.Th>Duration</Table.Th>
@@ -75,12 +77,15 @@ export function CallSearchPage() {
         <Table.Tbody>
           {isLoading && (
             <Table.Tr>
-              <Table.Td colSpan={6}>Loading...</Table.Td>
+              <Table.Td colSpan={7}>Loading...</Table.Td>
             </Table.Tr>
           )}
           {data?.items.map((c) => (
             <Table.Tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => openCall(c.id)}>
               <Table.Td>{new Date(c.started_at).toLocaleString()}</Table.Td>
+              <Table.Td>
+                <SourceBadge source={c.source} />
+              </Table.Td>
               <Table.Td>{c.near_name || c.near_addr}</Table.Td>
               <Table.Td>{c.far_name || c.far_addr}</Table.Td>
               <Table.Td>{formatDuration(c.duration_s)}</Table.Td>

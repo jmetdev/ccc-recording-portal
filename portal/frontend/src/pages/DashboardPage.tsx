@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Anchor, Card, Grid, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
 import { api, LiveChannel } from '../api/client';
 import { CallStatusBadge } from '../components/CallStatusBadge';
+import { SourceBadge } from '../components/SourceBadge';
 import { useCallPlayer } from '../components/CallPlayerContext';
 
 function useLiveChannels(initial: LiveChannel[]) {
@@ -99,6 +100,7 @@ export function DashboardPage() {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Started</Table.Th>
+                <Table.Th>Source</Table.Th>
                 <Table.Th>Near</Table.Th>
                 <Table.Th>Far</Table.Th>
                 <Table.Th>Duration</Table.Th>
@@ -109,6 +111,9 @@ export function DashboardPage() {
               {recentCalls.items.map((c) => (
                 <Table.Tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => openCall(c.id)}>
                   <Table.Td>{new Date(c.started_at).toLocaleString()}</Table.Td>
+                  <Table.Td>
+                    <SourceBadge source={c.source} />
+                  </Table.Td>
                   <Table.Td>{c.near_name || c.near_addr || '—'}</Table.Td>
                   <Table.Td>{c.far_name || c.far_addr || '—'}</Table.Td>
                   <Table.Td>{formatDuration(c.duration_s)}</Table.Td>

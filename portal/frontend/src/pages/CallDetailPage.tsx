@@ -20,6 +20,7 @@ import {
 import { IconArrowLeft, IconPlayerPause, IconPlayerPlay, IconTag } from '@tabler/icons-react';
 import { api, hasPermission, recordingHasMedia } from '../api/client';
 import { CallStatusBadge } from '../components/CallStatusBadge';
+import { SourceBadge } from '../components/SourceBadge';
 import { useAuth } from '../auth/AuthContext';
 import { DualChannelWaveform } from '../components/DualChannelWaveform';
 import { ConversationTranscript } from '../components/ConversationTranscript';
@@ -152,6 +153,7 @@ export function CallDetailPage() {
           <Box>
             <Group gap="xs" wrap="wrap">
               <Title order={3}>Call #{callId}</Title>
+              {call.data?.source && <SourceBadge source={call.data.source} />}
               {call.data?.refci && <Badge variant="light">{call.data.refci}</Badge>}
               {status === 'failed' && call.data?.status_message ? (
                 <Tooltip label={call.data.status_message} maw={360} multiline withArrow>

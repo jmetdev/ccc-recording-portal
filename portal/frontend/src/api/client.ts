@@ -23,6 +23,8 @@ export type Call = {
   duration_s: number | null;
   status: 'recording' | 'processing' | 'transcribing' | 'completed' | 'failed' | string;
   status_message?: string | null;
+  source: 'cucm' | 'webex' | string;
+  legal_hold: boolean;
   sentiment: string | null;
   group_id: number | null;
 };
@@ -89,6 +91,17 @@ export type FailedCallRow = {
   message: string;
 };
 
+export type ConnectorHealth = {
+  id: number;
+  name: string;
+  kind: 'cucm' | 'webex' | string;
+  enabled: boolean;
+  status: 'healthy' | 'stale' | 'unseen' | 'disabled';
+  last_seen_at: string | null;
+  version: string | null;
+  stats: Record<string, unknown> | null;
+};
+
 export type SystemStatus = {
   checked_at: string;
   overall: 'healthy' | 'degraded' | 'critical';
@@ -98,6 +111,7 @@ export type SystemStatus = {
     recent_failures: number;
   };
   containers: ContainerHealth[];
+  connectors: ConnectorHealth[];
   services: {
     database: { ok: boolean; latency_ms?: number; error?: string };
     recordings: {

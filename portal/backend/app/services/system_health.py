@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models import Call, CallStatus, Job, JobStatus
+from app.models import Call, CallStatus, ConnectorCredential, Job, JobStatus
 from app.services.freeswitch import list_active_recording_channels
 from app.services.transcription import (
     is_transcription_enabled,
@@ -19,6 +19,10 @@ from app.services.transcription import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Cloud connector heartbeats fire every 60-300s depending on kind; 10 minutes
+# gives headroom for a slow poll cycle before flagging a connector as stale.
+CONNECTOR_STALE_AFTER_S = 600
 
 LOG_SOURCES: dict[str, str | None] = {
     "ingest": ".bib-hook.log",
@@ -140,6 +144,42 @@ async def check_freeswitch() -> dict[str, Any]:
     }
 
 
+async def fetch_connector_health(db: AsyncSession, tenant_id: int) -> list[dict[str, Any]]:
+    """Per-tenant connector inventory with a computed liveness status.
+
+    Status is 'disabled' for a revoked credential, 'unseen' if it has never
+    heartbeated, else 'healthy'/'stale' by how long ago the last one landed.
+    """
+    result = await db.execute(
+        select(ConnectorCredential)
+        .where(ConnectorCredential.tenant_id == tenant_id)
+        .order_by(ConnectorCredential.created_at)
+    )
+    now = datetime.now(timezone.utc)
+    rows: list[dict[str, Any]] = []
+    for cred in result.scalars().all():
+        if not cred.enabled:
+            status = "disabled"
+        elif cred.last_seen_at is None:
+            status = "unseen"
+        else:
+            age_s = (now - cred.last_seen_at).total_seconds()
+            status = "healthy" if age_s <= CONNECTOR_STALE_AFTER_S else "stale"
+        rows.append(
+            {
+                "id": cred.id,
+                "name": cred.name,
+                "kind": cred.kind.value,
+                "enabled": cred.enabled,
+                "status": status,
+                "last_seen_at": cred.last_seen_at,
+                "version": cred.version,
+                "stats": cred.stats_json,
+            }
+        )
+    return rows
+
+
 async def fetch_recent_failures(db: AsyncSession, limit: int = 25) -> list[dict[str, Any]]:
     call_result = await db.execute(
         select(Call)
@@ -232,20 +272,22 @@ async def fetch_log_lines(source: str, lines: int = 100) -> dict[str, Any]:
     return {"source": source, "lines": log_lines if log_lines else ["(empty log)"]}
 
 
-async def build_system_status(db: AsyncSession) -> dict[str, Any]:
-    containers, db_health, fs_health = await asyncio.gather(
+async def build_system_status(db: AsyncSession, tenant_id: int) -> dict[str, Any]:
+    containers, db_health, fs_health, connectors = await asyncio.gather(
         inspect_containers(),
         check_database(db),
         check_freeswitch(),
+        fetch_connector_health(db, tenant_id),
     )
     recordings = check_recordings_mount()
     failures = await fetch_recent_failures(db)
 
     healthy_count = sum(1 for c in containers if c["state"] == "healthy")
+    connector_issue = any(c["status"] in ("stale", "unseen") for c in connectors if c["enabled"])
     overall = "healthy"
     if any(c["state"] == "down" for c in containers) or not db_health.get("ok"):
         overall = "critical"
-    elif any(c["state"] in ("unhealthy", "starting") for c in containers) or failures:
+    elif any(c["state"] in ("unhealthy", "starting") for c in containers) or failures or connector_issue:
         overall = "degraded"
 
     whisper_running = any(
@@ -262,6 +304,7 @@ async def build_system_status(db: AsyncSession) -> dict[str, Any]:
             "recent_failures": len(failures),
         },
         "containers": containers,
+        "connectors": connectors,
         "services": {
             "database": db_health,
             "recordings": recordings,

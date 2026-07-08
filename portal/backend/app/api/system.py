@@ -13,7 +13,7 @@ router = APIRouter(prefix="/system", tags=["system"])
     dependencies=[Depends(require_permission(Permission.MANAGE_USERS.value))],
 )
 async def system_status(user=Depends(get_current_user), db=Depends(get_db)):
-    return await build_system_status(db)
+    return await build_system_status(db, user.tenant_id)
 
 
 @router.get(
