@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Grid, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
+import { Link } from 'react-router-dom';
+import { Anchor, Card, Grid, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
 import { api, LiveChannel } from '../api/client';
 import { CallStatusBadge } from '../components/CallStatusBadge';
+import { useCallPlayer } from '../components/CallPlayerContext';
 
 function useLiveChannels(initial: LiveChannel[]) {
   const [live, setLive] = useState<LiveChannel[]>(initial);
@@ -33,6 +35,8 @@ function formatDuration(seconds: number | null | undefined) {
 }
 
 export function DashboardPage() {
+  const { openCall } = useCallPlayer();
+
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: api.dashboardStats,
@@ -43,6 +47,14 @@ export function DashboardPage() {
     queryKey: ['live-channels'],
     queryFn: api.freeswitchLiveChannels,
     refetchInterval: 5000,
+  });
+
+  const { data: recentCalls, isLoading: recentLoading } = useQuery({
+    queryKey: ['recent-calls'],
+    // No filters: same ordering (started_at desc) as Call Search, just capped
+    // to a handful so the dashboard proves data exists without a second click.
+    queryFn: () => api.listCalls({ page: '1', page_size: '8' }),
+    refetchInterval: 30000,
   });
 
   const live = useLiveChannels(channels);
@@ -67,6 +79,48 @@ export function DashboardPage() {
           </Grid.Col>
         ))}
       </Grid>
+
+      <Card withBorder padding="lg" radius="md">
+        <Group justify="space-between" mb="md">
+          <Title order={4}>Recent Calls</Title>
+          <Anchor component={Link} to="/calls" size="sm">
+            View all calls ({stats?.calls_total ?? 0}) →
+          </Anchor>
+        </Group>
+        {recentLoading ? (
+          <Loader size="sm" />
+        ) : !recentCalls || recentCalls.items.length === 0 ? (
+          <Text c="dimmed">
+            No calls recorded yet. Once a call completes on a connected extension or Webex line, it
+            will appear here.
+          </Text>
+        ) : (
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Started</Table.Th>
+                <Table.Th>Near</Table.Th>
+                <Table.Th>Far</Table.Th>
+                <Table.Th>Duration</Table.Th>
+                <Table.Th>Status</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {recentCalls.items.map((c) => (
+                <Table.Tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => openCall(c.id)}>
+                  <Table.Td>{new Date(c.started_at).toLocaleString()}</Table.Td>
+                  <Table.Td>{c.near_name || c.near_addr || '—'}</Table.Td>
+                  <Table.Td>{c.far_name || c.far_addr || '—'}</Table.Td>
+                  <Table.Td>{formatDuration(c.duration_s)}</Table.Td>
+                  <Table.Td>
+                    <CallStatusBadge status={c.status} />
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Card>
 
       <Card withBorder padding="lg" radius="md">
         <Group justify="space-between" mb="md">
