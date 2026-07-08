@@ -1,0 +1,47 @@
+name: Deploy portal-dev
+
+# Deploys to the portal-dev host (srv1608468) via its self-hosted runner.
+# The deployment checkout at /opt/ccc-recording-portal keeps its untracked
+# state (.env, runtime/recordings) and is fast-forwarded from the runner's
+# workspace, so the server never needs GitHub credentials of its own.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: portal-dev-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, portal-dev]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync deployment checkout
+        run: |
+          git -C /opt/ccc-recording-portal fetch "$GITHUB_WORKSPACE" HEAD
+          git -C /opt/ccc-recording-portal checkout -B main FETCH_HEAD
+
+      - name: Build and deploy
+        run: |
+          cd /opt/ccc-recording-portal
+          docker compose up -d --build db backend frontend
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/api/health >/dev/null; then
+              echo "backend healthy"
+              curl -s -o /dev/null -w "frontend: HTTP %{http_code}\n" http://localhost:80/
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "backend failed health check"
+          docker logs portal-backend --tail 50
+          exit 1

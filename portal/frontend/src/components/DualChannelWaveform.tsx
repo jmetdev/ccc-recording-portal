@@ -3,12 +3,14 @@ import { ActionIcon, Box, Group, Stack, Text } from '@mantine/core';
 import { IconVolume, IconVolumeOff } from '@tabler/icons-react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { authHeaders, Recording, Tag } from '../api/client';
+import { authHeaders, Recording, recordingHasMedia, Tag } from '../api/client';
 
 export const NEAR_COLOR = '#2b87d4';
 export const FAR_COLOR = '#e8590c';
+export const MIX_COLOR = '#7048e8';
 const NEAR_PROGRESS = '#195184';
 const FAR_PROGRESS = '#a63f08';
+const MIX_PROGRESS = '#4c2fa8';
 const MUTED_WAVE_COLOR = '#adb5bd';
 const MUTED_PROGRESS_COLOR = '#868e96';
 
@@ -47,6 +49,9 @@ type Props = {
   nearRecording: Recording | null;
   farRecording: Recording | null;
   stereoRecording: Recording | null;
+  /** Cloud-source single-channel recording (e.g. Webex muxed MP3); streams
+   * cannot be separated, so it renders as one waveform without channel mutes. */
+  mixRecording?: Recording | null;
   audioUrl: (recordingId: number) => string;
   nearLabel: string;
   farLabel: string;
@@ -109,6 +114,7 @@ export function DualChannelWaveform({
   nearRecording,
   farRecording,
   stereoRecording,
+  mixRecording = null,
   audioUrl,
   nearLabel,
   farLabel,
@@ -139,12 +145,28 @@ export function DualChannelWaveform({
   // The stereo mix is one audio element with near on L / far on R, so it plays
   // in perfect sync and supports per-channel mute via a channel splitter.
   // Separate leg files are only a fallback for calls without a stereo mix.
-  const stereoMode = !!stereoRecording?.path_m4a;
-  const dualMono = !stereoMode && !!(nearRecording?.path_m4a && farRecording?.path_m4a);
+  // A 'mix' recording (cloud sources) is a single inseparable channel and
+  // renders as one waveform without per-channel controls.
+  const stereoMode = !!(stereoRecording && recordingHasMedia(stereoRecording));
+  const dualMono =
+    !stereoMode &&
+    !!(nearRecording && recordingHasMedia(nearRecording)) &&
+    !!(farRecording && recordingHasMedia(farRecording));
+  const mixMode = !stereoMode && !dualMono && !!(mixRecording && recordingHasMedia(mixRecording));
   const singleRecording = !stereoMode && !dualMono
-    ? (farRecording?.path_m4a ? farRecording : nearRecording?.path_m4a ? nearRecording : null)
+    ? mixMode
+      ? mixRecording
+      : farRecording && recordingHasMedia(farRecording)
+        ? farRecording
+        : nearRecording && recordingHasMedia(nearRecording)
+          ? nearRecording
+          : null
     : null;
-  const singleLeg: 'near' | 'far' = singleRecording === nearRecording ? 'near' : 'far';
+  const singleLeg: 'near' | 'far' | 'mix' = mixMode
+    ? 'mix'
+    : singleRecording === nearRecording
+      ? 'near'
+      : 'far';
 
   const stereoUrl = useAudioBlobUrl(stereoMode ? stereoRecording!.id : null, audioUrl);
   const nearUrl = useAudioBlobUrl(dualMono ? nearRecording!.id : null, audioUrl);
@@ -330,8 +352,9 @@ export function DualChannelWaveform({
       url: singleUrl,
       height: 96,
       barWidth: 2,
-      waveColor: singleLeg === 'near' ? NEAR_COLOR : FAR_COLOR,
-      progressColor: singleLeg === 'near' ? NEAR_PROGRESS : FAR_PROGRESS,
+      waveColor: singleLeg === 'mix' ? MIX_COLOR : singleLeg === 'near' ? NEAR_COLOR : FAR_COLOR,
+      progressColor:
+        singleLeg === 'mix' ? MIX_PROGRESS : singleLeg === 'near' ? NEAR_PROGRESS : FAR_PROGRESS,
       normalize: true,
       plugins: [regions],
     });
@@ -407,22 +430,34 @@ export function DualChannelWaveform({
 
   return (
     <Stack gap={4}>
-      <Group gap="lg" wrap="nowrap">
-        <ChannelHeader
-          label={`Near · ${nearLabel}`}
-          color={NEAR_COLOR}
-          muted={nearMuted}
-          onToggle={() => setNearMuted((v) => !v)}
-          available={nearAvailable}
-        />
-        <ChannelHeader
-          label={`Far · ${farLabel}`}
-          color={FAR_COLOR}
-          muted={farMuted}
-          onToggle={() => setFarMuted((v) => !v)}
-          available={farAvailable}
-        />
-      </Group>
+      {mixMode ? (
+        <Group gap={6}>
+          <Box w={10} h={10} style={{ borderRadius: 3, background: MIX_COLOR }} />
+          <Text size="xs" fw={600}>
+            Mixed · {nearLabel} + {farLabel}
+          </Text>
+          <Text size="xs" c="dimmed">
+            (single-channel recording — parties cannot be separated)
+          </Text>
+        </Group>
+      ) : (
+        <Group gap="lg" wrap="nowrap">
+          <ChannelHeader
+            label={`Near · ${nearLabel}`}
+            color={NEAR_COLOR}
+            muted={nearMuted}
+            onToggle={() => setNearMuted((v) => !v)}
+            available={nearAvailable}
+          />
+          <ChannelHeader
+            label={`Far · ${farLabel}`}
+            color={FAR_COLOR}
+            muted={farMuted}
+            onToggle={() => setFarMuted((v) => !v)}
+            available={farAvailable}
+          />
+        </Group>
+      )}
       {dualMono ? (
         <Stack gap={6}>
           <Box ref={nearContainerRef} style={{ height: 56, minHeight: 56 }} />

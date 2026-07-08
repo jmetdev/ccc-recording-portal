@@ -32,8 +32,16 @@ export type Recording = {
   call_id: number;
   leg: string;
   path_m4a: string | null;
+  media_path: string | null;
+  media_mime: string | null;
   has_peaks: boolean;
 };
+
+/** Playable media exists: connector-fed rows set media_path, the legacy
+ * on-host pipeline sets path_m4a after transcode. */
+export function recordingHasMedia(r: Recording): boolean {
+  return !!(r.media_path || r.path_m4a);
+}
 
 export type LiveChannel = {
   uuid: string;

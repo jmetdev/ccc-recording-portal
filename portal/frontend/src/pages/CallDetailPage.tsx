@@ -18,7 +18,7 @@ import {
   Tooltip,
 } from '@mantine/core';
 import { IconArrowLeft, IconPlayerPause, IconPlayerPlay, IconTag } from '@tabler/icons-react';
-import { api, hasPermission } from '../api/client';
+import { api, hasPermission, recordingHasMedia } from '../api/client';
 import { CallStatusBadge } from '../components/CallStatusBadge';
 import { useAuth } from '../auth/AuthContext';
 import { DualChannelWaveform } from '../components/DualChannelWaveform';
@@ -69,7 +69,7 @@ export function CallDetailPage() {
     enabled: callId != null,
     refetchInterval: (query) => {
       const items = query.state.data ?? [];
-      const pending = items.length === 0 || items.some((r) => r.path_m4a == null);
+      const pending = items.length === 0 || items.some((r) => !recordingHasMedia(r));
       return pending ? 3000 : false;
     },
   });
@@ -88,17 +88,20 @@ export function CallDetailPage() {
   });
 
   const items = recordings.data ?? [];
-  const nearRecording = items.find((r) => r.leg === 'near' && r.path_m4a) ?? null;
-  const farRecording = items.find((r) => r.leg === 'far' && r.path_m4a) ?? null;
-  const stereoRecording = items.find((r) => r.leg === 'stereo' && r.path_m4a) ?? null;
-  const hasAudio = !!(nearRecording || farRecording || stereoRecording);
+  const nearRecording = items.find((r) => r.leg === 'near' && recordingHasMedia(r)) ?? null;
+  const farRecording = items.find((r) => r.leg === 'far' && recordingHasMedia(r)) ?? null;
+  const stereoRecording = items.find((r) => r.leg === 'stereo' && recordingHasMedia(r)) ?? null;
+  // Cloud sources (Webex) deliver one muxed single-channel file.
+  const mixRecording = items.find((r) => r.leg === 'mix' && recordingHasMedia(r)) ?? null;
+  const hasAudio = !!(nearRecording || farRecording || stereoRecording || mixRecording);
 
   const tagRecordingId = useMemo(() => {
     if (stereoRecording) return stereoRecording.id;
+    if (mixRecording) return mixRecording.id;
     if (farRecording) return farRecording.id;
     if (nearRecording) return nearRecording.id;
     return null;
-  }, [stereoRecording, farRecording, nearRecording]);
+  }, [stereoRecording, mixRecording, farRecording, nearRecording]);
 
   const togglePlay = useCallback(() => {
     if (playing) {
@@ -181,6 +184,7 @@ export function CallDetailPage() {
               nearRecording={nearRecording}
               farRecording={farRecording}
               stereoRecording={stereoRecording}
+              mixRecording={mixRecording}
               audioUrl={api.audioUrl}
               nearLabel={nearLabel}
               farLabel={farLabel}
