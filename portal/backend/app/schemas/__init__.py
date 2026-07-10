@@ -388,3 +388,51 @@ class ConnectorHeartbeat(BaseModel):
 
 class LegalHoldUpdate(BaseModel):
     legal_hold: bool
+
+
+# --- Tenant self-service ---
+
+
+class TenantSettingsOut(BaseModel):
+    name: str
+    slug: str
+    retention_days: int | None
+
+
+class TenantSettingsUpdate(BaseModel):
+    # Explicit null clears the policy (retain forever); omitted = unchanged.
+    retention_days: int | None = Field(default=None, ge=1, le=36500)
+
+
+class StorageSourceStat(BaseModel):
+    source: str
+    bytes: int
+    count: int
+
+
+class StorageMonthStat(BaseModel):
+    month: str  # YYYY-MM
+    bytes: int
+    count: int
+
+
+class LargestRecording(BaseModel):
+    recording_id: int
+    call_id: int
+    leg: str
+    bytes: int
+    started_at: datetime | None
+    near_name: str | None
+    far_name: str | None
+    source: str
+
+
+class StorageStats(BaseModel):
+    total_bytes: int
+    recording_count: int
+    avg_bytes: int
+    by_source: list[StorageSourceStat]
+    by_month: list[StorageMonthStat]
+    largest: list[LargestRecording]
+    # Only populated for admins.
+    storage_backend: str | None = None

@@ -1,0 +1,83 @@
+.layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 260px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .layout {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+  .rail {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.listPane {
+  background-color: #ffffff;
+  border: 1px solid #e9eaed;
+  border-radius: 12px;
+  overflow: hidden;
+  position: sticky;
+  top: 16px;
+}
+
+.listScroll {
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f1f3;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+
+.row:hover {
+  background-color: #f7f8fa;
+}
+
+.rowActive {
+  background-color: #eaf3fe;
+}
+
+.rowActive:hover {
+  background-color: #eaf3fe;
+}
+
+.playGlyph {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #1997e4;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rowMeta {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: #74777d;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 340px;
+  color: #74777d;
+}

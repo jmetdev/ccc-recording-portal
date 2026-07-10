@@ -10,18 +10,20 @@ const SENTIMENT_COLORS: Record<string, string> = {
   neutral: 'gray',
 };
 
-export function TranscriptionSearchPage() {
+export function SearchPage() {
   const { openCall } = useCallPlayer();
   const [q, setQ] = useState('');
   const [sentiment, setSentiment] = useState<string | null>(null);
   const [results, setResults] = useState<TranscriptSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
 
   const search = async () => {
     if (!q.trim()) return;
     setLoading(true);
     try {
       setResults(await api.searchTranscripts(q, sentiment || undefined));
+      setSearched(true);
     } finally {
       setLoading(false);
     }
@@ -29,23 +31,32 @@ export function TranscriptionSearchPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Transcription Search</Title>
+      <Title order={2}>Search</Title>
       <Text size="sm" c="dimmed">
-        Search indexed transcripts across all calls. Open a call from results to play audio and read the full
-        transcription in the player drawer.
+        Full-text search across indexed call transcripts. Open a result to play the audio and read the
+        full conversation.
       </Text>
-      <Card withBorder padding="md">
+      <Card padding="md" radius="md">
         <Stack>
-          <TextInput label="Keywords" value={q} onChange={(e) => setQ(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && search()} />
+          <TextInput
+            label="Keywords"
+            value={q}
+            onChange={(e) => setQ(e.currentTarget.value)}
+            onKeyDown={(e) => e.key === 'Enter' && search()}
+          />
           <Select label="Sentiment" clearable data={['positive', 'neutral', 'negative']} value={sentiment} onChange={setSentiment} />
-          <Button onClick={search} loading={loading}>Search</Button>
+          <Group>
+            <Button onClick={search} loading={loading}>
+              Search
+            </Button>
+          </Group>
         </Stack>
       </Card>
       {results.map((r) => (
-        <Card key={r.transcript_id} withBorder padding="md">
+        <Card key={r.transcript_id} padding="md" radius="md">
           <Group justify="space-between" mb="xs">
             <Group gap={6}>
-              <Text size="sm" c="dimmed">
+              <Text size="sm" c="dimmed" ff="monospace">
                 Call #{r.call_id}
               </Text>
               <Badge
@@ -63,13 +74,13 @@ export function TranscriptionSearchPage() {
               )}
             </Group>
             <Button size="xs" variant="light" onClick={() => openCall(r.call_id)}>
-              Open call
+              Open recording
             </Button>
           </Group>
           <Text dangerouslySetInnerHTML={{ __html: r.headline }} />
         </Card>
       ))}
-      {!loading && results.length === 0 && q && <Text c="dimmed">No results</Text>}
+      {!loading && searched && results.length === 0 && <Text c="dimmed">No results.</Text>}
     </Stack>
   );
 }

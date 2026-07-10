@@ -201,6 +201,12 @@ export const api = {
     return request<{ items: Call[]; total: number }>(`/calls?${q}`);
   },
   getCall: (id: number) => request<Call>(`/calls/${id}`),
+  setLegalHold: (callId: number, legal_hold: boolean) =>
+    request<Call>(`/calls/${callId}/legal-hold`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ legal_hold }),
+    }),
   listRecordings: (callId: number) => request<Recording[]>(`/calls/${callId}/recordings`),
   getRecordings: (callId: number) => request<Recording[]>(`/calls/${callId}/recordings`),
   getPeaks: (recordingId: number) => request<{ recording_id: number; peaks: unknown }>(`/recordings/${recordingId}/peaks`),
@@ -216,6 +222,30 @@ export const api = {
     return request<TranscriptSearchResult[]>(`/transcripts/search?${params}`);
   },
   systemStatus: () => request<SystemStatus>('/system/status'),
+  tenant: {
+    getSettings: () => request<TenantSettings>('/tenant/settings'),
+    updateSettings: (body: { retention_days: number | null }) =>
+      request<TenantSettings>('/tenant/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    connectors: () => request<ConnectorCredential[]>('/tenant/connectors'),
+    createConnector: (body: { name: string; kind: string }) =>
+      request<ConnectorCredentialCreated>('/tenant/connectors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    revokeConnector: (id: number) =>
+      request<{ status: string }>(`/tenant/connectors/${id}`, { method: 'DELETE' }),
+    storageStats: () => request<StorageStats>('/tenant/storage-stats'),
+  },
+  audit: (action?: string, pageSize = 50) => {
+    const params = new URLSearchParams({ page_size: String(pageSize) });
+    if (action) params.set('action', action);
+    return request<AuditLog[]>(`/platform/audit?${params}`);
+  },
   systemLogs: (source: string, lines = 120) =>
     request<SystemLogs>(`/system/logs/${encodeURIComponent(source)}?lines=${lines}`),
   admin: {
@@ -290,3 +320,55 @@ export type Transcript = {
 export function hasPermission(user: User | null, permission: string): boolean {
   return user?.permissions.includes(permission) ?? false;
 }
+
+// --- Tenant self-service ---
+
+export type TenantSettings = {
+  name: string;
+  slug: string;
+  retention_days: number | null;
+};
+
+export type ConnectorCredential = {
+  id: number;
+  tenant_id: number;
+  name: string;
+  kind: 'cucm' | 'webex' | string;
+  enabled: boolean;
+  last_seen_at: string | null;
+  version: string | null;
+  created_at: string;
+};
+
+export type ConnectorCredentialCreated = ConnectorCredential & { token: string };
+
+export type StorageStats = {
+  total_bytes: number;
+  recording_count: number;
+  avg_bytes: number;
+  by_source: { source: string; bytes: number; count: number }[];
+  by_month: { month: string; bytes: number; count: number }[];
+  largest: {
+    recording_id: number;
+    call_id: number;
+    leg: string;
+    bytes: number;
+    started_at: string | null;
+    near_name: string | null;
+    far_name: string | null;
+    source: string;
+  }[];
+  storage_backend: string | null;
+};
+
+export type AuditLog = {
+  id: number;
+  tenant_id: number;
+  user_id: number | null;
+  action: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  detail: Record<string, unknown> | null;
+  ip: string | null;
+  created_at: string;
+};

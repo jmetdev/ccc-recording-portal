@@ -367,7 +367,7 @@ export function HealthStatusPage() {
                 {status.recent_failures.map((row) => (
                   <Table.Tr key={row.call_id}>
                     <Table.Td>
-                      <Text component={Link} to={`/calls/${row.call_id}`} size="sm" fw={500}>
+                      <Text component={Link} to={`/recordings/${row.call_id}`} size="sm" fw={500}>
                         #{row.call_id}
                       </Text>
                       <Text size="xs" c="dimmed">

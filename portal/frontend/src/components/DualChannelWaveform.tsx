@@ -5,11 +5,11 @@ import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import { authHeaders, Recording, recordingHasMedia, Tag } from '../api/client';
 
-export const NEAR_COLOR = '#2b87d4';
-export const FAR_COLOR = '#e8590c';
-export const MIX_COLOR = '#7048e8';
-const NEAR_PROGRESS = '#195184';
-const FAR_PROGRESS = '#a63f08';
+export const NEAR_COLOR = '#1997e4';
+export const FAR_COLOR = '#7450d5';
+export const MIX_COLOR = '#7450d5';
+const NEAR_PROGRESS = '#0f5f96';
+const FAR_PROGRESS = '#4c2fa8';
 const MIX_PROGRESS = '#4c2fa8';
 const MUTED_WAVE_COLOR = '#adb5bd';
 const MUTED_PROGRESS_COLOR = '#868e96';
@@ -193,7 +193,7 @@ export function DualChannelWaveform({
       regions.addRegion({
         start: t.start_s,
         end: t.end_s,
-        color: 'rgba(43, 135, 212, 0.25)',
+        color: 'rgba(25, 151, 228, 0.25)',
         content: t.note || undefined,
         drag: false,
         resize: false,
@@ -422,7 +422,7 @@ export function DualChannelWaveform({
 
   useEffect(() => {
     if (!tagSelectSignal) return;
-    regionsRef.current?.enableDragSelection({ color: 'rgba(43, 135, 212, 0.3)' });
+    regionsRef.current?.enableDragSelection({ color: 'rgba(25, 151, 228, 0.3)' });
   }, [tagSelectSignal]);
 
   const nearAvailable = stereoMode || dualMono || singleLeg === 'near';

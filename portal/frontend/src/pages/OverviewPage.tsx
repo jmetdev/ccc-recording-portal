@@ -1,19 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Anchor, Card, Grid, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
-import { api, LiveChannel } from '../api/client';
+import { Anchor, Badge, Card, Group, Loader, SimpleGrid, Stack, Table, Text, Title } from '@mantine/core';
+import { api, ConnectorHealth, LiveChannel } from '../api/client';
 import { CallStatusBadge } from '../components/CallStatusBadge';
 import { SourceBadge } from '../components/SourceBadge';
+import { StatTile } from '../components/StatTile';
 import { useCallPlayer } from '../components/CallPlayerContext';
+import { useAuth } from '../auth/AuthContext';
+import { hasPermission } from '../api/client';
 
 function useLiveChannels(initial: LiveChannel[]) {
   const [live, setLive] = useState<LiveChannel[]>(initial);
-
-  useEffect(() => {
-    setLive(initial);
-  }, [initial]);
-
+  useEffect(() => setLive(initial), [initial]);
   useEffect(() => {
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const token = localStorage.getItem('access_token');
@@ -24,7 +23,6 @@ function useLiveChannels(initial: LiveChannel[]) {
     };
     return () => ws.close();
   }, []);
-
   return live;
 }
 
@@ -35,8 +33,50 @@ function formatDuration(seconds: number | null | undefined) {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-export function DashboardPage() {
+const CONNECTOR_COLOR: Record<ConnectorHealth['status'], string> = {
+  healthy: 'teal',
+  stale: 'orange',
+  unseen: 'gray',
+  disabled: 'gray',
+};
+
+function ConnectorStrip() {
+  const { data } = useQuery({
+    queryKey: ['system-status'],
+    queryFn: api.systemStatus,
+    refetchInterval: 30000,
+  });
+  const connectors = data?.connectors ?? [];
+  if (connectors.length === 0) return null;
+  return (
+    <Card padding="lg" radius="md">
+      <Group justify="space-between" mb="sm">
+        <Title order={5}>Connectors</Title>
+        <Anchor component={Link} to="/settings" size="sm">
+          Manage →
+        </Anchor>
+      </Group>
+      <Group gap="sm">
+        {connectors.map((c) => (
+          <Group key={c.id} gap={8} px="sm" py={6} style={{ border: '1px solid #e9eaed', borderRadius: 8 }}>
+            <SourceBadge source={c.kind} />
+            <Text size="sm" fw={500} td={!c.enabled ? 'line-through' : undefined}>
+              {c.name}
+            </Text>
+            <Badge size="sm" variant="light" color={CONNECTOR_COLOR[c.status]}>
+              {c.status}
+            </Badge>
+          </Group>
+        ))}
+      </Group>
+    </Card>
+  );
+}
+
+export function OverviewPage() {
   const { openCall } = useCallPlayer();
+  const { user } = useAuth();
+  const canManage = hasPermission(user, 'manage_users');
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
@@ -52,8 +92,6 @@ export function DashboardPage() {
 
   const { data: recentCalls, isLoading: recentLoading } = useQuery({
     queryKey: ['recent-calls'],
-    // No filters: same ordering (started_at desc) as Call Search, just capped
-    // to a handful so the dashboard proves data exists without a second click.
     queryFn: () => api.listCalls({ page: '1', page_size: '8' }),
     refetchInterval: 30000,
   });
@@ -64,28 +102,22 @@ export function DashboardPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Dashboard</Title>
-      <Grid>
-        {[
-          { label: 'Calls today', value: stats?.calls_today },
-          { label: 'Total calls', value: stats?.calls_total },
-          { label: 'Currently recording', value: stats?.recording_now },
-          { label: 'Extensions enabled', value: stats?.extensions_enabled },
-        ].map((kpi) => (
-          <Grid.Col key={kpi.label} span={{ base: 12, sm: 6, md: 3 }}>
-            <Card withBorder padding="lg" radius="md">
-              <Text size="sm" c="dimmed">{kpi.label}</Text>
-              <Text size="xl" fw={700}>{kpi.value ?? '—'}</Text>
-            </Card>
-          </Grid.Col>
-        ))}
-      </Grid>
+      <Title order={2}>Overview</Title>
 
-      <Card withBorder padding="lg" radius="md">
+      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+        <StatTile label="Calls today" value={stats?.calls_today ?? '—'} />
+        <StatTile label="Total calls" value={stats?.calls_total ?? '—'} />
+        <StatTile label="Currently recording" value={stats?.recording_now ?? '—'} accent="#1997e4" />
+        <StatTile label="Extensions enabled" value={stats?.extensions_enabled ?? '—'} />
+      </SimpleGrid>
+
+      {canManage && <ConnectorStrip />}
+
+      <Card padding="lg" radius="md">
         <Group justify="space-between" mb="md">
-          <Title order={4}>Recent Calls</Title>
-          <Anchor component={Link} to="/calls" size="sm">
-            View all calls ({stats?.calls_total ?? 0}) →
+          <Title order={5}>Recent calls</Title>
+          <Anchor component={Link} to="/recordings" size="sm">
+            View all recordings ({stats?.calls_total ?? 0}) →
           </Anchor>
         </Group>
         {recentLoading ? (
@@ -96,7 +128,7 @@ export function DashboardPage() {
             will appear here.
           </Text>
         ) : (
-          <Table striped highlightOnHover>
+          <Table highlightOnHover>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Started</Table.Th>
@@ -110,7 +142,9 @@ export function DashboardPage() {
             <Table.Tbody>
               {recentCalls.items.map((c) => (
                 <Table.Tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => openCall(c.id)}>
-                  <Table.Td>{new Date(c.started_at).toLocaleString()}</Table.Td>
+                  <Table.Td ff="monospace" fz="xs">
+                    {new Date(c.started_at).toLocaleString()}
+                  </Table.Td>
                   <Table.Td>
                     <SourceBadge source={c.source} />
                   </Table.Td>
@@ -127,15 +161,15 @@ export function DashboardPage() {
         )}
       </Card>
 
-      <Card withBorder padding="lg" radius="md">
+      <Card padding="lg" radius="md">
         <Group justify="space-between" mb="md">
-          <Title order={4}>Active Recordings</Title>
+          <Title order={5}>Active recordings</Title>
           <CallStatusBadge status="recording" />
         </Group>
         {recLoading ? (
           <Loader size="sm" />
         ) : live.length === 0 ? (
-          <Text c="dimmed">No calls are currently being recorded</Text>
+          <Text c="dimmed">No calls are currently being recorded.</Text>
         ) : (
           <Table>
             <Table.Thead>
@@ -153,7 +187,9 @@ export function DashboardPage() {
                 <Table.Tr key={c.uuid}>
                   <Table.Td>{c.near_addr || c.cid_num || '—'}</Table.Td>
                   <Table.Td>{c.far_addr || '—'}</Table.Td>
-                  <Table.Td>{c.refci || '—'}</Table.Td>
+                  <Table.Td ff="monospace" fz="xs">
+                    {c.refci || '—'}
+                  </Table.Td>
                   <Table.Td>{c.leg || '—'}</Table.Td>
                   <Table.Td>{c.read_codec || '—'}</Table.Td>
                   <Table.Td>{formatDuration(c.duration_s)}</Table.Td>

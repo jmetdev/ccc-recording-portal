@@ -1,18 +1,38 @@
-import { AppShell, Burger, Group, NavLink, Text, ActionIcon } from '@mantine/core';
+import { AppShell, Burger, Group, Stack, Text, ActionIcon, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconDashboard, IconSearch, IconFileText, IconUsers, IconLogout, IconHeartbeat } from '@tabler/icons-react';
+import {
+  IconCloud,
+  IconBroadcast,
+  IconSearch,
+  IconLock,
+  IconDatabase,
+  IconAdjustmentsHorizontal,
+  IconLogout,
+} from '@tabler/icons-react';
+import type { Icon } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasPermission } from '../api/client';
-import { ThemeSwitcher } from './ThemeSwitcher';
+import classes from './AppLayout.module.css';
 
-const nav = [
-  { to: '/', label: 'Dashboard', icon: IconDashboard, end: true },
-  { to: '/calls', label: 'Call Search', icon: IconSearch, end: false },
-  { to: '/transcripts', label: 'Transcription Search', icon: IconFileText, perm: 'view_transcripts', end: false },
-  { to: '/health', label: 'Health / Status', icon: IconHeartbeat, perm: 'manage_users', end: false },
-  { to: '/admin', label: 'Admin', icon: IconUsers, perm: 'manage_users', end: false },
+type NavItem = { to: string; label: string; icon: Icon; perm?: string; end?: boolean };
+
+const nav: NavItem[] = [
+  { to: '/', label: 'Overview', icon: IconCloud, end: true },
+  { to: '/recordings', label: 'Recordings', icon: IconBroadcast },
+  { to: '/search', label: 'Search', icon: IconSearch, perm: 'view_transcripts' },
+  { to: '/retention', label: 'Retention', icon: IconLock, perm: 'manage_retention' },
+  { to: '/storage', label: 'Storage', icon: IconDatabase },
+  { to: '/settings', label: 'Settings', icon: IconAdjustmentsHorizontal, perm: 'manage_users' },
 ];
+
+function initials(name: string | undefined): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/[\s._-]+/).filter(Boolean);
+  if (parts.length === 0) return name.slice(0, 2).toUpperCase();
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 function AppLayoutInner() {
   const [opened, { toggle }] = useDisclosure();
@@ -21,56 +41,64 @@ function AppLayoutInner() {
 
   return (
     <AppShell
-      header={{ height: 56 }}
-      navbar={{ width: 240, breakpoint: 'sm', collapsed: { mobile: !opened } }}
-      padding="md"
-      styles={{
-        navbar: {
-          zIndex: 300,
-        },
-      }}
+      header={{ height: 54 }}
+      navbar={{ width: 220, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+      padding="lg"
     >
-      <AppShell.Header style={{ zIndex: 300 }}>
-        <Group h="100%" px="md" justify="space-between">
-          <Group>
+      <AppShell.Header className={classes.header}>
+        <Group h="100%" px="lg" justify="space-between">
+          <Group gap="sm">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            <Text fw={600} size="lg">
-              Call Recording Portal
-            </Text>
+            <Group gap={7} visibleFrom="sm">
+              <span className={classes.chip}>BIB</span>
+              <span className={classes.chip}>SIPREC</span>
+            </Group>
           </Group>
-          <Group>
-            <Text size="sm" c="dimmed">
+          <Group gap="md">
+            <Text size="sm" c="dimmed" visibleFrom="sm">
               {user?.username}
             </Text>
-            <ThemeSwitcher />
-            <ActionIcon variant="subtle" onClick={logout} aria-label="Logout">
-              <IconLogout size={18} />
-            </ActionIcon>
+            <div className={classes.avatar} title={user?.username}>
+              {initials(user?.username)}
+            </div>
+            <Tooltip label="Sign out">
+              <ActionIcon variant="subtle" color="gray" onClick={logout} aria-label="Logout">
+                <IconLogout size={18} />
+              </ActionIcon>
+            </Tooltip>
           </Group>
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="md" style={{ zIndex: 300 }}>
-        {nav.map((item) => {
-          if (item.perm && !hasPermission(user, item.perm)) return null;
-          const Icon = item.icon;
-          const active = item.end
-            ? location.pathname === item.to
-            : location.pathname === item.to || location.pathname.startsWith(item.to + '/');
-          return (
-            <NavLink
-              key={item.to}
-              component={Link}
-              to={item.to}
-              label={item.label}
-              leftSection={<Icon size={18} />}
-              active={active}
-            />
-          );
-        })}
+      <AppShell.Navbar className={classes.navbar} p="md">
+        <Group gap={0} mb="lg" px="xs">
+          <IconCloud size={22} color="#1997e4" stroke={1.8} />
+          <Text className={classes.brand} ml={8}>
+            Cloud<span className={classes.brandAccent}>Core</span>Record
+          </Text>
+        </Group>
+        <Stack gap={4}>
+          {nav.map((item) => {
+            if (item.perm && !hasPermission(user, item.perm)) return null;
+            const Icon = item.icon;
+            const active = item.end
+              ? location.pathname === item.to
+              : location.pathname === item.to || location.pathname.startsWith(item.to + '/');
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={active ? `${classes.navItem} ${classes.navItemActive}` : classes.navItem}
+              >
+                <Icon size={18} stroke={1.8} />
+                {item.label}
+              </Link>
+            );
+          })}
+        </Stack>
       </AppShell.Navbar>
 
-      <AppShell.Main>
+      <AppShell.Main className={classes.main}>
         <Outlet />
       </AppShell.Main>
     </AppShell>

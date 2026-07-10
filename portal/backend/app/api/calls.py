@@ -141,6 +141,7 @@ async def list_calls(
     status: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    legal_hold: bool | None = None,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -171,6 +172,8 @@ async def list_calls(
         filters.append(Call.started_at >= date_from)
     if date_to:
         filters.append(Call.started_at <= date_to)
+    if legal_hold is not None:
+        filters.append(Call.legal_hold.is_(legal_hold))
 
     # One row per refci — duplicate Call rows can exist from concurrent ingest/start.
     id_stmt = select(Call.id)
