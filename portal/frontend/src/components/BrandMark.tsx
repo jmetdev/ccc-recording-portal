@@ -1,0 +1,20 @@
+import { Group, Text } from '@mantine/core';
+import { IconCloud } from '@tabler/icons-react';
+import classes from './BrandMark.module.css';
+
+type Props = {
+  size?: number;
+  textSize?: number;
+};
+
+/** CloudCoreRecord wordmark — shared by the sidebar and the login screen. */
+export function BrandMark({ size = 22, textSize }: Props) {
+  return (
+    <Group gap={8} wrap="nowrap">
+      <IconCloud size={size} color="#1997e4" stroke={1.8} />
+      <Text className={classes.brand} style={textSize ? { fontSize: textSize } : undefined}>
+        Cloud<span className={classes.brandAccent}>Core</span>Record
+      </Text>
+    </Group>
+  );
+}

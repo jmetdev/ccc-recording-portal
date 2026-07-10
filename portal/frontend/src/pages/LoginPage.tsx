@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Navigate } from 'react-router-dom';
-import { Alert, Button, Card, Divider, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Button, Card, Center, Divider, PasswordInput, Stack, Text, TextInput } from '@mantine/core';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { beginSsoLogin } from '../auth/oidc';
+import { BrandMark } from '../components/BrandMark';
 
 export function LoginPage() {
   const { user, login } = useAuth();
@@ -44,32 +45,44 @@ export function LoginPage() {
   };
 
   return (
-    <Stack align="center" justify="center" mih="100vh" bg="var(--mantine-color-body)">
-      <Card withBorder shadow="md" padding="xl" radius="md" w={400}>
-        <Title order={2} mb="lg" c="blue.6">Call Recording Portal</Title>
-        <form onSubmit={submit}>
-          <Stack>
-            {error && <Alert color="red">{error}</Alert>}
-            <TextInput
-              label="Username or email"
-              value={username}
-              onChange={(e) => setUsername(e.currentTarget.value)}
-              required
-            />
-            <PasswordInput label="Password" value={password} onChange={(e) => setPassword(e.currentTarget.value)} required />
-            <Button type="submit" loading={loading} fullWidth>Sign in</Button>
-            {sso?.enabled && (
-              <>
-                <Divider label="or" labelPosition="center" />
-                <Button variant="light" fullWidth loading={ssoLoading} onClick={ssoSignIn}>
-                  Sign in with SSO
-                </Button>
-              </>
-            )}
-            <Text size="xs" c="dimmed">Use your organization account if SSO is enabled.</Text>
-          </Stack>
-        </form>
-      </Card>
-    </Stack>
+    <Center mih="100vh" bg="#f7f8fa">
+      <Stack align="center" gap="xl">
+        <BrandMark size={28} textSize={22} />
+        <Card padding="xl" radius="lg" w={400}>
+          <Text size="sm" c="dimmed" mb="lg">
+            Sign in to your recording portal
+          </Text>
+          <form onSubmit={submit}>
+            <Stack>
+              {error && <Alert color="red">{error}</Alert>}
+              <TextInput
+                label="Username or email"
+                value={username}
+                onChange={(e) => setUsername(e.currentTarget.value)}
+                required
+              />
+              <PasswordInput label="Password" value={password} onChange={(e) => setPassword(e.currentTarget.value)} required />
+              <Button type="submit" loading={loading} fullWidth>
+                Sign in
+              </Button>
+              {sso?.enabled && (
+                <>
+                  <Divider label="or" labelPosition="center" />
+                  <Button variant="light" fullWidth loading={ssoLoading} onClick={ssoSignIn}>
+                    Sign in with SSO
+                  </Button>
+                </>
+              )}
+              <Text size="xs" c="dimmed">
+                Use your organization account if SSO is enabled.
+              </Text>
+            </Stack>
+          </form>
+        </Card>
+        <Text size="xs" c="dimmed">
+          Part of the CloudCoreCollab suite
+        </Text>
+      </Stack>
+    </Center>
   );
 }

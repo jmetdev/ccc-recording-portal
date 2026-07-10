@@ -3,17 +3,6 @@
   border-right: 1px solid #e9eaed;
 }
 
-.brand {
-  font-weight: 700;
-  font-size: 17px;
-  letter-spacing: -0.02em;
-  color: #0a0a0a;
-}
-
-.brandAccent {
-  color: #1997e4;
-}
-
 .navItem {
   display: flex;
   align-items: center;

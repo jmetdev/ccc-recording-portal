@@ -13,6 +13,7 @@ import type { Icon } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasPermission } from '../api/client';
+import { BrandMark } from './BrandMark';
 import classes from './AppLayout.module.css';
 
 type NavItem = { to: string; label: string; icon: Icon; perm?: string; end?: boolean };
@@ -71,12 +72,9 @@ function AppLayoutInner() {
       </AppShell.Header>
 
       <AppShell.Navbar className={classes.navbar} p="md">
-        <Group gap={0} mb="lg" px="xs">
-          <IconCloud size={22} color="#1997e4" stroke={1.8} />
-          <Text className={classes.brand} ml={8}>
-            Cloud<span className={classes.brandAccent}>Core</span>Record
-          </Text>
-        </Group>
+        <div style={{ marginBottom: 'var(--mantine-spacing-lg)', paddingLeft: 'var(--mantine-spacing-xs)' }}>
+          <BrandMark />
+        </div>
         <Stack gap={4}>
           {nav.map((item) => {
             if (item.perm && !hasPermission(user, item.perm)) return null;
