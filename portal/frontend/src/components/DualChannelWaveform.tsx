@@ -3,7 +3,7 @@ import { ActionIcon, Box, Group, Stack, Text } from '@mantine/core';
 import { IconVolume, IconVolumeOff } from '@tabler/icons-react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { authHeaders, Recording, recordingHasMedia, Tag } from '../api/client';
+import { authHeaders, Recording, recordingHasMedia } from '../api/client';
 
 export const NEAR_COLOR = '#1997e4';
 export const FAR_COLOR = '#7450d5';
@@ -13,6 +13,13 @@ const FAR_PROGRESS = '#4c2fa8';
 const MIX_PROGRESS = '#4c2fa8';
 const MUTED_WAVE_COLOR = '#adb5bd';
 const MUTED_PROGRESS_COLOR = '#868e96';
+
+// The one region we ever add programmatically (the rail-selected tag). Its
+// fixed id lets the region-created handler tell it apart from a genuine user
+// drag-selection — reliable even when RegionsPlugin emits region-created
+// asynchronously (it defers to the 'ready' event when the waveform isn't
+// decoded yet, so a transient suppress flag would miss it).
+const HIGHLIGHT_REGION_ID = 'tag-highlight';
 
 type ChannelMute = { near: boolean; far: boolean };
 type ChannelLeg = 'near' | 'far';
@@ -55,7 +62,10 @@ type Props = {
   audioUrl: (recordingId: number) => string;
   nearLabel: string;
   farLabel: string;
-  tags?: Tag[];
+  /** When set, a single non-interactive region is drawn to show where the tag
+   * currently selected in the rail lives. Tags are not otherwise rendered on
+   * the waveform — it stays clean until the user selects one. */
+  highlightTag?: { start: number; end: number; note?: string | null } | null;
   canTag?: boolean;
   onRegionSelected?: (start: number, end: number) => void;
   onTimeUpdate?: (time: number) => void;
@@ -118,7 +128,7 @@ export function DualChannelWaveform({
   audioUrl,
   nearLabel,
   farLabel,
-  tags = [],
+  highlightTag = null,
   canTag = false,
   onRegionSelected,
   onTimeUpdate,
@@ -181,53 +191,24 @@ export function DualChannelWaveform({
   useEffect(() => {
     callbacksRef.current = { onRegionSelected, onTimeUpdate, onDuration, onPlayingChange };
   });
-  const tagsRef = useRef(tags);
-  useEffect(() => {
-    tagsRef.current = tags;
-  });
-  const tagsKey = JSON.stringify(tags.map((t) => [t.id, t.start_s, t.end_s, t.note]));
-
-  // wavesurfer's RegionsPlugin fires the same 'region-created' event for a
-  // programmatic addRegion() call as for a user drag-selection — without this
-  // guard, rendering a call's existing tags on load "creates" a region per
-  // tag and pops the add-tag modal for each one.
-  const suppressRegionEventRef = useRef(false);
-
-  const renderTags = useCallback((regions: ReturnType<typeof RegionsPlugin.create>) => {
-    regions.clearRegions();
-    suppressRegionEventRef.current = true;
-    tagsRef.current.forEach((t) => {
-      regions.addRegion({
-        start: t.start_s,
-        end: t.end_s,
-        color: 'rgba(25, 151, 228, 0.25)',
-        content: t.note || undefined,
-        drag: false,
-        resize: false,
-      });
-    });
-    suppressRegionEventRef.current = false;
-  }, []);
-
   const wireWsEvents = useCallback(
     (ws: WaveSurfer, regions?: ReturnType<typeof RegionsPlugin.create>) => {
       ws.on('play', () => callbacksRef.current.onPlayingChange?.(true));
       ws.on('pause', () => callbacksRef.current.onPlayingChange?.(false));
       ws.on('finish', () => callbacksRef.current.onPlayingChange?.(false));
       ws.on('timeupdate', (t) => callbacksRef.current.onTimeUpdate?.(t));
-      ws.on('ready', () => {
-        callbacksRef.current.onDuration?.(ws.getDuration());
-        if (regions) renderTags(regions);
-      });
+      ws.on('ready', () => callbacksRef.current.onDuration?.(ws.getDuration()));
       if (canTag && regions) {
         regions.on('region-created', (region) => {
-          if (suppressRegionEventRef.current) return;
+          // Only genuine user drag-selections open the add-tag modal. The
+          // rail-selected highlight is added with a fixed id — skip it.
+          if (region.id === HIGHLIGHT_REGION_ID) return;
           callbacksRef.current.onRegionSelected?.(region.start, region.end);
           region.remove();
         });
       }
     },
-    [canTag, renderTags],
+    [canTag],
   );
 
   // Preferred: stereo mix — split L/R waveforms, Web Audio per-channel mute.
@@ -377,10 +358,29 @@ export function DualChannelWaveform({
     };
   }, [stereoMode, dualMono, singleUrl, singleLeg, wireWsEvents]);
 
+  // Draw exactly one region for the tag selected in the rail — or none. This
+  // is the only place we add a region programmatically, so it's the only thing
+  // the region-created id guard needs to ignore.
+  const highlightKey = highlightTag ? `${highlightTag.start}-${highlightTag.end}-${highlightTag.note ?? ''}` : '';
   useEffect(() => {
-    if (regionsRef.current) renderTags(regionsRef.current);
+    const regions = regionsRef.current;
+    if (!regions) return;
+    regions.clearRegions();
+    if (highlightTag) {
+      regions.addRegion({
+        id: HIGHLIGHT_REGION_ID,
+        start: highlightTag.start,
+        end: highlightTag.end,
+        color: 'rgba(25, 151, 228, 0.28)',
+        content: highlightTag.note || undefined,
+        drag: false,
+        resize: false,
+      });
+    }
+    // regionsRef.current is set by the waveform-creation effects; highlightKey
+    // captures the selected tag's identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tagsKey, renderTags]);
+  }, [highlightKey]);
 
   useEffect(() => {
     muteRef.current = { near: nearMuted, far: farMuted };

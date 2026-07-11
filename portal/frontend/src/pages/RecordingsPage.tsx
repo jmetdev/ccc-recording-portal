@@ -206,6 +206,7 @@ function CallDetail({ callId }: { callId: number }) {
   const [playSignal, setPlaySignal] = useState<number | undefined>();
   const [pauseSignal, setPauseSignal] = useState<number | undefined>();
   const [tagSelectSignal, setTagSelectSignal] = useState(0);
+  const [selectedTagId, setSelectedTagId] = useState<number | null>(null);
 
   const canManageTags = hasPermission(user, 'manage_tags');
   const canViewTranscripts = hasPermission(user, 'view_transcripts');
@@ -288,6 +289,7 @@ function CallDetail({ callId }: { callId: number }) {
   };
 
   const tagList = tags.data ?? [];
+  const selectedTag = tagList.find((t) => t.id === selectedTagId) ?? null;
   const transcriptList = transcripts.data ?? [];
   const c = call.data;
   const nearLabel = c?.near_name || c?.near_addr || 'near';
@@ -328,7 +330,9 @@ function CallDetail({ callId }: { callId: number }) {
                 audioUrl={api.audioUrl}
                 nearLabel={nearLabel}
                 farLabel={farLabel}
-                tags={tagList}
+                highlightTag={
+                  selectedTag ? { start: selectedTag.start_s, end: selectedTag.end_s, note: selectedTag.note } : null
+                }
                 canTag={canManageTags}
                 onRegionSelected={(start, end) => setRegionModal({ start, end })}
                 onTimeUpdate={setCurrentTime}
@@ -461,9 +465,12 @@ function CallDetail({ callId }: { callId: number }) {
                   {tagList.map((t) => (
                     <Badge
                       key={t.id}
-                      variant="light"
+                      variant={selectedTagId === t.id ? 'filled' : 'light'}
                       style={{ cursor: 'pointer' }}
-                      onClick={() => setSeekTo(t.start_s + Math.random() * 1e-6)}
+                      onClick={() => {
+                        setSelectedTagId((cur) => (cur === t.id ? null : t.id));
+                        setSeekTo(t.start_s + Math.random() * 1e-6);
+                      }}
                       title={t.note || undefined}
                     >
                       {formatTime(t.start_s)}–{formatTime(t.end_s)}
