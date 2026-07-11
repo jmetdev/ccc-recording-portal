@@ -53,9 +53,7 @@ async def dashboard_stats(
         recording_now = len(fs_channels)
     else:
         recording_now = (
-            await db.execute(
-                call_filter(select(func.count()).select_from(Call).where(Call.status == CallStatus.RECORDING))
-            )
+            await db.execute(distinct_call_count_stmt(user.tenant_id, group_id, Call.status == CallStatus.RECORDING))
         ).scalar_one()
     extensions_enabled = (
         await db.execute(
