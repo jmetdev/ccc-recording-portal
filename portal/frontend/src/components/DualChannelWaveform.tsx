@@ -187,8 +187,15 @@ export function DualChannelWaveform({
   });
   const tagsKey = JSON.stringify(tags.map((t) => [t.id, t.start_s, t.end_s, t.note]));
 
+  // wavesurfer's RegionsPlugin fires the same 'region-created' event for a
+  // programmatic addRegion() call as for a user drag-selection — without this
+  // guard, rendering a call's existing tags on load "creates" a region per
+  // tag and pops the add-tag modal for each one.
+  const suppressRegionEventRef = useRef(false);
+
   const renderTags = useCallback((regions: ReturnType<typeof RegionsPlugin.create>) => {
     regions.clearRegions();
+    suppressRegionEventRef.current = true;
     tagsRef.current.forEach((t) => {
       regions.addRegion({
         start: t.start_s,
@@ -199,6 +206,7 @@ export function DualChannelWaveform({
         resize: false,
       });
     });
+    suppressRegionEventRef.current = false;
   }, []);
 
   const wireWsEvents = useCallback(
@@ -213,6 +221,7 @@ export function DualChannelWaveform({
       });
       if (canTag && regions) {
         regions.on('region-created', (region) => {
+          if (suppressRegionEventRef.current) return;
           callbacksRef.current.onRegionSelected?.(region.start, region.end);
           region.remove();
         });
