@@ -21,6 +21,29 @@ const MUTED_PROGRESS_COLOR = '#868e96';
 // decoded yet, so a transient suppress flag would miss it).
 const HIGHLIGHT_REGION_ID = 'tag-highlight';
 
+// wavesurfer renders a string region label as bare inline text, which reads as
+// loose type floating over the bars. Passing a styled element instead lets the
+// note sit on the waveform as a brand pill badge.
+function tagBadgeElement(note: string): HTMLElement {
+  const el = document.createElement('span');
+  el.textContent = note;
+  Object.assign(el.style, {
+    display: 'inline-block',
+    padding: '1px 9px',
+    borderRadius: '999px',
+    fontFamily: 'Manrope, system-ui, sans-serif',
+    fontSize: '11px',
+    fontWeight: '600',
+    lineHeight: '1.6',
+    letterSpacing: '0.01em',
+    background: NEAR_COLOR,
+    color: '#ffffff',
+    whiteSpace: 'nowrap',
+    boxShadow: '0 1px 3px rgba(10, 10, 10, 0.2)',
+  });
+  return el;
+}
+
 type ChannelMute = { near: boolean; far: boolean };
 type ChannelLeg = 'near' | 'far';
 
@@ -372,7 +395,7 @@ export function DualChannelWaveform({
         start: highlightTag.start,
         end: highlightTag.end,
         color: 'rgba(25, 151, 228, 0.28)',
-        content: highlightTag.note || undefined,
+        content: highlightTag.note ? tagBadgeElement(highlightTag.note) : undefined,
         drag: false,
         resize: false,
       });
