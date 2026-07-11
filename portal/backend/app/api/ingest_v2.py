@@ -174,12 +174,14 @@ async def v2_call_complete(
             db,
             JobType.MEDIA_CONVERT,
             {"call_id": call.id, "recording_ids": recording_ids, "paths": paths},
+            tenant_id=cred.tenant_id,
         )
         if is_transcription_enabled():
             await enqueue_job(
                 db,
                 JobType.TRANSCRIBE,
                 {"call_id": call.id, "recording_ids": recording_ids, "paths": paths},
+                tenant_id=cred.tenant_id,
             )
 
     await db.commit()
@@ -300,6 +302,41 @@ async def v2_create_transcript(
     )
     await db.commit()
     return {"status": "ok", "transcript_id": transcript.id}
+
+
+@router.get("/ingest/calls/untranscribed")
+async def v2_list_untranscribed(
+    limit: int = 50,
+    cred: ConnectorCredential = Depends(get_connector),
+    db: AsyncSession = Depends(get_db),
+):
+    """Completed calls of this connector's source that have no transcript yet.
+
+    Lets a connector backfill transcripts for calls ingested before transcript
+    delivery was wired up (e.g. Webex VTT), or retry ones whose VTT link had
+    expired. ``external_id`` is the connector's own recording id (echoed back
+    from ``calls/start``) so the connector can re-fetch source-side detail.
+    """
+    source = CallSource(cred.kind.value)
+    transcribed_call_ids = select(Transcript.call_id).where(Transcript.tenant_id == cred.tenant_id)
+    result = await db.execute(
+        select(Call.id, Call.refci, Call.external_id)
+        .where(
+            Call.tenant_id == cred.tenant_id,
+            Call.source == source,
+            Call.status == CallStatus.COMPLETED,
+            Call.external_id.is_not(None),
+            Call.id.not_in(transcribed_call_ids),
+        )
+        .order_by(Call.started_at.desc())
+        .limit(min(limit, 200))
+    )
+    return {
+        "items": [
+            {"call_id": row.id, "refci": row.refci, "external_id": row.external_id}
+            for row in result.all()
+        ]
+    }
 
 
 @router.post("/ingest/calls/fail")

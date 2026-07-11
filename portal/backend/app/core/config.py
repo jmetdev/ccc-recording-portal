@@ -16,12 +16,12 @@ class Settings(BaseSettings):
     worker_token: str = "change-me-worker-token"
     recordings_dir: str = "/recordings"
     freeswitch_fs_cli: str = ""
-    # Empty = auto-detect via whisper container at startup; true/false to override.
-    transcription_enabled: str = ""
+    # Transcripts are delivered by connectors (Webex VTT, on-prem CUCM whisper),
+    # not a portal-managed worker; this only gates the legacy in-portal
+    # whisper-worker job queue, which is off unless explicitly enabled.
+    transcription_enabled: str = "false"
     whisper_container_name: str = "portal-whisper"
-    system_containers: str = (
-        "portal-backend,portal-db,portal-frontend,portal-media-handler,portal-whisper,freeswitch"
-    )
+    system_containers: str = "portal-backend,portal-db,portal-frontend,portal-media-handler,freeswitch"
     cors_origins: str = "http://localhost:3000"
     admin_email: str = "admin@localhost"
     admin_password: str = "admin123"

@@ -16,8 +16,10 @@ function useLiveChannels(initial: LiveChannel[]) {
   useEffect(() => {
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const token = localStorage.getItem('access_token');
-    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
-    const ws = new WebSocket(`${proto}://${window.location.host}/api/ws/live${qs}`);
+    if (!token) return;
+    // Token travels as a WebSocket subprotocol, not a query string, so it
+    // never lands in access logs or browser history.
+    const ws = new WebSocket(`${proto}://${window.location.host}/api/ws/live`, [token]);
     ws.onmessage = () => {
       api.freeswitchLiveChannels().then(setLive).catch(() => undefined);
     };
@@ -51,7 +53,7 @@ function ConnectorStrip() {
   return (
     <Card padding="lg" radius="md">
       <Group justify="space-between" mb="sm">
-        <Title order={5}>Connectors</Title>
+        <Title order={3}>Connectors</Title>
         <Anchor component={Link} to="/settings" size="sm">
           Manage →
         </Anchor>
@@ -115,7 +117,7 @@ export function OverviewPage() {
 
       <Card padding="lg" radius="md">
         <Group justify="space-between" mb="md">
-          <Title order={5}>Recent calls</Title>
+          <Title order={3}>Recent calls</Title>
           <Anchor component={Link} to="/recordings" size="sm">
             View all recordings ({stats?.calls_total ?? 0}) →
           </Anchor>
@@ -163,7 +165,7 @@ export function OverviewPage() {
 
       <Card padding="lg" radius="md">
         <Group justify="space-between" mb="md">
-          <Title order={5}>Active recordings</Title>
+          <Title order={3}>Active recordings</Title>
           <CallStatusBadge status="recording" />
         </Group>
         {recLoading ? (

@@ -7,16 +7,13 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models import Call, CallStatus, ConnectorCredential, Job, JobStatus
+from app.models import Call, CallSource, CallStatus, ConnectorCredential, Job, JobStatus, Transcript
 from app.services.freeswitch import list_active_recording_channels
-from app.services.transcription import (
-    is_transcription_enabled,
-    transcription_detection_reason,
-)
+from app.services.transcription import is_transcription_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +25,6 @@ LOG_SOURCES: dict[str, str | None] = {
     "ingest": ".bib-hook.log",
     "portal-backend": "portal-backend",
     "portal-media-handler": "portal-media-handler",
-    "portal-whisper": "portal-whisper",
     "freeswitch": "freeswitch",
 }
 
@@ -180,6 +176,40 @@ async def fetch_connector_health(db: AsyncSession, tenant_id: int) -> list[dict[
     return rows
 
 
+async def fetch_transcription_coverage(db: AsyncSession, tenant_id: int) -> dict[str, Any]:
+    """How many completed calls actually have a transcript, per source.
+
+    Transcripts are delivered by connectors (Webex VTT today, on-prem
+    whisper for CUCM), not a portal-managed worker, so "healthy" here means
+    coverage — not whether some local process is running.
+    """
+    total_stmt = (
+        select(Call.source, func.count(func.distinct(Call.refci)))
+        .where(Call.tenant_id == tenant_id, Call.status == CallStatus.COMPLETED)
+        .group_by(Call.source)
+    )
+    covered_stmt = (
+        select(Call.source, func.count(func.distinct(Call.refci)))
+        .join(Transcript, Transcript.call_id == Call.id)
+        .where(Call.tenant_id == tenant_id, Call.status == CallStatus.COMPLETED)
+        .group_by(Call.source)
+    )
+    totals = dict((await db.execute(total_stmt)).all())
+    covered = dict((await db.execute(covered_stmt)).all())
+
+    by_source = {
+        source.value: {
+            "total_calls": totals.get(source, 0),
+            "transcribed_calls": covered.get(source, 0),
+        }
+        for source in CallSource
+        if totals.get(source, 0)
+    }
+    total_calls = sum(v["total_calls"] for v in by_source.values())
+    transcribed_calls = sum(v["transcribed_calls"] for v in by_source.values())
+    return {"by_source": by_source, "total_calls": total_calls, "transcribed_calls": transcribed_calls}
+
+
 async def fetch_recent_failures(db: AsyncSession, limit: int = 25) -> list[dict[str, Any]]:
     call_result = await db.execute(
         select(Call)
@@ -272,32 +302,59 @@ async def fetch_log_lines(source: str, lines: int = 100) -> dict[str, Any]:
     return {"source": source, "lines": log_lines if log_lines else ["(empty log)"]}
 
 
-async def build_system_status(db: AsyncSession, tenant_id: int) -> dict[str, Any]:
-    containers, db_health, fs_health, connectors = await asyncio.gather(
+def _sanitize_container(c: dict[str, Any]) -> dict[str, Any]:
+    """Strip image/build detail for non-superadmins — a tenant admin needs to
+    know a container is down, not which image tag or host filesystem it runs.
+    """
+    return {**c, "image": None, "started_at": None}
+
+
+def _sanitize_recordings(rec: dict[str, Any]) -> dict[str, Any]:
+    sanitized = {**rec}
+    sanitized.pop("path", None)
+    return sanitized
+
+
+def _sanitize_failure(row: dict[str, Any]) -> dict[str, Any]:
+    return {**row, "near_addr": None, "far_addr": None}
+
+
+async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin: bool) -> dict[str, Any]:
+    containers, db_health, fs_health, connectors, coverage = await asyncio.gather(
         inspect_containers(),
         check_database(db),
         check_freeswitch(),
         fetch_connector_health(db, tenant_id),
+        fetch_transcription_coverage(db, tenant_id),
     )
     recordings = check_recordings_mount()
     failures = await fetch_recent_failures(db)
 
     healthy_count = sum(1 for c in containers if c["state"] == "healthy")
     connector_issue = any(c["status"] in ("stale", "unseen") for c in connectors if c["enabled"])
+    # `overall` is service uptime only (containers, DB, connectors reachable).
+    # It intentionally does not fold in transcription coverage — that's a
+    # capability, not an outage, and is reported separately so the UI can
+    # say "services healthy, but transcription coverage is low" instead of
+    # a misleading single "operational" verdict.
     overall = "healthy"
     if any(c["state"] == "down" for c in containers) or not db_health.get("ok"):
         overall = "critical"
     elif any(c["state"] in ("unhealthy", "starting") for c in containers) or failures or connector_issue:
         overall = "degraded"
 
-    whisper_running = any(
-        c["name"] == settings.whisper_container_name and c["state"] == "healthy"
-        for c in containers
-    )
+    transcription_complete = coverage["total_calls"] == 0 or coverage["transcribed_calls"] >= coverage["total_calls"]
+    capability = "full" if transcription_complete else "partial"
+
+    if not is_superadmin:
+        containers = [_sanitize_container(c) for c in containers]
+        recordings = _sanitize_recordings(recordings)
+        failures = [_sanitize_failure(f) for f in failures]
 
     return {
         "checked_at": datetime.now(timezone.utc),
         "overall": overall,
+        "capability": capability,
         "summary": {
             "containers_healthy": healthy_count,
             "containers_total": len(containers),
@@ -310,11 +367,13 @@ async def build_system_status(db: AsyncSession, tenant_id: int) -> dict[str, Any
             "recordings": recordings,
             "freeswitch": fs_health,
             "transcription": {
-                "enabled": is_transcription_enabled(),
-                "reason": transcription_detection_reason(),
-                "whisper_running": whisper_running,
+                "mode": "connector",
+                "worker_enabled": is_transcription_enabled(),
+                **coverage,
             },
         },
         "recent_failures": failures,
-        "log_sources": list(LOG_SOURCES.keys()),
+        # Raw logs are superadmin-only (see /system/logs); an empty list here
+        # is what tells the frontend to hide the Live logs panel.
+        "log_sources": list(LOG_SOURCES.keys()) if is_superadmin else [],
     }

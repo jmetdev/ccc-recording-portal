@@ -23,8 +23,10 @@ from app.schemas import (
     TranscriptSearchResult,
 )
 from app.services.audit import record_audit
+from app.services.call_stats import distinct_call_count_stmt
 from app.services.freeswitch import list_active_recording_channels
 from app.services.storage import get_storage
+from app.services.system_health import fetch_transcription_coverage
 
 router = APIRouter(tags=["calls"])
 
@@ -42,16 +44,10 @@ async def dashboard_stats(
     group_id = await scoped_call_filter(user)
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    def call_filter(stmt):
-        stmt = stmt.where(Call.tenant_id == user.tenant_id)
-        if group_id is not None:
-            return stmt.where(Call.group_id == group_id)
-        return stmt
-
     calls_today = (
-        await db.execute(call_filter(select(func.count()).select_from(Call).where(Call.started_at >= today)))
+        await db.execute(distinct_call_count_stmt(user.tenant_id, group_id, Call.started_at >= today))
     ).scalar_one()
-    calls_total = (await db.execute(call_filter(select(func.count()).select_from(Call)))).scalar_one()
+    calls_total = (await db.execute(distinct_call_count_stmt(user.tenant_id, group_id))).scalar_one()
     fs_channels = await list_active_recording_channels()
     if fs_channels:
         recording_now = len(fs_channels)
@@ -137,6 +133,7 @@ async def list_calls(
     near_addr: str | None = None,
     far_addr: str | None = None,
     direction: str | None = None,
+    source: str | None = None,
     sentiment: str | None = None,
     status: str | None = None,
     date_from: datetime | None = None,
@@ -166,6 +163,8 @@ async def list_calls(
         filters.append(Call.far_addr.ilike(f"%{far_addr}%"))
     if direction:
         filters.append(Call.direction == direction)
+    if source:
+        filters.append(Call.source == source)
     if status:
         filters.append(Call.status == status)
     if date_from:
@@ -411,6 +410,17 @@ async def search_transcripts(
         )
         for r in result.all()
     ]
+
+
+@router.get("/transcripts/coverage")
+async def transcription_coverage(
+    user=Depends(require_permission(Permission.VIEW_TRANSCRIPTS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tenant-wide transcript coverage, for the Search page to show whether
+    results are trustworthy — search only reaches calls that were transcribed.
+    """
+    return await fetch_transcription_coverage(db, user.tenant_id)
 
 
 @router.get("/calls/{call_id}/transcripts", response_model=list[TranscriptOut])

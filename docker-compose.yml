@@ -33,11 +33,12 @@ services:
       WORKER_TOKEN: ${WORKER_TOKEN:-change-me-worker-token}
       RECORDINGS_DIR: /recordings
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       FREESWITCH_FS_CLI: ${FREESWITCH_FS_CLI:-}
-      TRANSCRIPTION_ENABLED: ${TRANSCRIPTION_ENABLED:-}
+      TRANSCRIPTION_ENABLED: ${TRANSCRIPTION_ENABLED:-false}
       WHISPER_CONTAINER_NAME: ${WHISPER_CONTAINER_NAME:-portal-whisper}
-      SYSTEM_CONTAINERS: ${SYSTEM_CONTAINERS:-portal-backend,portal-db,portal-frontend,portal-media-handler,portal-whisper,freeswitch}
+      SYSTEM_CONTAINERS: ${SYSTEM_CONTAINERS:-portal-backend,portal-db,portal-frontend,portal-media-handler,freeswitch}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       S3_BUCKET: ${S3_BUCKET:-}
       S3_PREFIX: ${S3_PREFIX:-}

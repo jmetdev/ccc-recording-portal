@@ -52,7 +52,7 @@ export function ConnectorsTab() {
   return (
     <Stack gap="md">
       <Group justify="space-between">
-        <Title order={5}>Connector credentials</Title>
+        <Title order={3}>Connector credentials</Title>
         <Button leftSection={<IconPlus size={16} />} onClick={() => setModalOpen(true)}>
           New connector
         </Button>

@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, select
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.rbac import require_permission, user_permissions
 from app.core.security import hash_password
 from app.models import (
+    Call,
     Group,
     Job,
     Permission,
@@ -29,6 +30,9 @@ from app.schemas import (
     UserOut,
     UserUpdate,
 )
+from app.services.audit import record_audit
+from app.services.retention import purge_call_media
+from app.services.storage import get_storage
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -84,11 +88,17 @@ async def list_groups(
 @router.post("/groups", response_model=GroupOut)
 async def create_group(
     body: GroupCreate,
+    request: Request,
     user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
     group = Group(name=body.name, tenant_id=user.tenant_id)
     db.add(group)
+    await db.flush()
+    await record_audit(
+        db, tenant_id=user.tenant_id, user=user, action="admin.group_create",
+        resource_type="group", resource_id=group.id, detail={"name": group.name}, request=request,
+    )
     await db.commit()
     await db.refresh(group)
     return group
@@ -97,6 +107,7 @@ async def create_group(
 @router.delete("/groups/{group_id}")
 async def delete_group(
     group_id: int,
+    request: Request,
     user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -105,6 +116,10 @@ async def delete_group(
     ).scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    await record_audit(
+        db, tenant_id=user.tenant_id, user=user, action="admin.group_delete",
+        resource_type="group", resource_id=group.id, detail={"name": group.name}, request=request,
+    )
     await db.delete(group)
     await db.commit()
     return {"status": "ok"}
@@ -127,6 +142,7 @@ async def list_roles(
 @router.post("/roles", response_model=RoleOut)
 async def create_role(
     body: RoleCreate,
+    request: Request,
     user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -135,6 +151,11 @@ async def create_role(
     await db.flush()
     for perm in body.permissions:
         db.add(RolePermission(role_id=role.id, permission=Permission(perm.value)))
+    await record_audit(
+        db, tenant_id=user.tenant_id, user=user, action="admin.role_create",
+        resource_type="role", resource_id=role.id,
+        detail={"name": role.name, "permissions": [p.value for p in body.permissions]}, request=request,
+    )
     await db.commit()
     await db.refresh(role)
     result = await db.execute(select(Role).options(selectinload(Role.permissions)).where(Role.id == role.id))
@@ -144,6 +165,7 @@ async def create_role(
 @router.delete("/roles/{role_id}")
 async def delete_role(
     role_id: int,
+    request: Request,
     user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -152,6 +174,10 @@ async def delete_role(
     ).scalar_one_or_none()
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
+    await record_audit(
+        db, tenant_id=user.tenant_id, user=user, action="admin.role_delete",
+        resource_type="role", resource_id=role.id, detail={"name": role.name}, request=request,
+    )
     await db.delete(role)
     await db.commit()
     return {"status": "ok"}
@@ -173,6 +199,7 @@ async def list_users(
 @router.post("/users", response_model=UserOut)
 async def create_user(
     body: UserCreate,
+    request: Request,
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -188,6 +215,11 @@ async def create_user(
     await db.flush()
     for role_id in body.role_ids:
         await db.execute(user_roles.insert().values(user_id=user.id, role_id=role_id))
+    await record_audit(
+        db, tenant_id=admin.tenant_id, user=admin, action="admin.user_create",
+        resource_type="user", resource_id=user.id,
+        detail={"email": user.email, "username": user.username}, request=request,
+    )
     await db.commit()
     result = await db.execute(
         select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == user.id)
@@ -199,6 +231,7 @@ async def create_user(
 async def update_user(
     user_id: int,
     body: UserUpdate,
+    request: Request,
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -210,20 +243,31 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    changed: list[str] = []
     if body.email is not None:
         user.email = body.email
+        changed.append("email")
     if body.username is not None:
         user.username = body.username
+        changed.append("username")
     if body.password is not None:
         user.password_hash = hash_password(body.password)
+        changed.append("password")
     if body.group_id is not None:
         user.group_id = body.group_id
+        changed.append("group_id")
     if body.is_active is not None:
         user.is_active = body.is_active
+        changed.append("is_active")
     if body.role_ids is not None:
         await db.execute(delete(user_roles).where(user_roles.c.user_id == user.id))
         for role_id in body.role_ids:
             await db.execute(user_roles.insert().values(user_id=user.id, role_id=role_id))
+        changed.append("role_ids")
+    await record_audit(
+        db, tenant_id=admin.tenant_id, user=admin, action="admin.user_update",
+        resource_type="user", resource_id=user.id, detail={"changed": changed}, request=request,
+    )
     await db.commit()
     result = await db.execute(
         select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == user_id)
@@ -234,6 +278,7 @@ async def update_user(
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: int,
+    request: Request,
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -242,6 +287,11 @@ async def delete_user(
     ).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    await record_audit(
+        db, tenant_id=admin.tenant_id, user=admin, action="admin.user_delete",
+        resource_type="user", resource_id=user.id,
+        detail={"email": user.email, "username": user.username}, request=request,
+    )
     await db.delete(user)
     await db.commit()
     return {"status": "ok"}
@@ -264,6 +314,7 @@ async def list_extensions(
 @router.post("/recorded-extensions", response_model=RecordedExtensionOut)
 async def create_extension(
     body: RecordedExtensionCreate,
+    request: Request,
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -272,6 +323,11 @@ async def create_extension(
     db.add(ext)
     await db.flush()
     await set_extension_groups(db, ext, body.group_ids)
+    await record_audit(
+        db, tenant_id=admin.tenant_id, user=admin, action="admin.extension_create",
+        resource_type="recorded_extension", resource_id=ext.id,
+        detail={"extension": ext.extension}, request=request,
+    )
     await db.commit()
     result = await db.execute(
         select(RecordedExtension)
@@ -285,6 +341,7 @@ async def create_extension(
 async def update_extension(
     ext_id: int,
     body: RecordedExtensionUpdate,
+    request: Request,
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -296,10 +353,17 @@ async def update_extension(
     ext = result.scalar_one_or_none()
     if not ext:
         raise HTTPException(status_code=404, detail="Extension not found")
+    changed = list(body.model_dump(exclude_unset=True, exclude={"group_ids"}).keys())
     for k, v in body.model_dump(exclude_unset=True, exclude={"group_ids"}).items():
         setattr(ext, k, v)
     if body.group_ids is not None:
         await set_extension_groups(db, ext, body.group_ids)
+        changed.append("group_ids")
+    await record_audit(
+        db, tenant_id=admin.tenant_id, user=admin, action="admin.extension_update",
+        resource_type="recorded_extension", resource_id=ext.id,
+        detail={"extension": ext.extension, "changed": changed}, request=request,
+    )
     await db.commit()
     result = await db.execute(
         select(RecordedExtension)
@@ -312,6 +376,7 @@ async def update_extension(
 @router.delete("/recorded-extensions/{ext_id}")
 async def delete_extension(
     ext_id: int,
+    request: Request,
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -324,6 +389,11 @@ async def delete_extension(
     ).scalar_one_or_none()
     if not ext:
         raise HTTPException(status_code=404, detail="Extension not found")
+    await record_audit(
+        db, tenant_id=admin.tenant_id, user=admin, action="admin.extension_delete",
+        resource_type="recorded_extension", resource_id=ext.id,
+        detail={"extension": ext.extension}, request=request,
+    )
     await db.delete(ext)
     await db.commit()
     return {"status": "ok"}
@@ -334,10 +404,36 @@ async def purge_call_data(
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Remove this tenant's calls, recordings, tags, transcripts, and media jobs."""
-    from app.models import Call
+    """Permanently delete this tenant's calls: DB rows, media files, tags,
+    transcripts, and pending media jobs. Irreversible — mirrors the retention
+    sweep's disposition (media + metadata together) and is audited the same way.
+    """
+    storage = get_storage()
+    calls = (
+        await db.execute(
+            select(Call).options(selectinload(Call.recordings)).where(Call.tenant_id == admin.tenant_id)
+        )
+    ).scalars().all()
+    call_ids = [c.id for c in calls]
 
-    await db.execute(delete(Job).where(Job.tenant_id == admin.tenant_id))
-    await db.execute(delete(Call).where(Call.tenant_id == admin.tenant_id))
+    files_deleted = sum(purge_call_media(storage, call) for call in calls)
+
+    job_filter = Job.tenant_id == admin.tenant_id
+    if call_ids:
+        job_filter = or_(job_filter, Job.payload["call_id"].as_integer().in_(call_ids))
+    await db.execute(delete(Job).where(job_filter))
+
+    for call in calls:
+        await db.delete(call)
+
+    await record_audit(
+        db,
+        tenant_id=admin.tenant_id,
+        user=admin,
+        action="admin.purge_call_data",
+        resource_type="tenant",
+        resource_id=admin.tenant_id,
+        detail={"calls_deleted": len(calls), "files_deleted": files_deleted},
+    )
     await db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "calls_deleted": len(calls), "files_deleted": files_deleted}

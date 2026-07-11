@@ -44,13 +44,15 @@ function PolicyCard() {
 
   return (
     <Card padding="lg" radius="md">
-      <Title order={5} mb="xs">
+      <Title order={3} mb="xs">
         Retention policy
       </Title>
       <Text size="sm" c="dimmed" mb="md">
-        Calls older than the retention window are automatically purged (media and metadata) by a
-        periodic sweep. Calls under legal hold are always skipped. Leave disabled to retain
-        indefinitely.
+        Calls older than the retention window are automatically purged by a periodic sweep, which
+        deletes the database record, tags, transcripts, and the recording audio files on disk —
+        every artifact, not just the metadata. Calls under legal hold are always skipped. This does
+        not cover offsite backups or object-store versioning, if configured. Leave disabled to
+        retain indefinitely.
       </Text>
       <Group align="flex-end" gap="lg">
         <Switch
@@ -104,7 +106,7 @@ function LegalHoldsCard() {
     <Card padding="lg" radius="md">
       <Group gap="xs" mb="xs">
         <IconLock size={18} color="#f08c00" />
-        <Title order={5}>Legal holds</Title>
+        <Title order={3}>Legal holds</Title>
       </Group>
       {items.length === 0 ? (
         <Text size="sm" c="dimmed">
@@ -157,7 +159,7 @@ function DispositionLog() {
   const rows = log.data ?? [];
   return (
     <Card padding="lg" radius="md">
-      <Title order={5} mb="xs">
+      <Title order={3} mb="xs">
         Disposition log
       </Title>
       <Text size="sm" c="dimmed" mb="md">

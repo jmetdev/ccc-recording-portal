@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMediaQuery } from '@mantine/hooks';
 import {
   ActionIcon,
   Badge,
@@ -11,6 +12,7 @@ import {
   Group,
   Loader,
   Modal,
+  Pagination,
   ScrollArea,
   Select,
   Slider,
@@ -24,6 +26,7 @@ import {
 } from '@mantine/core';
 import {
   IconAdjustments,
+  IconArrowLeft,
   IconLock,
   IconPlayerPause,
   IconPlayerPlay,
@@ -53,6 +56,8 @@ const SENTIMENT_COLORS: Record<string, string> = {
   neutral: 'gray',
 };
 
+const PAGE_SIZE = 50;
+
 function CallList({ selectedId }: { selectedId: number | null }) {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
@@ -60,10 +65,16 @@ function CallList({ selectedId }: { selectedId: number | null }) {
   const [direction, setDirection] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [sentiment, setSentiment] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
-  const params: Record<string, string> = { page: '1', page_size: '50' };
+  useEffect(() => {
+    setPage(1);
+  }, [q, direction, source, sentiment]);
+
+  const params: Record<string, string> = { page: String(page), page_size: String(PAGE_SIZE) };
   if (q) params.q = q;
   if (direction) params.direction = direction;
+  if (source) params.source = source;
   if (sentiment) params.sentiment = sentiment;
 
   const { data, isLoading } = useQuery({
@@ -72,8 +83,9 @@ function CallList({ selectedId }: { selectedId: number | null }) {
     refetchInterval: 30000,
   });
 
-  // source has no dedicated backend filter param yet — filter client-side.
-  const items = (data?.items ?? []).filter((c) => !source || c.source === source);
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className={classes.listPane}>
@@ -99,10 +111,19 @@ function CallList({ selectedId }: { selectedId: number | null }) {
         </Group>
         <Collapse in={showFilters}>
           <Stack gap="xs" mt="xs">
-            <Select size="xs" placeholder="Source" clearable data={['cucm', 'webex']} value={source} onChange={setSource} />
+            <Select
+              size="xs"
+              placeholder="Source"
+              aria-label="Filter by source"
+              clearable
+              data={['cucm', 'webex']}
+              value={source}
+              onChange={setSource}
+            />
             <Select
               size="xs"
               placeholder="Direction"
+              aria-label="Filter by direction"
               clearable
               data={['inbound', 'outbound', 'internal']}
               value={direction}
@@ -111,6 +132,7 @@ function CallList({ selectedId }: { selectedId: number | null }) {
             <Select
               size="xs"
               placeholder="Sentiment"
+              aria-label="Filter by sentiment"
               clearable
               data={['positive', 'neutral', 'negative']}
               value={sentiment}
@@ -129,31 +151,44 @@ function CallList({ selectedId }: { selectedId: number | null }) {
             No calls match.
           </Text>
         ) : (
-          items.map((c) => {
-            const title = c.far_name || c.far_addr || 'Unknown';
-            const active = c.id === selectedId;
-            return (
-              <div
-                key={c.id}
-                className={active ? `${classes.row} ${classes.rowActive}` : classes.row}
-                onClick={() => navigate(`/recordings/${c.id}`)}
-              >
-                <div className={classes.playGlyph}>
-                  <IconPlayerPlay size={15} />
-                </div>
-                <Box style={{ flex: 1, minWidth: 0 }}>
-                  <Text size="sm" fw={600} truncate>
-                    {title}
-                  </Text>
-                  <div className={classes.rowMeta}>
-                    {(c.source || '').toUpperCase()} · {shortDate(c.started_at)} ·{' '}
-                    {c.duration_s != null ? formatTime(c.duration_s) : '—'}
-                  </div>
-                </Box>
-                <SourceBadge source={c.source} />
-              </div>
-            );
-          })
+          <ul className={classes.list}>
+            {items.map((c) => {
+              const title = c.far_name || c.far_addr || 'Unknown';
+              const active = c.id === selectedId;
+              return (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    className={active ? `${classes.row} ${classes.rowActive}` : classes.row}
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => navigate(`/recordings/${c.id}`)}
+                  >
+                    <div className={classes.playGlyph} aria-hidden="true">
+                      <IconPlayerPlay size={15} />
+                    </div>
+                    <Box style={{ flex: 1, minWidth: 0 }}>
+                      <Text size="sm" fw={600} truncate>
+                        {title}
+                      </Text>
+                      <div className={classes.rowMeta}>
+                        {(c.source || '').toUpperCase()} · {shortDate(c.started_at)} ·{' '}
+                        {c.duration_s != null ? formatTime(c.duration_s) : '—'}
+                      </div>
+                    </Box>
+                    <SourceBadge source={c.source} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      <div className={classes.listFooter}>
+        <Text size="xs" c="dimmed">
+          {total.toLocaleString()} call{total === 1 ? '' : 's'}
+        </Text>
+        {totalPages > 1 && (
+          <Pagination size="xs" total={totalPages} value={page} onChange={setPage} siblings={1} boundaries={1} />
         )}
       </div>
     </div>
@@ -266,7 +301,7 @@ function CallDetail({ callId }: { callId: number }) {
           <Group justify="space-between" align="flex-start" wrap="wrap" mb="sm">
             <Box>
               <Group gap="xs" wrap="wrap">
-                <Title order={4}>{farLabel}</Title>
+                <Title order={3}>{farLabel}</Title>
                 {c?.source && <SourceBadge source={c.source} />}
                 {status && <CallStatusBadge status={status} />}
                 {c?.legal_hold && (
@@ -468,20 +503,48 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
 
 export function RecordingsPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const callId = id ? Number(id) : null;
+  const stats = useQuery({ queryKey: ['dashboard-stats'], queryFn: api.dashboardStats });
+  // Below this width the list and detail panes take turns instead of sharing
+  // the row — a shrunk three-pane layout reads as cramped, not responsive.
+  const isNarrow = !!useMediaQuery('(max-width: 860px)');
+  const showList = !isNarrow || callId == null;
+  const showDetail = !isNarrow || callId != null;
 
   return (
     <Stack gap="md">
-      <Title order={2}>Recordings</Title>
-      <div className={classes.layout}>
-        <CallList selectedId={callId} />
-        {callId != null ? (
-          <CallDetail key={callId} callId={callId} />
-        ) : (
-          <Card padding="md" radius="md">
-            <div className={classes.empty}>Select a call to play its recording.</div>
-          </Card>
+      <Group justify="space-between">
+        <Title order={2}>Recordings</Title>
+        {isNarrow && callId != null && (
+          <Button
+            variant="subtle"
+            size="xs"
+            leftSection={<IconArrowLeft size={14} />}
+            onClick={() => navigate('/recordings')}
+          >
+            Back to list
+          </Button>
         )}
+      </Group>
+      <div className={classes.layout}>
+        {showList && <CallList selectedId={callId} />}
+        {showDetail &&
+          (callId != null ? (
+            <CallDetail key={callId} callId={callId} />
+          ) : (
+            <Card padding="md" radius="md">
+              <div className={classes.empty}>
+                <Text fw={600}>Select a call to play its recording</Text>
+                <Text size="sm" c="dimmed" mt={4}>
+                  {stats.data
+                    ? `${stats.data.calls_total.toLocaleString()} call${stats.data.calls_total === 1 ? '' : 's'} in this tenant.`
+                    : ' '}{' '}
+                  Use the search box or filters on the left, or click any row.
+                </Text>
+              </div>
+            </Card>
+          ))}
       </div>
     </Stack>
   );

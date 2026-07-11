@@ -102,13 +102,21 @@ function ServiceRow({ ok, label, detail }: { ok: boolean; label: string; detail?
 }
 
 function StatusBanner({ status }: { status: SystemStatus }) {
-  const color = overallColor(status.overall);
-  const title =
-    status.overall === 'healthy'
-      ? 'All systems operational'
-      : status.overall === 'degraded'
-        ? 'Some services need attention'
-        : 'Critical issues detected';
+  // Uptime (services reachable) and capability (transcription actually covers
+  // calls) are reported separately — a healthy stack with incomplete
+  // transcription coverage is not "all systems operational".
+  const bothOk = status.overall === 'healthy' && status.capability === 'full';
+  const color = bothOk ? overallColor(status.overall) : status.overall === 'healthy' ? 'yellow' : overallColor(status.overall);
+  const title = bothOk
+    ? 'All systems operational'
+    : status.overall === 'degraded'
+      ? 'Some services need attention'
+      : status.overall === 'critical'
+        ? 'Critical issues detected'
+        : 'Services healthy — transcription coverage incomplete';
+
+  const tx = status.services.transcription;
+  const coveragePct = tx.total_calls > 0 ? Math.round((tx.transcribed_calls / tx.total_calls) * 100) : null;
 
   return (
     <Alert
@@ -123,6 +131,11 @@ function StatusBanner({ status }: { status: SystemStatus }) {
           {status.summary.containers_healthy}/{status.summary.containers_total} containers healthy
         </Text>
         <Text size="sm">{status.summary.recent_failures} recent failed call(s)</Text>
+        {coveragePct != null && (
+          <Text size="sm">
+            Transcription coverage {coveragePct}% ({tx.transcribed_calls}/{tx.total_calls} calls)
+          </Text>
+        )}
         <Text size="xs" c="dimmed">
           Last checked {formatTime(status.checked_at)}
         </Text>
@@ -329,14 +342,12 @@ export function HealthStatusPage() {
               }
             />
             <ServiceRow
-              ok={tx.enabled ? tx.whisper_running : true}
+              ok={tx.total_calls === 0 || tx.transcribed_calls >= tx.total_calls}
               label="Transcription"
               detail={
-                tx.enabled
-                  ? tx.whisper_running
-                    ? 'Whisper running'
-                    : 'Whisper not running'
-                  : tx.reason || 'disabled'
+                tx.total_calls === 0
+                  ? 'No completed calls yet'
+                  : `${tx.transcribed_calls}/${tx.total_calls} calls transcribed`
               }
             />
           </Stack>
@@ -393,30 +404,32 @@ export function HealthStatusPage() {
         </Paper>
       </SimpleGrid>
 
-      <Paper withBorder p="md" radius="md">
-        <Group justify="space-between" mb="md">
-          <Group gap="xs">
-            <ThemeIcon variant="light" color="gray">
-              <IconBrandDocker size={18} />
-            </ThemeIcon>
-            <Text fw={600}>Live logs</Text>
+      {status.log_sources.length > 0 && (
+        <Paper withBorder p="md" radius="md">
+          <Group justify="space-between" mb="md">
+            <Group gap="xs">
+              <ThemeIcon variant="light" color="gray">
+                <IconBrandDocker size={18} />
+              </ThemeIcon>
+              <Text fw={600}>Live logs</Text>
+            </Group>
+            <SegmentedControl
+              size="xs"
+              value={logSource}
+              onChange={setLogSource}
+              data={status.log_sources.map((source) => ({
+                label: source.replace('portal-', '').replace('freeswitch', 'SIP switch'),
+                value: source,
+              }))}
+            />
           </Group>
-          <SegmentedControl
-            size="xs"
-            value={logSource}
-            onChange={setLogSource}
-            data={status.log_sources.map((source) => ({
-              label: source.replace('portal-', '').replace('freeswitch', 'SIP switch'),
-              value: source,
-            }))}
-          />
-        </Group>
-        {logsQuery.isLoading ? (
-          <Loader size="sm" />
-        ) : (
-          <LogViewer lines={logsQuery.data?.lines ?? ['(no log data)']} />
-        )}
-      </Paper>
+          {logsQuery.isLoading ? (
+            <Loader size="sm" />
+          ) : (
+            <LogViewer lines={logsQuery.data?.lines ?? ['(no log data)']} />
+          )}
+        </Paper>
+      )}
     </Stack>
   );
 }

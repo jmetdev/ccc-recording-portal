@@ -159,12 +159,14 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         db,
         JobType.MEDIA_CONVERT,
         {"call_id": call.id, "recording_ids": recording_ids, "paths": payload.files},
+        tenant_id=tenant_id,
     )
     if is_transcription_enabled():
         await enqueue_job(
             db,
             JobType.TRANSCRIBE,
             {"call_id": call.id, "recording_ids": recording_ids, "paths": payload.files},
+            tenant_id=tenant_id,
         )
 
     await db.commit()

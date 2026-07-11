@@ -134,7 +134,7 @@ function GroupsRolesTab() {
   return (
     <Stack gap="lg">
       <div>
-        <Title order={5} mb="sm">
+        <Title order={3} mb="sm">
           Groups
         </Title>
         <Group mb="md">
@@ -154,7 +154,7 @@ function GroupsRolesTab() {
         </Table>
       </div>
       <div>
-        <Title order={5} mb="sm">
+        <Title order={3} mb="sm">
           Roles
         </Title>
         <Table>
@@ -301,33 +301,73 @@ function ExtensionsTab() {
 
 function DangerZone() {
   const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ['tenant-settings'], queryFn: api.tenant.getSettings });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [lastResult, setLastResult] = useState<{ calls_deleted: number; files_deleted: number } | null>(null);
+
   const purgeCallData = useMutation({
     mutationFn: api.admin.purgeCallData,
-    onSuccess: () => {
+    onSuccess: (result) => {
+      setLastResult(result);
+      setConfirmOpen(false);
+      setConfirmText('');
       qc.invalidateQueries({ queryKey: ['calls'] });
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      qc.invalidateQueries({ queryKey: ['tenant-storage-stats'] });
       qc.invalidateQueries({ queryKey: ['live-channels'] });
     },
   });
+
+  const slug = settings.data?.slug ?? '';
+
   return (
     <Alert color="red" title="Danger zone">
       <Group justify="space-between" align="center">
         <Text size="sm">
-          Permanently delete all calls, recordings metadata, and transcription jobs. Audio files on disk are not removed.
+          Permanently delete every call for this tenant: database records, tags, transcripts, pending
+          media jobs, <strong>and the recording audio files on disk</strong>. This cannot be undone and
+          is not covered by the retention disposition log.
         </Text>
-        <Button
-          color="red"
-          variant="outline"
-          loading={purgeCallData.isPending}
-          onClick={() => {
-            if (window.confirm('Delete ALL call data? This cannot be undone.')) purgeCallData.mutate();
-          }}
-        >
+        <Button color="red" variant="outline" onClick={() => setConfirmOpen(true)}>
           Purge call data
         </Button>
       </Group>
-      {purgeCallData.isSuccess && <Text size="sm" mt="xs" c="green">Call data purged.</Text>}
+      {lastResult && (
+        <Text size="sm" mt="xs" c="green">
+          Purged {lastResult.calls_deleted} call{lastResult.calls_deleted === 1 ? '' : 's'} and{' '}
+          {lastResult.files_deleted} media file{lastResult.files_deleted === 1 ? '' : 's'}.
+        </Text>
+      )}
       {purgeCallData.isError && <Text size="sm" mt="xs" c="red">{(purgeCallData.error as Error).message}</Text>}
+
+      <Modal opened={confirmOpen} onClose={() => setConfirmOpen(false)} title="Confirm permanent purge">
+        <Stack gap="sm">
+          <Text size="sm">
+            This deletes all call data and audio files for tenant <strong>{slug || '…'}</strong> and cannot be
+            undone. Type the tenant slug to confirm.
+          </Text>
+          <TextInput
+            placeholder={slug}
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            autoFocus
+          />
+          <Group justify="flex-end">
+            <Button variant="subtle" onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              disabled={!slug || confirmText !== slug}
+              loading={purgeCallData.isPending}
+              onClick={() => purgeCallData.mutate()}
+            >
+              Permanently delete
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Alert>
   );
 }

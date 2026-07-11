@@ -430,6 +430,7 @@ class LargestRecording(BaseModel):
 class StorageStats(BaseModel):
     total_bytes: int
     recording_count: int
+    call_count: int
     avg_bytes: int
     by_source: list[StorageSourceStat]
     by_month: list[StorageMonthStat]

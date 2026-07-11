@@ -10,9 +10,9 @@ type Props = {
 /** CloudCoreRecord wordmark — shared by the sidebar and the login screen. */
 export function BrandMark({ size = 22, textSize }: Props) {
   return (
-    <Group gap={8} wrap="nowrap">
-      <IconCloud size={size} color="#1997e4" stroke={1.8} />
-      <Text className={classes.brand} style={textSize ? { fontSize: textSize } : undefined}>
+    <Group gap={8} wrap="nowrap" aria-label="CloudCoreRecord" role="img">
+      <IconCloud size={size} color="#1997e4" stroke={1.8} aria-hidden="true" />
+      <Text className={classes.brand} style={textSize ? { fontSize: textSize } : undefined} aria-hidden="true">
         Cloud<span className={classes.brandAccent}>Core</span>Record
       </Text>
     </Group>

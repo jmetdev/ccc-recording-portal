@@ -102,9 +102,18 @@ export type ConnectorHealth = {
   stats: Record<string, unknown> | null;
 };
 
+export type TranscriptionCoverage = {
+  mode: 'connector';
+  worker_enabled: boolean;
+  by_source: Record<string, { total_calls: number; transcribed_calls: number }>;
+  total_calls: number;
+  transcribed_calls: number;
+};
+
 export type SystemStatus = {
   checked_at: string;
   overall: 'healthy' | 'degraded' | 'critical';
+  capability: 'full' | 'partial';
   summary: {
     containers_healthy: number;
     containers_total: number;
@@ -116,7 +125,7 @@ export type SystemStatus = {
     database: { ok: boolean; latency_ms?: number; error?: string };
     recordings: {
       ok: boolean;
-      path: string;
+      path?: string;
       readable?: boolean;
       writable?: boolean;
       wav_count?: number;
@@ -124,7 +133,7 @@ export type SystemStatus = {
       error?: string;
     };
     freeswitch: { fs_cli_configured: boolean; active_recording_channels: number };
-    transcription: { enabled: boolean; reason: string; whisper_running: boolean };
+    transcription: TranscriptionCoverage;
   };
   recent_failures: FailedCallRow[];
   log_sources: string[];
@@ -221,6 +230,7 @@ export const api = {
     if (sentiment) params.set('sentiment', sentiment);
     return request<TranscriptSearchResult[]>(`/transcripts/search?${params}`);
   },
+  transcriptCoverage: () => request<TranscriptionCoverage>('/transcripts/coverage'),
   systemStatus: () => request<SystemStatus>('/system/status'),
   tenant: {
     getSettings: () => request<TenantSettings>('/tenant/settings'),
@@ -268,7 +278,9 @@ export const api = {
     deleteExtension: (id: number) =>
       request<void>(`/admin/recorded-extensions/${id}`, { method: 'DELETE' }),
     purgeCallData: () =>
-      request<{ status: string }>('/admin/purge-call-data', { method: 'POST' }),
+      request<{ status: string; calls_deleted: number; files_deleted: number }>('/admin/purge-call-data', {
+        method: 'POST',
+      }),
   },
 };
 
@@ -345,6 +357,7 @@ export type ConnectorCredentialCreated = ConnectorCredential & { token: string }
 export type StorageStats = {
   total_bytes: number;
   recording_count: number;
+  call_count: number;
   avg_bytes: number;
   by_source: { source: string; bytes: number; count: number }[];
   by_month: { month: string; bytes: number; count: number }[];

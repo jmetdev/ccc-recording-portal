@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,8 +16,20 @@ from app.models import (
     user_roles,
 )
 
+logger = logging.getLogger(__name__)
+
+_DEFAULT_ADMIN_EMAIL = "admin@localhost"
+_DEFAULT_ADMIN_PASSWORD = "admin123"
+
 
 async def bootstrap(db: AsyncSession) -> None:
+    if settings.admin_email == _DEFAULT_ADMIN_EMAIL or settings.admin_password == _DEFAULT_ADMIN_PASSWORD:
+        logger.warning(
+            "Bootstrap admin is using a default credential (email=%s). Set ADMIN_EMAIL and "
+            "ADMIN_PASSWORD to a real address and a strong password before going to production.",
+            settings.admin_email,
+        )
+
     tenant = (
         await db.execute(select(Tenant).where(Tenant.slug == settings.default_tenant_slug))
     ).scalar_one_or_none()

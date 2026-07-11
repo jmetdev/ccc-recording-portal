@@ -11,8 +11,8 @@ class LiveHub:
         self._connections: dict[WebSocket, int] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, ws: WebSocket, tenant_id: int) -> None:
-        await ws.accept()
+    async def connect(self, ws: WebSocket, tenant_id: int, *, subprotocol: str | None = None) -> None:
+        await ws.accept(subprotocol=subprotocol)
         async with self._lock:
             self._connections[ws] = tenant_id
 

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.rbac import get_current_user, require_permission, user_permissions
+from app.core.rbac import get_current_user, require_permission, scoped_call_filter, user_permissions
 from app.core.security import generate_connector_token
 from app.models import (
     Call,
@@ -32,6 +32,7 @@ from app.schemas import (
     TenantSettingsUpdate,
 )
 from app.services.audit import record_audit
+from app.services.call_stats import distinct_call_count_stmt
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
@@ -158,27 +159,38 @@ async def storage_stats(
     db: AsyncSession = Depends(get_db),
 ):
     tid = user.tenant_id
+    group_id = await scoped_call_filter(user)
+
+    def group_scoped(stmt):
+        return stmt if group_id is None else stmt.where(Call.group_id == group_id)
 
     totals = (
         await db.execute(
-            select(
-                func.coalesce(func.sum(Recording.bytes), 0),
-                func.count(Recording.id),
-            ).where(Recording.tenant_id == tid)
+            group_scoped(
+                select(
+                    func.coalesce(func.sum(Recording.bytes), 0),
+                    func.count(Recording.id),
+                )
+                .join(Call, Recording.call_id == Call.id)
+                .where(Recording.tenant_id == tid)
+            )
         )
     ).one()
     total_bytes, recording_count = int(totals[0]), int(totals[1])
+    call_count = (await db.execute(distinct_call_count_stmt(tid, group_id))).scalar_one()
 
     by_source_rows = (
         await db.execute(
-            select(
-                Call.source,
-                func.coalesce(func.sum(Recording.bytes), 0),
-                func.count(Recording.id),
+            group_scoped(
+                select(
+                    Call.source,
+                    func.coalesce(func.sum(Recording.bytes), 0),
+                    func.count(Recording.id),
+                )
+                .join(Call, Recording.call_id == Call.id)
+                .where(Recording.tenant_id == tid)
+                .group_by(Call.source)
             )
-            .join(Call, Recording.call_id == Call.id)
-            .where(Recording.tenant_id == tid)
-            .group_by(Call.source)
         )
     ).all()
 
@@ -188,25 +200,29 @@ async def storage_stats(
     month = func.to_char(func.date_trunc("month", Call.started_at), "YYYY-MM")
     by_month_rows = (
         await db.execute(
-            select(
-                month.label("month"),
-                func.coalesce(func.sum(Recording.bytes), 0),
-                func.count(Recording.id),
+            group_scoped(
+                select(
+                    month.label("month"),
+                    func.coalesce(func.sum(Recording.bytes), 0),
+                    func.count(Recording.id),
+                )
+                .join(Call, Recording.call_id == Call.id)
+                .where(Recording.tenant_id == tid, Call.started_at >= twelve_months_ago)
+                .group_by("month")
+                .order_by("month")
             )
-            .join(Call, Recording.call_id == Call.id)
-            .where(Recording.tenant_id == tid, Call.started_at >= twelve_months_ago)
-            .group_by("month")
-            .order_by("month")
         )
     ).all()
 
     largest_rows = (
         await db.execute(
-            select(Recording, Call)
-            .join(Call, Recording.call_id == Call.id)
-            .where(Recording.tenant_id == tid, Recording.bytes.is_not(None))
-            .order_by(desc(Recording.bytes))
-            .limit(10)
+            group_scoped(
+                select(Recording, Call)
+                .join(Call, Recording.call_id == Call.id)
+                .where(Recording.tenant_id == tid, Recording.bytes.is_not(None))
+                .order_by(desc(Recording.bytes))
+                .limit(10)
+            )
         )
     ).all()
 
@@ -220,6 +236,7 @@ async def storage_stats(
     return StorageStats(
         total_bytes=total_bytes,
         recording_count=recording_count,
+        call_count=call_count,
         avg_bytes=total_bytes // recording_count if recording_count else 0,
         by_source=[
             {"source": s.value if hasattr(s, "value") else str(s), "bytes": int(b), "count": int(c)}

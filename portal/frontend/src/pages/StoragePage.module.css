@@ -54,3 +54,11 @@
   color: #74777d;
   white-space: nowrap;
 }
+
+.growthValue {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: #0a0a0a;
+  white-space: nowrap;
+}

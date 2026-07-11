@@ -17,9 +17,28 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.models import Call, Tenant
 from app.services.audit import record_audit
-from app.services.storage import get_storage
+from app.services.storage import Storage, get_storage
 
 logger = logging.getLogger(__name__)
+
+
+def purge_call_media(storage: Storage, call: Call) -> int:
+    """Delete every recording's media objects for a call. Returns files deleted.
+
+    Shared by the retention sweep and the admin danger-zone purge so both
+    paths leave the same disposition: DB rows AND media are removed together.
+    """
+    deleted = 0
+    for rec in call.recordings:
+        for key in (rec.media_path, rec.path_m4a, rec.path_wav):
+            if not key:
+                continue
+            try:
+                storage.delete(key)
+                deleted += 1
+            except Exception:  # noqa: BLE001 - keep going on media errors
+                logger.warning("purge: failed to delete media %s", key)
+    return deleted
 
 
 async def sweep_expired_calls(db: AsyncSession) -> dict:
@@ -47,14 +66,7 @@ async def sweep_expired_calls(db: AsyncSession) -> dict:
             )
         ).scalars().all()
         for call in calls:
-            for rec in call.recordings:
-                for key in (rec.media_path, rec.path_m4a, rec.path_wav):
-                    if not key:
-                        continue
-                    try:
-                        storage.delete(key)
-                    except Exception:  # noqa: BLE001 - keep sweeping on media errors
-                        logger.warning("retention: failed to delete media %s", key)
+            purge_call_media(storage, call)
             await record_audit(
                 db,
                 tenant_id=tenant.id,

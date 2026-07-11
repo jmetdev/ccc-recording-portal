@@ -12,7 +12,7 @@ def payload_hash(payload: dict) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
-async def enqueue_job(db: AsyncSession, job_type: JobType, payload: dict) -> Job | None:
+async def enqueue_job(db: AsyncSession, job_type: JobType, payload: dict, tenant_id: int | None = None) -> Job | None:
     ph = payload_hash(payload)
 
     # One active job per (job_type, call). Duplicate ingest completes can slip
@@ -36,7 +36,7 @@ async def enqueue_job(db: AsyncSession, job_type: JobType, payload: dict) -> Job
     if existing.scalars().first():
         return None
 
-    job = Job(job_type=job_type, payload=payload, payload_hash=ph, status=JobStatus.PENDING)
+    job = Job(job_type=job_type, tenant_id=tenant_id, payload=payload, payload_hash=ph, status=JobStatus.PENDING)
     db.add(job)
     await db.flush()
     return job
