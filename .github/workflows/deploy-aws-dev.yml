@@ -72,7 +72,7 @@ jobs:
           npm ci
           npx cdk deploy ccc-dev-app \
             -c stage="$STAGE" -c imageTag="$IMAGE_TAG" \
-            --require-approval never --no-rollback \
+            --require-approval never \
             --outputs-file cdk-outputs.json
           echo "DISTRIBUTION_ID=$(node -p "require('./cdk-outputs.json')['ccc-dev-app'].DistributionId")" >> "$GITHUB_ENV"
           echo "WEB_BUCKET=$(node -p "require('./cdk-outputs.json')['ccc-dev-app'].WebBucketName")" >> "$GITHUB_ENV"
