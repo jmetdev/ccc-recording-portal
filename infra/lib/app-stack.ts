@@ -2,6 +2,7 @@ import { Stack, StackProps, Duration, RemovalPolicy, CfnOutput } from 'aws-cdk-l
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as rds from 'aws-cdk-lib/aws-rds';
@@ -109,6 +110,17 @@ export class AppStack extends Stack {
       },
     });
     mediaBucket.grantReadWrite(taskDef.taskRole);
+
+    // ecs.Secret.fromSsmParameter grants ssm:GetParameters but not kms:Decrypt
+    // for the default aws/ssm key, so the task can't pull SecureString secrets
+    // without this. Scoped to decrypt-via-SSM in this region only.
+    taskDef.addToExecutionRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['kms:Decrypt'],
+        resources: ['*'],
+        conditions: { StringEquals: { 'kms:ViaService': `ssm.${config.env.region}.amazonaws.com` } },
+      }),
+    );
 
     const repo = ecr.Repository.fromRepositoryName(this, 'BackendRepo', BACKEND_ECR_REPO);
     const image = ecs.ContainerImage.fromEcrRepository(repo, props.imageTag ?? 'latest');

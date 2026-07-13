@@ -51,7 +51,7 @@ export const STAGES: Record<string, StageConfig> = {
     githubRepo: 'jmetdev/ccc-recording-portal',
     githubBranch: 'main',
     db: { minCapacity: 0, maxCapacity: 2, autoPauseMinutes: 15 },
-    task: { cpu: 256, memoryMiB: 512, desiredCount: 1, spot: true },
+    task: { cpu: 512, memoryMiB: 1024, desiredCount: 1, spot: true },
     alarmEmail: 'jeffmetcalf@gmail.com',
   },
 };
