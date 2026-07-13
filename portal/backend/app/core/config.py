@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,6 +7,18 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://portal:portal@db:5432/portal"
     database_url_sync: str = "postgresql://portal:portal@db:5432/portal"
+    # Optional discrete connection parts. When db_host is set (e.g. injected
+    # from a Secrets Manager secret on ECS), the two URLs above are rebuilt from
+    # these — so infra never has to compose a full URL string.
+    db_host: str = ""
+    db_port: int = 5432
+    db_name: str = "portal"
+    db_user: str = ""
+    db_password: str = ""
+    # "default" keeps a normal connection pool; "nullpool" opens a fresh
+    # connection per checkout so an idle app holds nothing open — required for
+    # Aurora Serverless v2 to scale to zero (auto-pause).
+    db_pool_mode: str = "default"
     jwt_secret: str = "change-me-jwt-secret-min-32-chars!!"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
@@ -49,6 +62,19 @@ class Settings(BaseSettings):
 
     # Retention sweep cadence; 0 disables the background task.
     retention_sweep_interval_s: int = 3600
+
+    @model_validator(mode="after")
+    def _assemble_db_urls(self) -> "Settings":
+        if self.db_host and self.db_user:
+            from urllib.parse import quote
+
+            loc = (
+                f"{quote(self.db_user, safe='')}:{quote(self.db_password, safe='')}"
+                f"@{self.db_host}:{self.db_port}/{self.db_name}"
+            )
+            self.database_url = f"postgresql+asyncpg://{loc}"
+            self.database_url_sync = f"postgresql://{loc}"
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

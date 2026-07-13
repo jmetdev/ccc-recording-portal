@@ -57,6 +57,10 @@ async def _run_docker(*args: str, timeout: float = 8) -> tuple[int, str, str]:
 
 async def inspect_containers() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
+    if not settings.system_container_list:
+        # Nothing to introspect (e.g. Fargate, where there is no Docker socket);
+        # the system page degrades to DB / connectors / storage only.
+        return results
     for name in settings.system_container_list:
         code, stdout, stderr = await _run_docker(
             "inspect",
@@ -108,6 +112,15 @@ async def check_database(db: AsyncSession) -> dict[str, Any]:
 
 
 def check_recordings_mount() -> dict[str, Any]:
+    if settings.storage_backend == "s3":
+        # No local recordings volume in the cloud; report the object store instead.
+        return {
+            "ok": True,
+            "backend": "s3",
+            "path": None,
+            "bucket": settings.s3_bucket,
+            "prefix": settings.s3_prefix or None,
+        }
     path = settings.recordings_dir
     try:
         exists = os.path.isdir(path)
@@ -119,6 +132,7 @@ def check_recordings_mount() -> dict[str, Any]:
         hook_log = os.path.join(path, ".bib-hook.log")
         return {
             "ok": exists and readable,
+            "backend": "local",
             "path": path,
             "readable": readable,
             "writable": writable,
@@ -126,7 +140,7 @@ def check_recordings_mount() -> dict[str, Any]:
             "ingest_log_exists": os.path.isfile(hook_log),
         }
     except OSError as exc:
-        return {"ok": False, "path": path, "error": str(exc)}
+        return {"ok": False, "backend": "local", "path": path, "error": str(exc)}
 
 
 async def check_freeswitch() -> dict[str, Any]:
@@ -374,6 +388,10 @@ async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin
         },
         "recent_failures": failures,
         # Raw logs are superadmin-only (see /system/logs); an empty list here
-        # is what tells the frontend to hide the Live logs panel.
-        "log_sources": list(LOG_SOURCES.keys()) if is_superadmin else [],
+        # is what tells the frontend to hide the Live logs panel. The sources are
+        # Docker/host-file based, so they're also hidden wherever no local
+        # containers are configured (e.g. Fargate).
+        "log_sources": (
+            list(LOG_SOURCES.keys()) if is_superadmin and settings.system_container_list else []
+        ),
     }

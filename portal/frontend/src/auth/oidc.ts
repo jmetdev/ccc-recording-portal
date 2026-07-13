@@ -57,7 +57,7 @@ export async function beginSsoLogin(issuer: string, clientId: string): Promise<v
   window.location.assign(`${doc.authorization_endpoint}?${params}`);
 }
 
-// Returns the IdP access token; caller exchanges it for portal tokens.
+// Returns the IdP ID token; caller exchanges it for portal tokens.
 export async function completeSsoLogin(): Promise<string> {
   const params = new URLSearchParams(window.location.search);
   const error = params.get('error');
@@ -85,7 +85,11 @@ export async function completeSsoLogin(): Promise<string> {
     body,
   });
   if (!res.ok) throw new Error('IdP token exchange failed');
-  const tokens = (await res.json()) as { access_token?: string };
-  if (!tokens.access_token) throw new Error('IdP returned no access token');
-  return tokens.access_token;
+  const tokens = (await res.json()) as { access_token?: string; id_token?: string };
+  // Prefer the ID token: Cognito access tokens carry no email or aud claim,
+  // which the portal needs to provision and authorize the user. Keycloak ID
+  // tokens carry the same claims, so this is safe for both IdPs.
+  const token = tokens.id_token ?? tokens.access_token;
+  if (!token) throw new Error('IdP returned no token');
+  return token;
 }

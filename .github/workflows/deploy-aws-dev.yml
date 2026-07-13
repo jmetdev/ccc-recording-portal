@@ -1,0 +1,108 @@
+name: Deploy AWS Dev
+
+# Builds the backend image, deploys the app stack via CDK, publishes the SPA,
+# and smoke-tests https://dev.cloudcorecollab.com. Keyless auth via GitHub OIDC
+# assuming the ccc-dev-github-deploy role (no long-lived AWS keys).
+#
+# The legacy on-prem workflow (deploy-portal-dev.yml) is left untouched until
+# the AWS environment is accepted and we cut over.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'portal/**'
+      - 'infra/**'
+      - 'scripts/smoke-v2-ingest.py'
+      - '.github/workflows/deploy-aws-dev.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aws-dev-deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # required for OIDC role assumption
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPO: ccc-portal-backend
+  STAGE: dev
+  DEPLOY_ROLE: arn:aws:iam::765366202604:role/ccc-dev-github-deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push backend image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE_TAG="${GITHUB_SHA::12}"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+          docker build \
+            -t "$REGISTRY/$ECR_REPO:$IMAGE_TAG" \
+            -t "$REGISTRY/$ECR_REPO:dev" \
+            ./portal/backend
+          docker push "$REGISTRY/$ECR_REPO:$IMAGE_TAG"
+          docker push "$REGISTRY/$ECR_REPO:dev"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy app stack (CDK)
+        working-directory: infra
+        run: |
+          npm ci
+          npx cdk deploy ccc-dev-app \
+            -c stage="$STAGE" -c imageTag="$IMAGE_TAG" \
+            --require-approval never \
+            --outputs-file cdk-outputs.json
+          echo "DISTRIBUTION_ID=$(node -p "require('./cdk-outputs.json')['ccc-dev-app'].DistributionId")" >> "$GITHUB_ENV"
+          echo "WEB_BUCKET=$(node -p "require('./cdk-outputs.json')['ccc-dev-app'].WebBucketName")" >> "$GITHUB_ENV"
+
+      - name: Build & publish frontend
+        working-directory: portal/frontend
+        run: |
+          npm ci
+          npm run build
+          aws s3 sync dist "s3://$WEB_BUCKET" --delete
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*'
+
+      - name: Smoke test — API health
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://dev.cloudcorecollab.com/api/health || true)
+            echo "attempt $i: /api/health -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error::/api/health never returned 200 (Aurora cold-start can take ~30s; re-run if this was the first request of the day)"
+          exit 1
+
+      - name: Smoke test — v2 ingest (optional)
+        env:
+          PORTAL_URL: https://dev.cloudcorecollab.com
+          CONNECTOR_TOKEN: ${{ secrets.SMOKE_CONNECTOR_TOKEN }}
+        run: |
+          if [ -z "$CONNECTOR_TOKEN" ]; then
+            echo "SMOKE_CONNECTOR_TOKEN not set — skipping end-to-end ingest smoke."
+            exit 0
+          fi
+          python3 scripts/smoke-v2-ingest.py

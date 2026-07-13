@@ -2,10 +2,19 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
-engine = create_async_engine(settings.database_url, echo=False)
+_engine_kwargs: dict = {"echo": False}
+if settings.db_pool_mode == "nullpool":
+    # No pooled idle connections, so Aurora Serverless v2 can auto-pause.
+    _engine_kwargs["poolclass"] = NullPool
+else:
+    _engine_kwargs["pool_pre_ping"] = True
+    _engine_kwargs["pool_recycle"] = 300
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

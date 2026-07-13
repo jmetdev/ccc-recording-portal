@@ -20,6 +20,10 @@ services:
   backend:
     build:
       context: ./portal/backend
+      args:
+        # On-prem compose introspects sibling containers via the mounted Docker
+        # socket, so it needs the docker CLI in the image. The cloud image omits it.
+        INSTALL_DOCKER_CLI: "true"
     container_name: portal-backend
     restart: unless-stopped
     depends_on:

@@ -23,7 +23,15 @@ function useLiveChannels(initial: LiveChannel[]) {
     ws.onmessage = () => {
       api.freeswitchLiveChannels().then(setLive).catch(() => undefined);
     };
-    return () => ws.close();
+    // Keep the socket alive through CloudFront/ALB idle timeouts (the server
+    // reads and discards inbound frames).
+    const ping = window.setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+    }, 30000);
+    return () => {
+      window.clearInterval(ping);
+      ws.close();
+    };
   }, []);
   return live;
 }

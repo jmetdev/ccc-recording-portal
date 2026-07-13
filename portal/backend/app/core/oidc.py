@@ -75,8 +75,9 @@ async def verify_oidc_token(token: str) -> dict:
 
 def _claim_roles(claims: dict) -> list[str]:
     # Keycloak default mappers: realm_access.roles, or a flat "roles" claim.
+    # Cognito puts group membership in "cognito:groups".
     realm = claims.get("realm_access") or {}
-    roles = realm.get("roles") or claims.get("roles") or []
+    roles = realm.get("roles") or claims.get("roles") or claims.get("cognito:groups") or []
     return [r for r in roles if isinstance(r, str)]
 
 

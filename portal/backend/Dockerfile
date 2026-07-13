@@ -1,10 +1,17 @@
 FROM python:3.12-slim
 
+# The system-health page can shell out to `docker` to introspect sibling
+# containers. That only makes sense on a host with a Docker socket (on-prem
+# compose sets this arg to "true"); the cloud image on Fargate leaves it off.
+ARG INSTALL_DOCKER_CLI=false
+
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
-    && curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz \
-    | tar xz -C /usr/local/bin --strip-components=1 docker/docker \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && if [ "$INSTALL_DOCKER_CLI" = "true" ]; then \
+         curl -fsSL "https://download.docker.com/linux/static/stable/$(uname -m)/docker-27.5.1.tgz" \
+         | tar xz -C /usr/local/bin --strip-components=1 docker/docker; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
