@@ -3,6 +3,7 @@ import { AppLayout } from './components/AppLayout';
 import { RequireAuth, RequirePermission } from './auth/RouteGuards';
 import { LoginPage } from './pages/LoginPage';
 import { SsoCallbackPage } from './pages/SsoCallbackPage';
+import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { RecordingsPage } from './pages/RecordingsPage';
 import { SearchPage } from './pages/SearchPage';
@@ -22,6 +23,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/callback" element={<SsoCallbackPage />} />
+        <Route path="/auth/oauth-callback" element={<OAuthCallbackPage />} />
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
             <Route index element={<OverviewPage />} />

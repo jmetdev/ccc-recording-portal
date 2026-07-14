@@ -171,6 +171,7 @@ export type SsoConfig = {
   enabled: boolean;
   issuer: string | null;
   client_id: string | null;
+  oauth_providers?: string[];
 };
 
 export const api = {
@@ -186,7 +187,7 @@ export const api = {
   },
   ssoConfig: async () => {
     const res = await fetch(`${API_BASE}/auth/sso/config`);
-    if (!res.ok) return { enabled: false, issuer: null, client_id: null } as SsoConfig;
+    if (!res.ok) return { enabled: false, issuer: null, client_id: null, oauth_providers: [] } as SsoConfig;
     return res.json() as Promise<SsoConfig>;
   },
   ssoExchange: async (idpToken: string) => {

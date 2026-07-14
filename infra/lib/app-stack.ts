@@ -9,7 +9,6 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
@@ -62,37 +61,8 @@ export class AppStack extends Stack {
       validation: acm.CertificateValidation.fromDns(zone),
     });
 
-    // ---- Cognito (SSO via the app's existing OIDC support) --------------------
-    const userPool = new cognito.UserPool(this, 'UserPool', {
-      userPoolName: `ccc-${config.stageName}`,
-      selfSignUpEnabled: false,
-      signInAliases: { email: true },
-      standardAttributes: { email: { required: true, mutable: true } },
-      customAttributes: { tenant: new cognito.StringAttribute({ mutable: true }) },
-      removalPolicy: RemovalPolicy.DESTROY,
-    });
-    // Group names match portal role names so `cognito:groups` maps to roles.
-    for (const groupName of ['admin', 'viewer']) {
-      new cognito.CfnUserPoolGroup(this, `Group-${groupName}`, {
-        userPoolId: userPool.userPoolId,
-        groupName,
-      });
-    }
-    const userPoolClient = userPool.addClient('WebClient', {
-      generateSecret: false, // public SPA client (PKCE)
-      authFlows: { userSrp: true },
-      preventUserExistenceErrors: true,
-      oAuth: {
-        flows: { authorizationCodeGrant: true },
-        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
-        callbackUrls: [`https://${domain}/auth/callback`],
-        logoutUrls: [`https://${domain}`],
-      },
-    });
-    userPool.addDomain('CognitoDomain', {
-      cognitoDomain: { domainPrefix: `ccc-portal-${config.stageName}-${config.env.account.slice(-6)}` },
-    });
-    const oidcIssuer = `https://cognito-idp.${config.env.region}.amazonaws.com/${userPool.userPoolId}`;
+    // Auth is via server-side Webex/Zoom OAuth (see app/api/oauth.py) plus local
+    // users. No Cognito. Provider client id/secret come from SSM at runtime.
 
     // ---- ECS backend service --------------------------------------------------
     const cluster = new ecs.Cluster(this, 'Cluster', { vpc });
@@ -146,11 +116,8 @@ export class AppStack extends Stack {
         RETENTION_SWEEP_INTERVAL_S: '3600',
         DB_POOL_MODE: 'nullpool',
         DB_NAME: 'portal',
-        OIDC_ENABLED: 'true',
-        OIDC_ISSUER: oidcIssuer,
-        OIDC_CLIENT_ID: userPoolClient.userPoolClientId,
-        OIDC_AUDIENCE: userPoolClient.userPoolClientId,
-        OIDC_TENANT_CLAIM: 'custom:tenant',
+        OIDC_ENABLED: 'false',
+        PUBLIC_BASE_URL: `https://${domain}`,
         ADMIN_EMAIL: config.alarmEmail,
       },
       secrets: {
@@ -162,6 +129,12 @@ export class AppStack extends Stack {
         INGEST_TOKEN: secure('IngestParam', '/ccc/dev/ingest_token'),
         WORKER_TOKEN: secure('WorkerParam', '/ccc/dev/worker_token'),
         ADMIN_PASSWORD: secure('AdminPwParam', '/ccc/dev/admin_password'),
+        // OAuth provider credentials (placeholders until you register the apps).
+        // Update the SSM values + force a new ECS deployment to enable a provider.
+        WEBEX_CLIENT_ID: secure('WebexIdParam', '/ccc/dev/webex_client_id'),
+        WEBEX_CLIENT_SECRET: secure('WebexSecretParam', '/ccc/dev/webex_client_secret'),
+        ZOOM_CLIENT_ID: secure('ZoomIdParam', '/ccc/dev/zoom_client_id'),
+        ZOOM_CLIENT_SECRET: secure('ZoomSecretParam', '/ccc/dev/zoom_client_secret'),
       },
     });
 
@@ -269,8 +242,6 @@ export class AppStack extends Stack {
 
     new CfnOutput(this, 'PortalUrl', { value: `https://${domain}` });
     new CfnOutput(this, 'WebBucketName', { value: webBucket.bucketName });
-    new CfnOutput(this, 'CognitoIssuer', { value: oidcIssuer });
-    new CfnOutput(this, 'CognitoClientId', { value: userPoolClient.userPoolClientId });
     new CfnOutput(this, 'DistributionId', { value: distribution.distributionId });
     new CfnOutput(this, 'AlbDnsName', { value: alb.loadBalancerDnsName });
   }

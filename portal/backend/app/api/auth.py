@@ -103,6 +103,8 @@ class SsoConfigOut(BaseModel):
     enabled: bool
     issuer: str | None = None
     client_id: str | None = None
+    # Server-side OAuth login providers that are configured (e.g. ["webex","zoom"]).
+    oauth_providers: list[str] = []
 
 
 class SsoExchangeIn(BaseModel):
@@ -111,13 +113,17 @@ class SsoExchangeIn(BaseModel):
 
 @router.get("/sso/config", response_model=SsoConfigOut)
 async def sso_config():
-    """Public: tells the login page whether/where to start the OIDC flow."""
+    """Public: tells the login page which sign-in options to offer."""
+    from app.core.oauth import enabled_providers
+
+    providers = enabled_providers()
     if not settings.oidc_enabled:
-        return SsoConfigOut(enabled=False)
+        return SsoConfigOut(enabled=False, oauth_providers=providers)
     return SsoConfigOut(
         enabled=True,
         issuer=settings.oidc_issuer.rstrip("/"),
         client_id=settings.oidc_client_id,
+        oauth_providers=providers,
     )
 
 

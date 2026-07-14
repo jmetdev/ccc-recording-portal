@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, calls, ingest, ingest_v2, system, tenant, tenants, workers, ws
+from app.api import admin, auth, calls, ingest, ingest_v2, oauth, system, tenant, tenants, workers, ws
 from app.core.config import settings
 from app.core.database import async_session
 from app.services.bootstrap import bootstrap
@@ -41,6 +41,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(oauth.router, prefix="/api")
 app.include_router(ingest.router, prefix="/api")
 app.include_router(ingest_v2.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")

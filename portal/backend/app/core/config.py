@@ -60,6 +60,21 @@ class Settings(BaseSettings):
     oidc_tenant_claim: str = "tenant"
     oidc_auto_provision: bool = True
 
+    # ---- OAuth login providers (Webex / Zoom) ----
+    # Users authenticate through the same platform that runs their calling
+    # (Webex Control Hub / Zoom). Server-side authorization-code flow: exchange
+    # the code, then read identity from the provider's /me endpoint. A provider
+    # is "enabled" once its client id + secret are set to real values.
+    # Public origin of the portal, used to build OAuth redirect URIs
+    # (e.g. https://dev.cloudcorecollab.com). Falls back to the request origin.
+    public_base_url: str = ""
+    webex_client_id: str = ""
+    webex_client_secret: str = ""
+    webex_scopes: str = "spark:people_read"
+    zoom_client_id: str = ""
+    zoom_client_secret: str = ""
+    zoom_scopes: str = "user:read"
+
     # Retention sweep cadence; 0 disables the background task.
     retention_sweep_interval_s: int = 3600
 

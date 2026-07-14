@@ -7,6 +7,8 @@ import { useAuth } from '../auth/AuthContext';
 import { beginSsoLogin } from '../auth/oidc';
 import { BrandMark } from '../components/BrandMark';
 
+const PROVIDER_LABELS: Record<string, string> = { webex: 'Webex', zoom: 'Zoom' };
+
 export function LoginPage() {
   const { user, login } = useAuth();
   const [username, setUsername] = useState('');
@@ -65,12 +67,26 @@ export function LoginPage() {
               <Button type="submit" loading={loading} fullWidth>
                 Sign in
               </Button>
-              {sso?.enabled && (
+              {(sso?.enabled || (sso?.oauth_providers?.length ?? 0) > 0) && (
                 <>
                   <Divider label="or" labelPosition="center" />
-                  <Button variant="light" fullWidth loading={ssoLoading} onClick={ssoSignIn}>
-                    Sign in with SSO
-                  </Button>
+                  {sso?.enabled && (
+                    <Button variant="light" fullWidth loading={ssoLoading} onClick={ssoSignIn}>
+                      Sign in with SSO
+                    </Button>
+                  )}
+                  {(sso?.oauth_providers ?? []).map((p) => (
+                    <Button
+                      key={p}
+                      variant="light"
+                      fullWidth
+                      onClick={() => {
+                        window.location.href = `/api/auth/oauth/${p}/login`;
+                      }}
+                    >
+                      {`Sign in with ${PROVIDER_LABELS[p] ?? p}`}
+                    </Button>
+                  ))}
                 </>
               )}
               <Text size="xs" c="dimmed">
