@@ -206,6 +206,17 @@ export class AppStack extends Stack {
     });
 
     // ---- CloudFront -----------------------------------------------------------
+    // SPA routing is done with a CloudFront Function on the default (S3) behavior
+    // only — extensionless paths are rewritten to /index.html. We deliberately do
+    // NOT use distribution-wide errorResponses (403/404 -> index.html): those are
+    // global and would rewrite genuine /api/* 403/404 responses into 200 HTML,
+    // masking real API errors from the client.
+    const spaRouter = new cloudfront.Function(this, 'SpaRouter', {
+      code: cloudfront.FunctionCode.fromInline(
+        "function handler(event){var r=event.request;if(r.uri.indexOf('.')===-1){r.uri='/index.html';}return r;}",
+      ),
+    });
+
     const distribution = new cloudfront.Distribution(this, 'Cdn', {
       domainNames: [domain],
       certificate: cert,
@@ -214,6 +225,9 @@ export class AppStack extends Stack {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(webBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        functionAssociations: [
+          { function: spaRouter, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
+        ],
       },
       additionalBehaviors: {
         '/api/*': {
@@ -227,11 +241,6 @@ export class AppStack extends Stack {
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
       },
-      // SPA client-side routing: unknown paths return index.html.
-      errorResponses: [
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: Duration.minutes(5) },
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: Duration.minutes(5) },
-      ],
     });
 
     new route53.ARecord(this, 'CdnRecord', {
