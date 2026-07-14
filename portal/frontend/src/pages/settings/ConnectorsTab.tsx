@@ -6,6 +6,7 @@ import {
   Card,
   CopyButton,
   Group,
+  List,
   Modal,
   Select,
   Stack,
@@ -30,7 +31,14 @@ export function ConnectorsTab() {
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [kind, setKind] = useState<string | null>('cucm');
+  const [cucmNodes, setCucmNodes] = useState('');
   const [created, setCreated] = useState<ConnectorCredentialCreated | null>(null);
+
+  const installCmd =
+    created && created.kind === 'cucm'
+      ? `curl -fsSL https://raw.githubusercontent.com/jmetdev/ccc-recording-portal/main/connector/install.sh \\\n  | sudo bash -s -- --token ${created.token} --portal ${window.location.origin}` +
+        (cucmNodes.trim() ? ` --cucm-nodes ${cucmNodes.trim()}` : '')
+      : '';
 
   const create = useMutation({
     mutationFn: () => api.tenant.createConnector({ name, kind: kind ?? 'cucm' }),
@@ -132,6 +140,15 @@ export function ConnectorsTab() {
         <Stack gap="sm">
           <TextInput label="Name" placeholder="hq-cucm-edge" value={name} onChange={(e) => setName(e.currentTarget.value)} />
           <Select label="Kind" data={['cucm', 'webex']} value={kind} onChange={setKind} />
+          {kind === 'cucm' && (
+            <TextInput
+              label="CUCM node IPs"
+              description="Comma-separated cluster node addresses allowed to send BIB media"
+              placeholder="10.0.0.10, 10.0.0.11"
+              value={cucmNodes}
+              onChange={(e) => setCucmNodes(e.currentTarget.value)}
+            />
+          )}
           <Button onClick={() => create.mutate()} disabled={!name} loading={create.isPending}>
             Create
           </Button>
@@ -143,33 +160,84 @@ export function ConnectorsTab() {
         </Stack>
       </Modal>
 
-      <Modal opened={!!created} onClose={() => setCreated(null)} title="Connector token" size="lg">
+      <Modal
+        opened={!!created}
+        onClose={() => setCreated(null)}
+        title={created?.kind === 'cucm' ? 'Deploy the CUCM connector' : 'Connector token'}
+        size="xl"
+      >
         <Stack gap="sm">
           <Alert color="orange" variant="light">
-            This token is shown only once. Copy it now and store it in the connector's{' '}
-            <Text span ff="monospace" fz="xs">
-              CONNECTOR_TOKEN
-            </Text>
-            .
+            The token is shown only once. {created?.kind === 'cucm' ? 'Copy the command below' : 'Copy it'} now.
           </Alert>
-          <Card padding="sm" radius="md" bg="#f7f8fa">
-            <Text ff="monospace" fz="xs" style={{ wordBreak: 'break-all' }}>
-              {created?.token}
-            </Text>
-          </Card>
+
+          {created?.kind === 'cucm' ? (
+            <>
+              <Text size="sm">
+                On the on-prem host that can reach your CUCM cluster, run as root:
+              </Text>
+              <Card padding="sm" radius="md" bg="#0b1021">
+                <Text ff="monospace" fz="xs" c="#d6e2ff" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {installCmd}
+                </Text>
+              </Card>
+              <Group justify="flex-end">
+                <CopyButton value={installCmd}>
+                  {({ copied, copy }) => (
+                    <Button
+                      variant="light"
+                      color={copied ? 'teal' : 'blue'}
+                      leftSection={copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                      onClick={copy}
+                    >
+                      {copied ? 'Copied' : 'Copy command'}
+                    </Button>
+                  )}
+                </CopyButton>
+              </Group>
+              <Text size="sm" fw={600} mt="xs">
+                What it does
+              </Text>
+              <List size="sm" type="ordered" spacing={4}>
+                <List.Item>Installs Docker-CE and creates the mount layout under <Text span ff="monospace" fz="xs">/opt/ccc-connector</Text>.</List.Item>
+                <List.Item>Downloads and builds the connector, and pulls the FreeSWITCH image.</List.Item>
+                <List.Item>Writes your CUCM node ACL and the connector token, then starts both containers.</List.Item>
+                <List.Item>Point CUCM Built-In-Bridge recording at this FreeSWITCH (destination <Text span ff="monospace" fz="xs">1034</Text>).</List.Item>
+                <List.Item>This connector flips to <Text span c="green">Active</Text> here once it heartbeats.</List.Item>
+              </List>
+            </>
+          ) : (
+            <>
+              <Text size="sm">
+                Store this in the connector's{' '}
+                <Text span ff="monospace" fz="xs">
+                  CONNECTOR_TOKEN
+                </Text>
+                .
+              </Text>
+              <Card padding="sm" radius="md" bg="#f7f8fa">
+                <Text ff="monospace" fz="xs" style={{ wordBreak: 'break-all' }}>
+                  {created?.token}
+                </Text>
+              </Card>
+              <Group justify="flex-end">
+                <CopyButton value={created?.token ?? ''}>
+                  {({ copied, copy }) => (
+                    <Button
+                      variant="light"
+                      color={copied ? 'teal' : 'blue'}
+                      leftSection={copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                      onClick={copy}
+                    >
+                      {copied ? 'Copied' : 'Copy token'}
+                    </Button>
+                  )}
+                </CopyButton>
+              </Group>
+            </>
+          )}
+
           <Group justify="flex-end">
-            <CopyButton value={created?.token ?? ''}>
-              {({ copied, copy }) => (
-                <Button
-                  variant="light"
-                  color={copied ? 'teal' : 'blue'}
-                  leftSection={copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
-                  onClick={copy}
-                >
-                  {copied ? 'Copied' : 'Copy token'}
-                </Button>
-              )}
-            </CopyButton>
             <Button onClick={() => setCreated(null)}>Done</Button>
           </Group>
         </Stack>

@@ -1,0 +1,43 @@
+# Add this as .github/workflows/publish-image.yml in the ccc-freeswitch-docker repo.
+# It builds the FreeSWITCH image and publishes it to GHCR so connector installs
+# can pull it (ghcr.io/jmetdev/ccc-freeswitch-docker:latest) instead of building
+# FreeSWITCH from source on every customer host.
+#
+# The published image must bake the BIB integration (dialplan + hook scripts from
+# ccc-recording-portal/freeswitch/) so only the per-tenant ACL is mounted at
+# runtime. Vendor those files into this repo's build context, or add a step that
+# fetches them, before the docker build.
+
+name: Publish FreeSWITCH image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}

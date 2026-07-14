@@ -1,0 +1,41 @@
+name: ccc-connector
+
+# On-prem CUCM edge stack. FreeSWITCH records BIB media and posts lifecycle hooks
+# to the connector, which transcodes/peaks/transcribes locally and pushes results
+# to the cloud portal over the v2 API. Both use host networking so FreeSWITCH can
+# receive CUCM RTP and reach the connector at 127.0.0.1.
+
+services:
+  freeswitch:
+    # Prebuilt image (bakes the BIB dialplan + hook scripts). Published from the
+    # ccc-freeswitch-docker repo — see connector/freeswitch-publish.yml.
+    image: ghcr.io/jmetdev/ccc-freeswitch-docker:${FS_IMAGE_TAG:-latest}
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      PORTAL_API_URL: http://127.0.0.1:9000        # -> the connector shim
+      INGEST_TOKEN: ${INGEST_TOKEN}
+      RECORDINGS_DIR: /var/lib/freeswitch/recordings
+    volumes:
+      - ${DATA_DIR:-/opt/ccc-connector}/recordings:/var/lib/freeswitch/recordings
+      # Per-tenant CUCM node ACL (written by install.sh from --cucm-nodes)
+      - ${DATA_DIR:-/opt/ccc-connector}/freeswitch/acl.conf.xml:/etc/freeswitch/autoload_configs/acl.conf.xml:ro
+
+  connector:
+    build: .
+    image: ccc-connector:local
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - freeswitch
+    environment:
+      PORTAL_URL: ${PORTAL_URL}
+      CONNECTOR_TOKEN: ${CONNECTOR_TOKEN}
+      CONNECTOR_SOURCE: cucm
+      INGEST_TOKEN: ${INGEST_TOKEN}
+      RECORDINGS_DIR: /recordings
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      LISTEN_PORT: "9000"
+    volumes:
+      # Same host dir as FreeSWITCH's recordings, so the connector reads the WAVs.
+      - ${DATA_DIR:-/opt/ccc-connector}/recordings:/recordings
