@@ -37,7 +37,7 @@ export function ConnectorsTab() {
   const installCmd =
     created && created.kind === 'cucm'
       ? `curl -fsSL https://raw.githubusercontent.com/jmetdev/ccc-recording-portal/main/connector/install.sh \\\n  | sudo bash -s -- --token ${created.token} --portal ${window.location.origin}` +
-        (cucmNodes.trim() ? ` --cucm-nodes ${cucmNodes.trim()}` : '')
+        (cucmNodes.trim() ? ` --cucm-nodes ${cucmNodes.replace(/\s+/g, '')}` : '')
       : '';
 
   const create = useMutation({
