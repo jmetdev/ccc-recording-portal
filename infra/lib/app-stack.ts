@@ -112,6 +112,13 @@ export class AppStack extends Stack {
         conditions: { StringEquals: { 'ecs:cluster': webexConnector.cluster.clusterArn } },
       }),
     );
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['ecs:TagResource'],
+        resources: ['*'],
+        conditions: { StringEquals: { 'ecs:CreateAction': 'CreateService' } },
+      }),
+    );
     // ecs:CreateService passes both roles from the shared connector task
     // definition to ECS. The backend task must be allowed to pass them.
     webexConnector.taskDefinition.taskRole.grantPassRole(taskDef.taskRole);
