@@ -178,7 +178,9 @@ export class AppStack extends Stack {
         // the actual per-tenant secrets live under WEBEX_CONNECTOR_SSM_PREFIX.
         WEBEX_CONNECTOR_REGION: config.env.region,
         WEBEX_CONNECTOR_CLUSTER_ARN: webexConnector.cluster.clusterArn,
-        WEBEX_CONNECTOR_TASK_DEFINITION_ARN: webexConnector.taskDefinition.taskDefinitionArn,
+        // A stable family avoids a volatile cross-stack export for each task
+        // revision; ECS resolves the newest active revision at CreateService.
+        WEBEX_CONNECTOR_TASK_DEFINITION_ARN: webexConnector.taskDefinitionFamily,
         WEBEX_CONNECTOR_CONTAINER_NAME: 'webex-connector',
         WEBEX_CONNECTOR_LISTENER_ARN: webexConnector.listener.listenerArn,
         WEBEX_CONNECTOR_SUBNET_IDS: webexConnector.subnetIds.join(','),

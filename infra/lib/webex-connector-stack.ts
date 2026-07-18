@@ -32,6 +32,7 @@ interface WebexConnectorStackProps extends StackProps {
 export class WebexConnectorStack extends Stack {
   public readonly cluster: ecs.Cluster;
   public readonly taskDefinition: ecs.FargateTaskDefinition;
+  public readonly taskDefinitionFamily: string;
   public readonly listener: elbv2.ApplicationListener;
   public readonly subnetIds: string[];
   public readonly securityGroupIds: string[];
@@ -43,6 +44,7 @@ export class WebexConnectorStack extends Stack {
     this.domain = `webex-connector-origin.${config.domainName}`;
 
     this.cluster = new ecs.Cluster(this, 'Cluster', { vpc });
+    this.taskDefinitionFamily = `ccc-${config.stageName}-webex-connector`;
 
     const logGroup = new logs.LogGroup(this, 'Logs', {
       retention: logs.RetentionDays.TWO_WEEKS,
@@ -50,6 +52,7 @@ export class WebexConnectorStack extends Stack {
     });
 
     this.taskDefinition = new ecs.FargateTaskDefinition(this, 'Task', {
+      family: this.taskDefinitionFamily,
       cpu: 256,
       memoryLimitMiB: 512,
       runtimePlatform: {
