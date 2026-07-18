@@ -50,10 +50,12 @@ export class KeycloakStack extends Stack {
       listenerProtocol: elbv2.ApplicationProtocol.HTTPS,
     });
 
-    const cert = new acm.Certificate(this, 'Cert', {
-      domainName: this.authDomain,
-      validation: acm.CertificateValidation.fromDns(zone),
-    });
+    const cert = config.authCertificateArn
+      ? acm.Certificate.fromCertificateArn(this, 'Cert', config.authCertificateArn)
+      : new acm.Certificate(this, 'Cert', {
+          domainName: this.authDomain,
+          validation: acm.CertificateValidation.fromDns(zone),
+        });
     new elbv2.ApplicationListenerCertificate(this, 'AuthSni', {
       listener,
       certificates: [elbv2.ListenerCertificate.fromCertificateManager(cert)],
@@ -67,7 +69,7 @@ export class KeycloakStack extends Stack {
 
     const taskDef = new ecs.FargateTaskDefinition(this, 'Task', {
       cpu: 512,
-      memoryLimitMiB: 1024,
+      memoryLimitMiB: 2048,
       runtimePlatform: {
         cpuArchitecture: ecs.CpuArchitecture.X86_64,
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
@@ -95,24 +97,7 @@ export class KeycloakStack extends Stack {
     const dbUser = ecs.Secret.fromSecretsManager(dbSecret, 'username');
     const dbPassword = ecs.Secret.fromSecretsManager(dbSecret, 'password');
 
-    const schemaInit = taskDef.addContainer('db-schema-init', {
-      image: ecs.ContainerImage.fromRegistry('postgres:16-alpine'),
-      essential: false,
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'schema-init', logGroup }),
-      command: [
-        'sh',
-        '-c',
-        'PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d portal -c "CREATE SCHEMA IF NOT EXISTS keycloak"',
-      ],
-      secrets: {
-        DB_HOST: dbHost,
-        DB_PORT: dbPort,
-        DB_USER: dbUser,
-        DB_PASSWORD: dbPassword,
-      },
-    });
-
-    const keycloak = taskDef.addContainer('keycloak', {
+    taskDef.addContainer('keycloak', {
       image,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'keycloak', logGroup }),
       portMappings: [{ containerPort: 8080 }],
@@ -120,7 +105,6 @@ export class KeycloakStack extends Stack {
         KC_DB: 'postgres',
         KC_BOOTSTRAP_ADMIN_USERNAME: 'admin',
         KC_DB_URL_DATABASE: 'portal',
-        KC_DB_SCHEMA: 'keycloak',
         KC_HTTP_ENABLED: 'true',
         KC_PROXY_HEADERS: 'xforwarded',
         KC_HOSTNAME: `https://${this.authDomain}`,
@@ -135,10 +119,6 @@ export class KeycloakStack extends Stack {
         KC_DB_PASSWORD: dbPassword,
         KC_BOOTSTRAP_ADMIN_PASSWORD: secure('KcAdminPwParam', `/ccc/${config.stageName}/keycloak_admin_password`),
       },
-    });
-    keycloak.addContainerDependencies({
-      container: schemaInit,
-      condition: ecs.ContainerDependencyCondition.SUCCESS,
     });
 
     const serviceSg = new ec2.SecurityGroup(this, 'ServiceSg', {

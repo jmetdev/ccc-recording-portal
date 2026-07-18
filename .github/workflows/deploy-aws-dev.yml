@@ -100,6 +100,20 @@ jobs:
           docker push "$REGISTRY/$KEYCLOAK_ECR_REPO:$IMAGE_TAG"
           docker push "$REGISTRY/$KEYCLOAK_ECR_REPO:dev"
 
+      - name: Remove stuck Keycloak stack if needed
+        run: |
+          st=$(aws cloudformation describe-stacks --stack-name ccc-dev-keycloak --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo NONE)
+          if [ "$st" = "DELETE_FAILED" ] || [ "$st" = "ROLLBACK_FAILED" ]; then
+            CERT=$(aws cloudformation describe-stack-resources --stack-name ccc-dev-keycloak --logical-resource-id Cert5C9FAEC1 --query 'StackResources[0].PhysicalResourceId' --output text 2>/dev/null || true)
+            LARN=$(aws elbv2 describe-listeners --load-balancer-arn "$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `ccc-de-Alb`)].LoadBalancerArn' --output text | head -1)" --query 'Listeners[?Port==`443`].ListenerArn' --output text)
+            if [ -n "$CERT" ] && [ "$CERT" != "None" ] && [ -n "$LARN" ]; then
+              aws elbv2 remove-listener-certificates --listener-arn "$LARN" --certificates CertificateArn="$CERT" || true
+              aws acm delete-certificate --certificate-arn "$CERT" || true
+            fi
+            aws cloudformation delete-stack --stack-name ccc-dev-keycloak
+            aws cloudformation wait stack-delete-complete --stack-name ccc-dev-keycloak || true
+          fi
+
       - name: Deploy Keycloak stack (CDK)
         working-directory: infra
         run: |
