@@ -104,6 +104,7 @@ export class KeycloakStack extends Stack {
         KC_HOSTNAME: `https://${this.authDomain}`,
         KC_HOSTNAME_STRICT: 'false',
         KC_HEALTH_ENABLED: 'true',
+        KC_CACHE: 'local',
       },
       secrets: {
         KC_DB_URL_HOST: ecs.Secret.fromSecretsManager(dbSecret, 'host'),
@@ -149,7 +150,7 @@ export class KeycloakStack extends Stack {
       minHealthyPercent: 0,
       maxHealthyPercent: 100,
       circuitBreaker: { rollback: true },
-      healthCheckGracePeriod: Duration.seconds(180),
+      healthCheckGracePeriod: Duration.seconds(300),
     });
 
     const targetGroup = new elbv2.ApplicationTargetGroup(this, 'Tg', {
