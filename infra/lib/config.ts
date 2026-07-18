@@ -55,7 +55,5 @@ export const STAGES: Record<string, StageConfig> = {
     db: { minCapacity: 0, maxCapacity: 2, autoPauseMinutes: 15 },
     task: { cpu: 512, memoryMiB: 1024, desiredCount: 1, spot: true },
     alarmEmail: 'jeffmetcalf@gmail.com',
-    authCertificateArn:
-      'arn:aws:acm:us-east-1:765366202604:certificate/55b69b3f-ba61-4211-bb79-64aaa0a55494',
   },
 };
