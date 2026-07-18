@@ -90,7 +90,29 @@ export class KeycloakStack extends Stack {
     const repo = ecr.Repository.fromRepositoryName(this, 'Repo', KEYCLOAK_ECR_REPO);
     const image = ecs.ContainerImage.fromEcrRepository(repo, props.imageTag ?? 'latest');
 
-    taskDef.addContainer('keycloak', {
+    const dbHost = ecs.Secret.fromSecretsManager(dbSecret, 'host');
+    const dbPort = ecs.Secret.fromSecretsManager(dbSecret, 'port');
+    const dbUser = ecs.Secret.fromSecretsManager(dbSecret, 'username');
+    const dbPassword = ecs.Secret.fromSecretsManager(dbSecret, 'password');
+
+    const schemaInit = taskDef.addContainer('db-schema-init', {
+      image: ecs.ContainerImage.fromRegistry('postgres:16-alpine'),
+      essential: false,
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'schema-init', logGroup }),
+      command: [
+        'sh',
+        '-c',
+        'PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d portal -c "CREATE SCHEMA IF NOT EXISTS keycloak"',
+      ],
+      secrets: {
+        DB_HOST: dbHost,
+        DB_PORT: dbPort,
+        DB_USER: dbUser,
+        DB_PASSWORD: dbPassword,
+      },
+    });
+
+    const keycloak = taskDef.addContainer('keycloak', {
       image,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'keycloak', logGroup }),
       portMappings: [{ containerPort: 8080 }],
@@ -107,12 +129,16 @@ export class KeycloakStack extends Stack {
         KC_CACHE: 'local',
       },
       secrets: {
-        KC_DB_URL_HOST: ecs.Secret.fromSecretsManager(dbSecret, 'host'),
-        KC_DB_URL_PORT: ecs.Secret.fromSecretsManager(dbSecret, 'port'),
-        KC_DB_USERNAME: ecs.Secret.fromSecretsManager(dbSecret, 'username'),
-        KC_DB_PASSWORD: ecs.Secret.fromSecretsManager(dbSecret, 'password'),
+        KC_DB_URL_HOST: dbHost,
+        KC_DB_URL_PORT: dbPort,
+        KC_DB_USERNAME: dbUser,
+        KC_DB_PASSWORD: dbPassword,
         KC_BOOTSTRAP_ADMIN_PASSWORD: secure('KcAdminPwParam', `/ccc/${config.stageName}/keycloak_admin_password`),
       },
+    });
+    keycloak.addContainerDependencies({
+      container: schemaInit,
+      condition: ecs.ContainerDependencyCondition.SUCCESS,
     });
 
     const serviceSg = new ec2.SecurityGroup(this, 'ServiceSg', {
