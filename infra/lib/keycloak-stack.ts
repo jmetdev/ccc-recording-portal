@@ -96,14 +96,14 @@ export class KeycloakStack extends Stack {
       portMappings: [{ containerPort: 8080 }],
       environment: {
         KC_DB: 'postgres',
-        KC_DB_URL_DATABASE: 'keycloak',
         KC_BOOTSTRAP_ADMIN_USERNAME: 'admin',
+        KC_DB_URL_DATABASE: 'portal',
+        KC_DB_SCHEMA: 'keycloak',
         KC_HTTP_ENABLED: 'true',
         KC_PROXY_HEADERS: 'xforwarded',
         KC_HOSTNAME: `https://${this.authDomain}`,
         KC_HOSTNAME_STRICT: 'false',
         KC_HEALTH_ENABLED: 'true',
-        DB_NAME: 'keycloak',
       },
       secrets: {
         KC_DB_URL_HOST: ecs.Secret.fromSecretsManager(dbSecret, 'host'),
@@ -111,10 +111,6 @@ export class KeycloakStack extends Stack {
         KC_DB_USERNAME: ecs.Secret.fromSecretsManager(dbSecret, 'username'),
         KC_DB_PASSWORD: ecs.Secret.fromSecretsManager(dbSecret, 'password'),
         KC_BOOTSTRAP_ADMIN_PASSWORD: secure('KcAdminPwParam', `/ccc/${config.stageName}/keycloak_admin_password`),
-        DB_HOST: ecs.Secret.fromSecretsManager(dbSecret, 'host'),
-        DB_PORT: ecs.Secret.fromSecretsManager(dbSecret, 'port'),
-        DB_USER: ecs.Secret.fromSecretsManager(dbSecret, 'username'),
-        DB_PASSWORD: ecs.Secret.fromSecretsManager(dbSecret, 'password'),
       },
     });
 
