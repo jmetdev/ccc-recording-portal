@@ -14,10 +14,12 @@ full design rationale for each phase).
 
 Automates Webex tenant onboarding via a Service App, correlates each
 product's tenant_id with the customer's Webex org_id, syncs Webex Control Hub
-groups into ccc-recording-portal's roles/permissions, adds real cross-app SSO
-(Keycloak-brokered Webex login shared by both products), and replaces each
+groups into ccc-recording-portal's roles/permissions, and replaces each
 product's shared multi-tenant gateway process with a genuinely isolated
-per-tenant instance (own container, own credentials) for privacy.
+per-tenant instance (own container, own credentials) for privacy. The code
+also includes a locally verified Keycloak-brokered cross-app SSO design, but
+the AWS dev deployment does not include Keycloak and therefore does not
+enable cross-app SSO.
 
 ## State by phase
 
@@ -26,7 +28,7 @@ per-tenant instance (own container, own credentials) for privacy.
 | A | ccc-recording-portal | Tenant role-seeding fix + real `webex_org_id` column (migration 006) | done, verified against real DB |
 | B | ccc-recording-portal | Owner/customer Webex docs | done |
 | C | ccc-recording-portal | Service App webhook onboarding (migration 007) | done, verified live (real HMAC sig tests) |
-| D | ccc-recording-portal | Cross-app SSO via Keycloak Webex broker | done, verified live against a local Keycloak — **real Webex OAuth Integration creds now in place** (confirmed via live broker redirect to `webexapis.com` with real client_id, see below) |
+| D | ccc-recording-portal | Cross-app SSO via Keycloak Webex broker | local implementation verified; **not deployed or enabled in AWS dev** because no AWS Keycloak service exists |
 | E | ccc-recording-portal | Per-tenant isolated hosted Webex connector (migration 008) | done, verified (moto-mocked AWS round-trip); **recording-retrieval logic is a stub** pending a live-org API spike |
 | F | ccc-recording-portal | Control Hub group→role sync (migration 009) | done, verified against real DB with a **stubbed** Webex client; **Groups API shape unvalidated** |
 | G | cloudcorefax | Per-tenant isolated FreeSWITCH gateway (migration 008) | done, verified (moto + a live two-tenant cross-tenant-isolation attack test against the running app) |
@@ -64,13 +66,19 @@ to start if these don't exist:
 
 ```bash
 for p in webex_serviceapp_id webex_serviceapp_client_id webex_serviceapp_client_secret \
-         webex_serviceapp_webhook_secret webex_serviceapp_org_token crypto_key; do
+         webex_serviceapp_webhook_secret webex_serviceapp_org_token; do
   aws ssm put-parameter --region us-east-1 --type SecureString \
     --name "/ccc/dev/$p" --value "REPLACE_ME"
 done
+
+# CRYPTO_KEY must always be a valid Fernet key, even while Service App
+# credentials are placeholders.
+CRYPTO_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())')
+aws ssm put-parameter --region us-east-1 --type SecureString \
+  --name "/ccc/dev/crypto_key" --value "$CRYPTO_KEY"
 ```
 
-Placeholders are fine to deploy with — everything gated on these
+Placeholders are fine for the five `webex_serviceapp_*` parameters — everything gated on these
 (`webex_serviceapp.serviceapp_enabled()`) is a no-op until real values are
 set. Real values come from registering the Service App per
 `docs/webex-service-app.md` (separate from the Keycloak/SSO Webex OAuth
@@ -139,6 +147,8 @@ API-shape correctness against live Webex (see below).
 - ccc-recording-portal: Settings → **Webex setup** tab renders, shows
   "Service App isn't configured" until real Service App creds are set;
   **Group sync** tab renders.
+- Cross-app SSO is not an AWS-dev acceptance criterion for this deploy;
+  `OIDC_ENABLED=false` remains intentional until Keycloak is deployed there.
 - CloudWatch: confirm `alembic ... Running upgrade ... -> 009` (portal) and
   `... -> 008` (cloudcorefax) in each API container's log group, no RLS
   errors.
@@ -165,7 +175,8 @@ ccc-recording-portal) for any provisioned tenants before rolling back that far.
 1. **Real Webex Service App credentials** (ccc-recording-portal) — separate
    from the SSO OAuth Integration already configured. Register per
    `docs/webex-service-app.md`, put real values in the 5 `/ccc/dev/
-   webex_serviceapp_*` SSM params above.
+   webex_serviceapp_*` SSM params above, and retain the generated Fernet
+   `crypto_key` (changing it later would make stored tokens unreadable).
 2. **Groups API live-org spike** (Phase F) — `webex_serviceapp.
    list_group_members`/`list_org_groups` are written defensively but
    unvalidated. Confirm the real Webex Groups API shape/scope against a live

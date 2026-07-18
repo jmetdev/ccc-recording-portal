@@ -73,8 +73,11 @@ async def sync_user_groups(db: AsyncSession, user: User) -> None:
         try:
             members = await wx.list_group_members(token, mapping.webex_group_id)
         except Exception:
-            logger.warning("Group membership lookup failed for %s", mapping.webex_group_id)
-            continue
+            # Membership is authoritative only when every mapped lookup
+            # succeeds. Preserve current access on transient/API-shape errors
+            # instead of interpreting an unknown result as "not a member".
+            logger.exception("Group membership lookup failed for %s", mapping.webex_group_id)
+            return
         if user.email in members:
             if mapping.role_id is not None:
                 matched_role_id = mapping.role_id
