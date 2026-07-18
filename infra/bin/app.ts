@@ -7,6 +7,7 @@ import { DataStack } from '../lib/data-stack';
 import { CiStack } from '../lib/ci-stack';
 import { AppStack } from '../lib/app-stack';
 import { WebexConnectorStack } from '../lib/webex-connector-stack';
+import { KeycloakStack } from '../lib/keycloak-stack';
 
 const app = new cdk.App();
 
@@ -37,6 +38,16 @@ const webexConnector = new WebexConnectorStack(app, `${prefix}-webex-connector`,
 });
 webexConnector.addDependency(network);
 
+const keycloak = new KeycloakStack(app, `${prefix}-keycloak`, {
+  env,
+  config,
+  vpc: network.vpc,
+  dbCluster: data.cluster,
+  imageTag: app.node.tryGetContext('keycloakImageTag') as string | undefined,
+});
+keycloak.addDependency(data);
+keycloak.addDependency(network);
+
 const appStack = new AppStack(app, `${prefix}-app`, {
   env,
   config,
@@ -49,6 +60,7 @@ const appStack = new AppStack(app, `${prefix}-app`, {
 appStack.addDependency(data);
 appStack.addDependency(network);
 appStack.addDependency(webexConnector);
+appStack.addDependency(keycloak);
 
 cdk.Tags.of(app).add('project', 'ccc-recording-portal');
 cdk.Tags.of(app).add('stage', config.stageName);

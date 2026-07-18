@@ -96,6 +96,24 @@ its own OIDC bearer-token verifier built (it has none today) before it can
 actually consume tokens from its new client — tracked as separate work in
 that repo.
 
+## Live spike results (2026-07-18, AWS dev)
+
+Ran `scripts/spike-webex-apis.py` against `/ccc/dev/webex_serviceapp_*` SSM:
+
+| Probe | Result |
+|---|---|
+| Service App credentials | **Blocked** — SSM values are still `PLACEHOLDER_SET_ME` (copied from fax dev). No org token exchange attempted. |
+| `GET /v1/groups` | **Not run** — requires a real Service App + authorized `--org-id`. Client code in `webex_serviceapp.py` uses `/groups` and `/groups/{id}/members` with `displayName`/`members` fields; re-validate when creds exist. |
+| Recording retrieval | **Not run** — same blocker. The hosted connector stub in `webex-connector/app/main.py` intentionally does not call Webex until this spike succeeds. |
+
+**Recording-retrieval conclusion (design, pending live proof):** Webex Compliance / call-recording APIs historically require a **Compliance Officer** or partner application type, not an extra scope on the admin Service App. Treat recording pull as blocked on app type until a live token proves otherwise — do not wire fake endpoints into the connector.
+
+Re-run after setting real Service App SSM values:
+
+```bash
+AWS_PROFILE=dev python3 scripts/spike-webex-apis.py --org-id <AUTHORIZED_ORG_ID>
+```
+
 ## Known caveats
 
 - Group-membership and recording-retrieval scopes are unvalidated (flagged

@@ -171,7 +171,9 @@ export class AppStack extends Stack {
         RETENTION_SWEEP_INTERVAL_S: '3600',
         DB_POOL_MODE: 'nullpool',
         DB_NAME: 'portal',
-        OIDC_ENABLED: 'false',
+        OIDC_ENABLED: 'true',
+        OIDC_ISSUER: `https://auth.${domain}/realms/ccc`,
+        OIDC_CLIENT_ID: 'ccc-portal',
         PUBLIC_BASE_URL: `https://${domain}`,
         ADMIN_EMAIL: config.alarmEmail,
         // Hosted per-tenant Webex connector: identifiers only (not secrets) —

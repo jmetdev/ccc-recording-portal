@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 API = "https://webexapis.com/v1"
 PLACEHOLDER = "REPLACE_ME"
+PLACEHOLDER_VALUES = {PLACEHOLDER, "PLACEHOLDER_SET_ME", "REPLACE_ME_WEBEX_CLIENT_ID"}
 
 
 def serviceapp_enabled() -> bool:
@@ -38,14 +39,14 @@ def serviceapp_enabled() -> bool:
         settings.webex_serviceapp_client_id,
         settings.webex_serviceapp_client_secret,
     ]
-    return all(v and PLACEHOLDER not in v for v in vals)
+    return all(v and not any(p in v for p in PLACEHOLDER_VALUES) for v in vals)
 
 
 # ---- webhook signature -------------------------------------------------------
 def verify_webhook_signature(body: bytes, signature: str | None) -> bool:
     """Webex signs webhook bodies with HMAC-SHA1 of the shared secret."""
     secret = settings.webex_serviceapp_webhook_secret
-    if not secret or PLACEHOLDER in secret:
+    if not secret or any(p in secret for p in PLACEHOLDER_VALUES):
         logger.warning("Service App webhook secret not configured; rejecting webhook")
         return False
     if not signature:

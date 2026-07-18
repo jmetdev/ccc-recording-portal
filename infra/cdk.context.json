@@ -6,5 +6,70 @@
     "us-east-1d",
     "us-east-1e",
     "us-east-1f"
-  ]
+  ],
+  "load-balancer:account=765366202604:loadBalancerTags.0.key=project:loadBalancerTags.0.value=ccc-recording-portal:loadBalancerTags.1.key=stage:loadBalancerTags.1.value=dev:loadBalancerType=application:region=us-east-1": {
+    "loadBalancerArn": "arn:aws:elasticloadbalancing:us-east-1:765366202604:loadbalancer/app/ccc-de-Alb16-B72o9hJUfheP/a370986de218162f",
+    "loadBalancerCanonicalHostedZoneId": "Z35SXDOTRQ7X7K",
+    "loadBalancerDnsName": "ccc-de-Alb16-B72o9hJUfheP-1075429711.us-east-1.elb.amazonaws.com",
+    "vpcId": "vpc-09256378b83c18291",
+    "securityGroupIds": [
+      "sg-087ee1be58c775d60"
+    ],
+    "ipAddressType": "ipv4"
+  },
+  "security-group:account=765366202604:region=us-east-1:securityGroupId=sg-087ee1be58c775d60": {
+    "securityGroupId": "sg-087ee1be58c775d60",
+    "allowAllOutbound": false
+  },
+  "load-balancer-listener:account=765366202604:listenerPort=443:listenerProtocol=HTTPS:loadBalancerArn=arn$:aws$:elasticloadbalancing$:us-east-1$:765366202604$:loadbalancer/app/ccc-de-Alb16-B72o9hJUfheP/a370986de218162f:loadBalancerType=application:region=us-east-1": {
+    "listenerArn": "arn:aws:elasticloadbalancing:us-east-1:765366202604:listener/app/ccc-de-Alb16-B72o9hJUfheP/a370986de218162f/b5ea1171ef279577",
+    "listenerPort": 443,
+    "securityGroupIds": [
+      "sg-087ee1be58c775d60"
+    ]
+  },
+  "vpc-provider:account=765366202604:filter.vpc-id=vpc-09256378b83c18291:region=us-east-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-09256378b83c18291",
+    "vpcCidrBlock": "10.0.0.0/16",
+    "ownerAccountId": "765366202604",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-09a2f6ea5d06c3bb4",
+            "cidr": "10.0.0.0/24",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-07435fbf23c877e61"
+          },
+          {
+            "subnetId": "subnet-07dbfc35f6d43cdae",
+            "cidr": "10.0.1.0/24",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-06f5459c06635aca0"
+          }
+        ]
+      },
+      {
+        "name": "isolated",
+        "type": "Isolated",
+        "subnets": [
+          {
+            "subnetId": "subnet-01696b137af8f9081",
+            "cidr": "10.0.2.0/24",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-0bcb93a1de29f92ed"
+          },
+          {
+            "subnetId": "subnet-0a014198c50477ce5",
+            "cidr": "10.0.3.0/24",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-09704f69af5296ef7"
+          }
+        ]
+      }
+    ]
+  }
 }
