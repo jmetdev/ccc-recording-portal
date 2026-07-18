@@ -26,6 +26,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.retention import sweep_expired_calls
+from app.services.tenancy import seed_tenant_roles
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -46,9 +47,15 @@ async def create_tenant(
     exists = (await db.execute(select(Tenant).where(Tenant.slug == body.slug))).scalar_one_or_none()
     if exists:
         raise HTTPException(status_code=409, detail="Tenant slug already exists")
-    tenant = Tenant(slug=body.slug, name=body.name, retention_days=body.retention_days)
+    tenant = Tenant(
+        slug=body.slug,
+        name=body.name,
+        retention_days=body.retention_days,
+        webex_org_id=body.webex_org_id,
+    )
     db.add(tenant)
     await db.flush()
+    await seed_tenant_roles(db, tenant.id)
     await record_audit(
         db,
         tenant_id=tenant.id,

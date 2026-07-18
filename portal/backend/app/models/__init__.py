@@ -82,6 +82,9 @@ class Tenant(Base):
     # None = retain forever. Calls past retention are purged unless legal_hold.
     retention_days: Mapped[int | None] = mapped_column(Integer)
     settings_json: Mapped[dict | None] = mapped_column(JSONB)
+    # Real correlation column for the Webex org that owns this tenant (replaces
+    # the settings_json["webex_org_id"] convention as the source of truth).
+    webex_org_id: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant")
@@ -111,6 +114,91 @@ class ConnectorCredential(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     tenant: Mapped["Tenant"] = relationship(back_populates="connectors")
+
+
+class WebexServiceAuth(Base):
+    """One row per tenant: the Webex org's Service App authorization + tokens.
+
+    Tokens are Fernet-encrypted at rest (app/core/crypto.py); status flips to
+    "deauthorized" when the org revokes the app in Control Hub.
+    """
+
+    __tablename__ = "webex_service_auths"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    org_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    org_name: Mapped[str | None] = mapped_column(String(255))
+    app_id: Mapped[str | None] = mapped_column(String(255))
+    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text)
+    access_token_encrypted: Mapped[str | None] = mapped_column(Text)
+    access_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20), default="authorized")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WebexConnectorInstance(Base):
+    """A tenant's own isolated hosted Webex connector (own ECS service, own
+    secrets under its own SSM prefix, own ALB target) — deliberately not a
+    shared multi-tenant process, for credential/connection isolation."""
+
+    __tablename__ = "webex_connector_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    connector_credential_id: Mapped[int] = mapped_column(
+        ForeignKey("connector_credentials.id", ondelete="CASCADE"), nullable=False
+    )
+    ecs_service_arn: Mapped[str | None] = mapped_column(String(512))
+    alb_target_group_arn: Mapped[str | None] = mapped_column(String(512))
+    alb_listener_rule_arn: Mapped[str | None] = mapped_column(String(512))
+    ssm_prefix: Mapped[str] = mapped_column(String(255), nullable=False)
+    webhook_url: Mapped[str | None] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(20), default="provisioning")
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WebexGroupRoleMapping(Base):
+    """Admin-configured mapping: a Control Hub group -> an internal Role
+    and/or (call-visibility) Group. Populated/consumed by services/group_sync.py."""
+
+    __tablename__ = "webex_group_role_mappings"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "webex_group_id", name="uq_webex_group_role_mappings_tenant_group"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    webex_group_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    webex_group_name: Mapped[str | None] = mapped_column(String(255))
+    role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"))
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WebexGroupSyncState(Base):
+    """Bookkeeping for the periodic Control Hub group -> role sync job."""
+
+    __tablename__ = "webex_group_sync_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_sync_status: Mapped[str | None] = mapped_column(String(20))
+    last_sync_error: Mapped[str | None] = mapped_column(Text)
 
 
 class AuditLog(Base):

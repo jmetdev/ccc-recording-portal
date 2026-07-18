@@ -5,11 +5,27 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, calls, ingest, ingest_v2, oauth, system, tenant, tenants, workers, ws
+from app.api import (
+    admin,
+    auth,
+    calls,
+    ingest,
+    ingest_v2,
+    oauth,
+    system,
+    tenant,
+    tenants,
+    webex_connector,
+    webex_groups,
+    webex_provision,
+    workers,
+    ws,
+)
 from app.core.config import settings
 from app.core.database import async_session
 from app.services.bootstrap import bootstrap
 from app.services.call_status import repair_stuck_recording_calls, repair_stuck_transcribing_calls
+from app.services.group_sync import group_sync_loop
 from app.services.retention import retention_sweep_loop
 from app.services.transcription import init_transcription_enabled
 
@@ -26,8 +42,10 @@ async def lifespan(app: FastAPI):
         if repaired:
             await db.commit()
     sweep_task = asyncio.create_task(retention_sweep_loop())
+    group_sync_task = asyncio.create_task(group_sync_loop())
     yield
     sweep_task.cancel()
+    group_sync_task.cancel()
 
 
 app = FastAPI(title="Call Recording Portal API", version="1.0.0", lifespan=lifespan)
@@ -50,6 +68,10 @@ app.include_router(workers.router, prefix="/api")
 app.include_router(calls.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(webex_provision.router, prefix="/api")
+app.include_router(webex_provision.wizard, prefix="/api")
+app.include_router(webex_connector.router, prefix="/api")
+app.include_router(webex_groups.router, prefix="/api")
 app.include_router(ws.router, prefix="/api")
 
 

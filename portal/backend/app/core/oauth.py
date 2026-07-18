@@ -178,6 +178,13 @@ async def resolve_user(db: AsyncSession, provider_key: str, ident: Identity) -> 
             user.oidc_subject = ident.subject
             await db.commit()
     if user is not None:
+        if provider_key == "webex":
+            from app.services.group_sync import sync_user_groups
+
+            try:
+                await sync_user_groups(db, user)
+            except Exception:
+                pass  # best-effort; never blocks login
         return await load_user(db, user.id)
 
     tenant = await _tenant_for(db, provider_key, ident.org_key)
@@ -192,10 +199,9 @@ async def resolve_user(db: AsyncSession, provider_key: str, ident: Identity) -> 
     )
     db.add(user)
     await db.flush()
+    role_name = await _initial_role_name(db, provider_key, tenant.id, ident.email)
     role = (
-        await db.execute(
-            select(Role).where(Role.tenant_id == tenant.id, Role.name == DEFAULT_ROLE)
-        )
+        await db.execute(select(Role).where(Role.tenant_id == tenant.id, Role.name == role_name))
     ).scalar_one_or_none()
     if role is not None:
         await db.execute(user_roles.insert().values(user_id=user.id, role_id=role.id))
@@ -203,18 +209,51 @@ async def resolve_user(db: AsyncSession, provider_key: str, ident: Identity) -> 
     return await load_user(db, user.id)
 
 
+async def _initial_role_name(
+    db: AsyncSession, provider_key: str, tenant_id: int, email: str
+) -> str:
+    """Webex org-admins land as "admin"; everyone else gets DEFAULT_ROLE.
+
+    Best-effort: any failure (Service App not configured/authorized, API
+    error) falls back to DEFAULT_ROLE rather than blocking login.
+    """
+    if provider_key != "webex":
+        return DEFAULT_ROLE
+    from app.services import webex_serviceapp as wx
+
+    if not wx.serviceapp_enabled():
+        return DEFAULT_ROLE
+    try:
+        token = await wx.get_org_token(db, tenant_id)
+        if await wx.person_is_org_admin(token, email):
+            return "admin"
+    except Exception:
+        pass
+    return DEFAULT_ROLE
+
+
 async def _tenant_for(db: AsyncSession, provider_key: str, org_key: str | None) -> Tenant:
     if org_key:
-        # Tenant.settings_json carries {"webex_org_id": ...} / {"zoom_account_id": ...}
-        field = "webex_org_id" if provider_key == "webex" else "zoom_account_id"
-        tenant = (
-            await db.execute(
-                select(Tenant).where(
-                    Tenant.is_active.is_(True),
-                    Tenant.settings_json[field].astext == org_key,
+        if provider_key == "webex":
+            # Real, indexed correlation column (source of truth) rather than
+            # the settings_json convention Zoom still uses below.
+            tenant = (
+                await db.execute(
+                    select(Tenant).where(
+                        Tenant.is_active.is_(True), Tenant.webex_org_id == org_key
+                    )
                 )
-            )
-        ).scalar_one_or_none()
+            ).scalar_one_or_none()
+        else:
+            # Tenant.settings_json carries {"zoom_account_id": ...}
+            tenant = (
+                await db.execute(
+                    select(Tenant).where(
+                        Tenant.is_active.is_(True),
+                        Tenant.settings_json["zoom_account_id"].astext == org_key,
+                    )
+                )
+            ).scalar_one_or_none()
         if tenant is not None:
             return tenant
     # Fallback: the default tenant (dev / single-tenant deployments).

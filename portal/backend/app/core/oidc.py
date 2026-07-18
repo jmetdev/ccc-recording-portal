@@ -81,6 +81,24 @@ def _claim_roles(claims: dict) -> list[str]:
     return [r for r in roles if isinstance(r, str)]
 
 
+async def _tenant_for_claims(db: AsyncSession, claims: dict) -> Tenant:
+    org_id = claims.get(settings.oidc_org_claim)
+    if org_id:
+        tenant = (
+            await db.execute(select(Tenant).where(Tenant.webex_org_id == org_id, Tenant.is_active.is_(True)))
+        ).scalar_one_or_none()
+        if tenant is not None:
+            return tenant
+
+    tenant_slug = claims.get(settings.oidc_tenant_claim) or settings.default_tenant_slug
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.slug == tenant_slug, Tenant.is_active.is_(True)))
+    ).scalar_one_or_none()
+    if tenant is None:
+        raise HTTPException(status_code=403, detail=f"Unknown tenant: {tenant_slug}")
+    return tenant
+
+
 async def resolve_oidc_user(db: AsyncSession, token: str) -> User:
     claims = await verify_oidc_token(token)
     sub = claims.get("sub")
@@ -104,12 +122,7 @@ async def resolve_oidc_user(db: AsyncSession, token: str) -> User:
     if not settings.oidc_auto_provision or not email:
         raise HTTPException(status_code=403, detail="User not provisioned")
 
-    tenant_slug = claims.get(settings.oidc_tenant_claim) or settings.default_tenant_slug
-    tenant = (
-        await db.execute(select(Tenant).where(Tenant.slug == tenant_slug, Tenant.is_active.is_(True)))
-    ).scalar_one_or_none()
-    if tenant is None:
-        raise HTTPException(status_code=403, detail=f"Unknown tenant: {tenant_slug}")
+    tenant = await _tenant_for_claims(db, claims)
 
     username = claims.get("preferred_username") or email.split("@")[0]
     user = User(

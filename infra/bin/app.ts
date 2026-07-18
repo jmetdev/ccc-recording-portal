@@ -6,6 +6,7 @@ import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
 import { CiStack } from '../lib/ci-stack';
 import { AppStack } from '../lib/app-stack';
+import { WebexConnectorStack } from '../lib/webex-connector-stack';
 
 const app = new cdk.App();
 
@@ -28,16 +29,26 @@ data.addDependency(network);
 
 new CiStack(app, `${prefix}-ci`, { env, config });
 
+const webexConnector = new WebexConnectorStack(app, `${prefix}-webex-connector`, {
+  env,
+  config,
+  vpc: network.vpc,
+  imageTag: app.node.tryGetContext('webexConnectorImageTag') as string | undefined,
+});
+webexConnector.addDependency(network);
+
 const appStack = new AppStack(app, `${prefix}-app`, {
   env,
   config,
   vpc: network.vpc,
   dbCluster: data.cluster,
   mediaBucket: data.mediaBucket,
+  webexConnector,
   imageTag: app.node.tryGetContext('imageTag') as string | undefined,
 });
 appStack.addDependency(data);
 appStack.addDependency(network);
+appStack.addDependency(webexConnector);
 
 cdk.Tags.of(app).add('project', 'ccc-recording-portal');
 cdk.Tags.of(app).add('stage', config.stageName);

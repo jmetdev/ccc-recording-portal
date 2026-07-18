@@ -282,6 +282,7 @@ class TenantOut(BaseModel):
     name: str
     is_active: bool
     retention_days: int | None
+    webex_org_id: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -291,12 +292,15 @@ class TenantCreate(BaseModel):
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,62}$")
     name: str
     retention_days: int | None = None
+    # Manual correlation override; normally set by the Service App webhook (Phase C).
+    webex_org_id: str | None = None
 
 
 class TenantUpdate(BaseModel):
     name: str | None = None
     is_active: bool | None = None
     retention_days: int | None = None
+    webex_org_id: str | None = None
 
 
 class ConnectorCredentialOut(BaseModel):

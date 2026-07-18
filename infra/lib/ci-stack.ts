@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import { StageConfig, webBucketName, BACKEND_ECR_REPO } from './config';
+import { WEBEX_CONNECTOR_ECR_REPO } from './webex-connector-stack';
 
 interface CiStackProps extends StackProps {
   config: StageConfig;
@@ -16,6 +17,7 @@ interface CiStackProps extends StackProps {
  */
 export class CiStack extends Stack {
   public readonly repo: ecr.Repository;
+  public readonly webexConnectorRepo: ecr.Repository;
   public readonly deployRole: iam.Role;
 
   constructor(scope: Construct, id: string, props: CiStackProps) {
@@ -24,6 +26,15 @@ export class CiStack extends Stack {
 
     this.repo = new ecr.Repository(this, 'BackendRepo', {
       repositoryName: BACKEND_ECR_REPO,
+      imageScanOnPush: true,
+      lifecycleRules: [{ maxImageCount: 10 }],
+      removalPolicy: RemovalPolicy.RETAIN,
+      emptyOnDelete: false,
+    });
+
+    // Hosted per-tenant Webex connector image (Phase E, see webex-connector/).
+    this.webexConnectorRepo = new ecr.Repository(this, 'WebexConnectorRepo', {
+      repositoryName: WEBEX_CONNECTOR_ECR_REPO,
       imageScanOnPush: true,
       lifecycleRules: [{ maxImageCount: 10 }],
       removalPolicy: RemovalPolicy.RETAIN,
@@ -60,6 +71,7 @@ export class CiStack extends Stack {
 
     // Push backend images to ECR (build/push happens in the workflow, not CFN).
     this.repo.grantPullPush(this.deployRole);
+    this.webexConnectorRepo.grantPullPush(this.deployRole);
     this.deployRole.addToPolicy(
       new iam.PolicyStatement({
         sid: 'EcrAuthToken',

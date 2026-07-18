@@ -64,3 +64,86 @@ Local username/password login keeps working alongside SSO.
 - Run Keycloak behind TLS with a real hostname (`KC_HOSTNAME`), not
   `start-dev`.
 - Disable `OIDC_AUTO_PROVISION` if onboarding is admin-controlled.
+
+## Cross-app SSO with CloudCoreFax (Phase D)
+
+The same realm brokers Webex login for **both** products, so logging into
+either app doesn't require a second login for the other. This is one realm
+with a second client and a Webex identity-provider broker — not a second
+Keycloak instance, and not per-tenant configuration of any kind.
+
+### Why the login has to go *through* Keycloak
+
+Both products already have a direct, per-user Webex OAuth login
+(`core/oauth.py`/`api/oauth.py`) that never touches Keycloak. That flow works
+fine standalone but can't produce a shared SSO session — if a user's
+Webex login only ever talks to Webex directly, there's no Keycloak session
+for the second app to reuse. Making SSO real means re-pointing the *existing*
+"Continue with Webex" button through Keycloak's own Identity Provider broker
+feature instead: app → Keycloak → Webex → Keycloak → app. The button doesn't
+change for the user; the plumbing behind it does. `core/oauth.py`'s direct
+exchange should be retired once the brokered path is live (keep it disabled-
+but-present for one release as a rollback path).
+
+### Setup
+
+1. **Register a plain Webex OAuth integration** (not a Service App) at
+   <https://developer.webex.com> → My Webex Apps → Create an Integration.
+   Scope: `spark:people_read` only. Redirect URI: Keycloak's broker callback,
+   `<keycloak-host>/realms/ccc/broker/webex/endpoint`.
+2. **Add a second client** on the same `ccc` realm for CloudCoreFax:
+   Client ID `cloudcorefax-portal`, same public/PKCE/standard-flow settings as
+   `ccc-portal` above, redirect URIs pointed at CloudCoreFax's own origin.
+3. **Add the Webex identity provider** (Identity Providers → Add provider →
+   OpenID Connect v1.0): alias `webex`, Authorization URL
+   `https://webexapis.com/v1/authorize`, Token URL
+   `https://webexapis.com/v1/access_token`, User Info URL
+   `https://webexapis.com/v1/people/me`, Client ID/Secret from step 1, Client
+   Authentication `client_secret_post`. Webex doesn't publish an OIDC
+   discovery document, so leave "Use JWKS URL" / signature validation off —
+   Keycloak treats it as a plain OAuth2 provider via the three explicit URLs.
+4. **Map `orgId` into a claim both clients carry**: on the `webex` identity
+   provider, add a mapper (*User Attribute* importer) from claim `orgId` to
+   user attribute `webex_org_id`; then on **both** `ccc-portal` and
+   `cloudcorefax-portal` clients, add a protocol mapper (*User Attribute*)
+   from that same user attribute to a token claim named `webex_org_id`
+   (include in ID token, access token, and userinfo). Each product resolves
+   this claim to its own local tenant row independently (`core/oidc.py`'s
+   `_tenant_for_claims`, `OIDC_ORG_CLAIM=webex_org_id` by default) — this is
+   the same join-key convention the Service App webhook uses for tenant
+   correlation, just reused for login-time tenant resolution too.
+5. **Apply the branded login theme**: set the realm's Login Theme to `ccc`
+   (Realm settings → Themes). The theme lives in `keycloak/themes/ccc/login/`
+   and is mounted into the container via `docker-compose.yml`'s `keycloak`
+   service volume — it skins the standard Keycloak login page (colors, font)
+   rather than replacing templates, so the OIDC flow's security properties
+   are untouched.
+6. **Companion work in CloudCoreFax** (separate repo, separate task): it has
+   no `core/oidc.py`-equivalent bearer-token verifier yet — it needs one built
+   before it can actually consume tokens issued by the `cloudcorefax-portal`
+   client. Not built as part of this change.
+
+### Local dev quickstart
+
+`keycloak/setup-realm.sh` does steps 2–5 via Keycloak's Admin REST API (with
+placeholder Webex credentials), idempotently. Run it once against a running
+`portal-keycloak`:
+
+```
+KEYCLOAK_ADMIN_PASSWORD=<your admin password> keycloak/setup-realm.sh
+```
+
+Then edit the `webex` identity provider's Client ID/Secret in the admin
+console to the real values from step 1, and set the realm's login theme to
+`ccc` if the script's `PUT` didn't stick (Realm settings → Themes).
+
+### Known gaps
+
+- Cross-domain cookie behavior needs validating against the real deployed
+  domains (not just localhost) — third-party cookie restrictions can break
+  the "silent" part of SSO depending on how the two apps' domains relate.
+- If the same email should never map to different tenants across the two
+  products, note that explicitly — the org_id-claim design above already
+  keeps tenant resolution independent per app, but `core/oidc.py`'s existing
+  email-fallback matching is a separate mechanism worth double-checking
+  doesn't accidentally cross-link accounts.

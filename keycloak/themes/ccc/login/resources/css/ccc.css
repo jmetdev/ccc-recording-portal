@@ -1,0 +1,71 @@
+/* CCC Recording Portal / CloudCoreFax branded Keycloak login theme.
+ *
+ * Extends keycloak.v2 (PatternFly-based) rather than overriding templates, so
+ * the standard login/OTP/broker-redirect flows keep working — only the
+ * palette/typography changes to match portal/frontend/src/theme/index.ts
+ * (brandBlue #1997e4, Manrope/DM Mono). Verify selector names against the
+ * actual running Keycloak 26 instance and adjust if PatternFly's variable
+ * names differ from what's assumed here.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+:root,
+.pf-v5-c-page,
+#kc-container-wrapper {
+  --pf-v5-global--primary-color--100: #1997e4;
+  --pf-v5-global--primary-color--200: #0d78bd;
+  --pf-v5-global--link--Color: #1997e4;
+  --pf-v5-global--link--Color--hover: #0d78bd;
+  --pf-v5-global--FontFamily--sans-serif: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --pf-v5-global--FontFamily--monospace: 'DM Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+body,
+#kc-header-wrapper {
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Primary action buttons (Sign In, Continue, etc.) */
+.pf-v5-c-button.pf-m-primary {
+  background-color: #1997e4;
+  border-color: #1997e4;
+}
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus {
+  background-color: #0d78bd;
+  border-color: #0d78bd;
+}
+
+/* Card / form container radius to match the portal's defaultRadius: 'md' */
+#kc-container-wrapper,
+.pf-v5-c-login__main {
+  border-radius: 8px;
+}
+
+#kc-header-wrapper {
+  color: #1997e4;
+  font-weight: 700;
+}
+
+/* Social/broker login links (e.g. "Continue with webex") render as plain
+ * footer links by default (.pf-v5-c-login__main-footer-links-item-link) —
+ * verified against the actual rendered markup, not assumed. Style as a
+ * bordered pill so it reads as an intentional action, not a stray link. */
+.pf-v5-c-login__main-footer-links-item-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #1997e4;
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #1997e4;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+.pf-v5-c-login__main-footer-links-item-link:hover,
+.pf-v5-c-login__main-footer-links-item-link:focus {
+  background-color: #e7f4fd;
+  text-decoration: none;
+}

@@ -15,12 +15,16 @@ import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { StageConfig, BACKEND_ECR_REPO, webBucketName } from './config';
+import { WebexConnectorStack } from './webex-connector-stack';
 
 interface AppStackProps extends StackProps {
   config: StageConfig;
   vpc: ec2.Vpc;
   dbCluster: rds.DatabaseCluster;
   mediaBucket: s3.Bucket;
+  /** Shared per-tenant Webex connector infra (cluster/task-def/ALB) the
+   * backend dynamically attaches per-tenant services/secrets to at runtime. */
+  webexConnector: WebexConnectorStack;
   /** ECR image tag to run. CI passes the commit SHA; defaults to 'latest'. */
   imageTag?: string;
 }
@@ -34,7 +38,7 @@ interface AppStackProps extends StackProps {
 export class AppStack extends Stack {
   constructor(scope: Construct, id: string, props: AppStackProps) {
     super(scope, id, props);
-    const { config, vpc, dbCluster, mediaBucket } = props;
+    const { config, vpc, dbCluster, mediaBucket, webexConnector } = props;
     const domain = config.domainName;
     const apiOrigin = `api-origin.${domain}`;
 
@@ -92,6 +96,50 @@ export class AppStack extends Stack {
       }),
     );
 
+    // Per-tenant hosted Webex connector orchestration (app/services/
+    // webex_connector.py): the backend dynamically creates/deletes one ECS
+    // service, ALB target group, listener rule, and SSM secret pair per
+    // tenant on the shared cluster/task-def/ALB stood up by WebexConnectorStack.
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'ecs:CreateService',
+          'ecs:UpdateService',
+          'ecs:DeleteService',
+          'ecs:DescribeServices',
+        ],
+        resources: ['*'],
+        conditions: { StringEquals: { 'ecs:cluster': webexConnector.cluster.clusterArn } },
+      }),
+    );
+    // ecs:CreateService passes both roles from the shared connector task
+    // definition to ECS. The backend task must be allowed to pass them.
+    webexConnector.taskDefinition.taskRole.grantPassRole(taskDef.taskRole);
+    webexConnector.taskDefinition.executionRole?.grantPassRole(taskDef.taskRole);
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'elasticloadbalancing:CreateTargetGroup',
+          'elasticloadbalancing:DeleteTargetGroup',
+          'elasticloadbalancing:DescribeTargetGroups',
+          'elasticloadbalancing:CreateRule',
+          'elasticloadbalancing:DeleteRule',
+          'elasticloadbalancing:DescribeRules',
+          'elasticloadbalancing:DescribeListeners',
+          'elasticloadbalancing:DescribeLoadBalancers',
+        ],
+        resources: ['*'],
+      }),
+    );
+    taskDef.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['ssm:PutParameter', 'ssm:DeleteParameter', 'ssm:GetParameter'],
+        resources: [
+          `arn:aws:ssm:${config.env.region}:${config.env.account}:parameter/ccc/${config.stageName}/webex-connector/*`,
+        ],
+      }),
+    );
+
     const repo = ecr.Repository.fromRepositoryName(this, 'BackendRepo', BACKEND_ECR_REPO);
     const image = ecs.ContainerImage.fromEcrRepository(repo, props.imageTag ?? 'latest');
 
@@ -119,6 +167,17 @@ export class AppStack extends Stack {
         OIDC_ENABLED: 'false',
         PUBLIC_BASE_URL: `https://${domain}`,
         ADMIN_EMAIL: config.alarmEmail,
+        // Hosted per-tenant Webex connector: identifiers only (not secrets) —
+        // the actual per-tenant secrets live under WEBEX_CONNECTOR_SSM_PREFIX.
+        WEBEX_CONNECTOR_REGION: config.env.region,
+        WEBEX_CONNECTOR_CLUSTER_ARN: webexConnector.cluster.clusterArn,
+        WEBEX_CONNECTOR_TASK_DEFINITION_ARN: webexConnector.taskDefinition.taskDefinitionArn,
+        WEBEX_CONNECTOR_CONTAINER_NAME: 'webex-connector',
+        WEBEX_CONNECTOR_LISTENER_ARN: webexConnector.listener.listenerArn,
+        WEBEX_CONNECTOR_SUBNET_IDS: webexConnector.subnetIds.join(','),
+        WEBEX_CONNECTOR_SECURITY_GROUP_IDS: webexConnector.securityGroupIds.join(','),
+        WEBEX_CONNECTOR_DOMAIN: webexConnector.domain,
+        WEBEX_CONNECTOR_SSM_PREFIX: `/ccc/${config.stageName}/webex-connector`,
       },
       secrets: {
         DB_HOST: ecs.Secret.fromSecretsManager(dbSecret, 'host'),
@@ -135,6 +194,27 @@ export class AppStack extends Stack {
         WEBEX_CLIENT_SECRET: secure('WebexSecretParam', '/ccc/dev/webex_client_secret'),
         ZOOM_CLIENT_ID: secure('ZoomIdParam', '/ccc/dev/zoom_client_id'),
         ZOOM_CLIENT_SECRET: secure('ZoomSecretParam', '/ccc/dev/zoom_client_secret'),
+        // Webex Service App: the admin-consent org integration (separate from
+        // the per-user OAuth login above). Placeholders until the app is
+        // registered per docs/webex-service-app.md.
+        WEBEX_SERVICEAPP_ID: secure('WebexServiceAppIdParam', '/ccc/dev/webex_serviceapp_id'),
+        WEBEX_SERVICEAPP_CLIENT_ID: secure(
+          'WebexServiceAppClientIdParam',
+          '/ccc/dev/webex_serviceapp_client_id',
+        ),
+        WEBEX_SERVICEAPP_CLIENT_SECRET: secure(
+          'WebexServiceAppClientSecretParam',
+          '/ccc/dev/webex_serviceapp_client_secret',
+        ),
+        WEBEX_SERVICEAPP_WEBHOOK_SECRET: secure(
+          'WebexServiceAppWebhookSecretParam',
+          '/ccc/dev/webex_serviceapp_webhook_secret',
+        ),
+        WEBEX_SERVICEAPP_ORG_TOKEN: secure(
+          'WebexServiceAppOrgTokenParam',
+          '/ccc/dev/webex_serviceapp_org_token',
+        ),
+        CRYPTO_KEY: secure('CryptoKeyParam', '/ccc/dev/crypto_key'),
       },
     });
 

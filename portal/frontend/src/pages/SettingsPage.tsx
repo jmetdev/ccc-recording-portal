@@ -19,6 +19,7 @@ import {
 } from '@mantine/core';
 import {
   IconAdjustmentsHorizontal,
+  IconCloud,
   IconEdit,
   IconHeartbeat,
   IconPhone,
@@ -29,6 +30,8 @@ import {
 } from '@tabler/icons-react';
 import { api } from '../api/client';
 import { ConnectorsTab } from './settings/ConnectorsTab';
+import { WebexSetupTab } from './settings/WebexSetupTab';
+import { GroupSyncTab } from './settings/GroupSyncTab';
 import { HealthStatusPage } from './HealthStatusPage';
 
 function UsersTab() {
@@ -390,6 +393,12 @@ export function SettingsPage() {
           <Tabs.Tab value="connectors" leftSection={<IconPlugConnected size={16} />}>
             Connectors
           </Tabs.Tab>
+          <Tabs.Tab value="webex" leftSection={<IconCloud size={16} />}>
+            Webex setup
+          </Tabs.Tab>
+          <Tabs.Tab value="group-sync" leftSection={<IconAdjustmentsHorizontal size={16} />}>
+            Group sync
+          </Tabs.Tab>
           <Tabs.Tab value="system" leftSection={<IconHeartbeat size={16} />}>
             System
           </Tabs.Tab>
@@ -412,6 +421,16 @@ export function SettingsPage() {
         </Tabs.Panel>
         <Tabs.Panel value="connectors" pt="lg">
           <ConnectorsTab />
+        </Tabs.Panel>
+        <Tabs.Panel value="webex" pt="lg">
+          <Card padding="lg" radius="md">
+            <WebexSetupTab />
+          </Card>
+        </Tabs.Panel>
+        <Tabs.Panel value="group-sync" pt="lg">
+          <Card padding="lg" radius="md">
+            <GroupSyncTab />
+          </Card>
         </Tabs.Panel>
         <Tabs.Panel value="system" pt="lg">
           <Stack gap="lg">

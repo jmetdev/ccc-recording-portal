@@ -114,6 +114,9 @@ services:
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-portal}
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://localhost:8080}
+    volumes:
+      # Custom branded login theme (Phase D) — see keycloak/themes/ccc/.
+      - ./keycloak/themes:/opt/keycloak/themes
     depends_on:
       db:
         condition: service_healthy

@@ -28,6 +28,7 @@ permissions:
 env:
   AWS_REGION: us-east-1
   ECR_REPO: ccc-portal-backend
+  WEBEX_CONNECTOR_ECR_REPO: ccc-webex-connector
   STAGE: dev
   DEPLOY_ROLE: arn:aws:iam::765366202604:role/ccc-dev-github-deploy
 
@@ -43,6 +44,19 @@ jobs:
         with:
           role-to-assume: ${{ env.DEPLOY_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The CI stack owns both ECR repositories. Deploy it before attempting
+      # the first push of a newly introduced image repository.
+      - name: Deploy CI stack (CDK)
+        working-directory: infra
+        run: |
+          npm ci
+          npx cdk deploy ccc-dev-ci -c stage="$STAGE" --require-approval never
 
       - name: Login to Amazon ECR
         id: ecr
@@ -61,17 +75,29 @@ jobs:
           docker push "$REGISTRY/$ECR_REPO:$IMAGE_TAG"
           docker push "$REGISTRY/$ECR_REPO:dev"
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+      - name: Build & push hosted Webex connector image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          docker build \
+            -t "$REGISTRY/$WEBEX_CONNECTOR_ECR_REPO:$IMAGE_TAG" \
+            -t "$REGISTRY/$WEBEX_CONNECTOR_ECR_REPO:dev" \
+            ./webex-connector
+          docker push "$REGISTRY/$WEBEX_CONNECTOR_ECR_REPO:$IMAGE_TAG"
+          docker push "$REGISTRY/$WEBEX_CONNECTOR_ECR_REPO:dev"
+
+      - name: Deploy webex-connector stack (CDK)
+        working-directory: infra
+        run: |
+          npx cdk deploy ccc-dev-webex-connector \
+            -c stage="$STAGE" -c webexConnectorImageTag="$IMAGE_TAG" \
+            --require-approval never
 
       - name: Deploy app stack (CDK)
         working-directory: infra
         run: |
-          npm ci
           npx cdk deploy ccc-dev-app \
-            -c stage="$STAGE" -c imageTag="$IMAGE_TAG" \
+            -c stage="$STAGE" -c imageTag="$IMAGE_TAG" -c webexConnectorImageTag="$IMAGE_TAG" \
             --require-approval never \
             --outputs-file cdk-outputs.json
           echo "DISTRIBUTION_ID=$(node -p "require('./cdk-outputs.json')['ccc-dev-app'].DistributionId")" >> "$GITHUB_ENV"

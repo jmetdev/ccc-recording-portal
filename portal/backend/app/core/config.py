@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     oidc_client_id: str = "ccc-portal"
     oidc_audience: str = ""
     oidc_tenant_claim: str = "tenant"
+    # Cross-app SSO (Phase D): a Webex-broker-issued token carries the user's
+    # Webex org_id under this claim. Resolved against Tenant.webex_org_id
+    # before falling back to the slug-based oidc_tenant_claim, so the same
+    # Keycloak realm/claim convention drives both this app's and
+    # CloudCoreFax's tenant resolution.
+    oidc_org_claim: str = "webex_org_id"
     oidc_auto_provision: bool = True
 
     # ---- OAuth login providers (Webex / Zoom) ----
@@ -75,8 +81,36 @@ class Settings(BaseSettings):
     zoom_client_secret: str = ""
     zoom_scopes: str = "user:read"
 
+    # ---- Webex Service App (admin-consent org integration) ----
+    # Separate from the per-user OAuth login above: this is the org-level
+    # integration a customer's Full Admin authorizes once in Control Hub.
+    webex_serviceapp_id: str = ""
+    webex_serviceapp_client_id: str = ""
+    webex_serviceapp_client_secret: str = ""
+    webex_serviceapp_webhook_secret: str = ""
+    webex_serviceapp_org_token: str = ""
+    # Fernet key for encrypting Service App tokens at rest (app/core/crypto.py).
+    crypto_key: str = ""
+
+    # ---- Hosted per-tenant Webex connector (Phase E) ----
+    # One shared ECS task definition; a separate service/task/secrets/ALB
+    # target is provisioned per tenant at onboarding time (services/
+    # webex_connector.py). Empty cluster/task-def ARN disables provisioning.
+    webex_connector_region: str = ""
+    webex_connector_cluster_arn: str = ""
+    webex_connector_task_definition_arn: str = ""
+    webex_connector_container_name: str = "webex-connector"
+    webex_connector_listener_arn: str = ""
+    webex_connector_subnet_ids: str = ""  # comma-separated
+    webex_connector_security_group_ids: str = ""  # comma-separated
+    webex_connector_domain: str = ""  # e.g. webex-connector.dev.cloudcorecollab.com
+    webex_connector_ssm_prefix: str = "/ccc/dev/webex-connector"
+
     # Retention sweep cadence; 0 disables the background task.
     retention_sweep_interval_s: int = 3600
+    # Control Hub group -> role/group sync cadence; 0 disables the periodic
+    # job (per-login sync via core/oauth.py still runs regardless).
+    group_sync_interval_s: int = 3600
 
     @model_validator(mode="after")
     def _assemble_db_urls(self) -> "Settings":
@@ -98,6 +132,14 @@ class Settings(BaseSettings):
     @property
     def system_container_list(self) -> list[str]:
         return [c.strip() for c in self.system_containers.split(",") if c.strip()]
+
+    @property
+    def webex_connector_subnet_id_list(self) -> list[str]:
+        return [s.strip() for s in self.webex_connector_subnet_ids.split(",") if s.strip()]
+
+    @property
+    def webex_connector_security_group_id_list(self) -> list[str]:
+        return [s.strip() for s in self.webex_connector_security_group_ids.split(",") if s.strip()]
 
 
 settings = Settings()

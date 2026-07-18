@@ -252,6 +252,50 @@ export const api = {
       request<{ status: string }>(`/tenant/connectors/${id}`, { method: 'DELETE' }),
     storageStats: () => request<StorageStats>('/tenant/storage-stats'),
   },
+  webex: {
+    status: () =>
+      request<{
+        serviceapp_configured: boolean;
+        authorized: boolean;
+        status: string;
+        org_id: string | null;
+        org_name: string | null;
+      }>('/tenant/webex/status'),
+    connectorStatus: () =>
+      request<{ enabled: boolean; status: string | null; webhook_url: string | null }>(
+        '/tenant/webex/connector/status',
+      ),
+    enableConnector: () =>
+      request<{ status: string; webhook_url: string | null }>('/tenant/webex/connector/enable', {
+        method: 'POST',
+      }),
+    disableConnector: () =>
+      request<{ status: string }>('/tenant/webex/connector/disable', { method: 'POST' }),
+    groups: () => request<{ id: string; name: string }[]>('/tenant/webex/groups'),
+    groupMappings: () =>
+      request<
+        { id: number; webex_group_id: string; webex_group_name: string | null; role_id: number | null; group_id: number | null }[]
+      >('/tenant/webex/group-mappings'),
+    createGroupMapping: (body: {
+      webex_group_id: string;
+      webex_group_name?: string | null;
+      role_id?: number | null;
+      group_id?: number | null;
+    }) =>
+      request('/tenant/webex/group-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    deleteGroupMapping: (id: number) =>
+      request<{ status: string }>(`/tenant/webex/group-mappings/${id}`, { method: 'DELETE' }),
+    groupSyncState: () =>
+      request<{ last_synced_at: string | null; last_sync_status: string | null; last_sync_error: string | null }>(
+        '/tenant/webex/group-mappings/sync-state',
+      ),
+    syncGroupsNow: () =>
+      request<{ changed: number | null }>('/tenant/webex/group-mappings/sync-now', { method: 'POST' }),
+  },
   audit: (action?: string, pageSize = 50) => {
     const params = new URLSearchParams({ page_size: String(pageSize) });
     if (action) params.set('action', action);
