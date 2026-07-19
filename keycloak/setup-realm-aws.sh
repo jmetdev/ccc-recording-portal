@@ -128,21 +128,20 @@ EOF
 
 ensure_idp_mapper() {
   local body mapper_id code
+  mapper_id=$(curl -s "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" -H "$(auth_hdr)" \
+    | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((m['id'] for m in d if m.get('name')=='org-id-to-attribute'),''))")
+  if [ -n "$mapper_id" ]; then
+    echo "  IdP mapper org-id-to-attribute already present ($mapper_id)"
+    return 0
+  fi
   body='{
     "name": "org-id-to-attribute",
     "identityProviderAlias": "webex",
     "identityProviderMapper": "oidc-user-attribute-idp-mapper",
     "config": {"syncMode": "INHERIT", "claim": "orgId", "user.attribute": "webex_org_id"}
   }'
-  mapper_id=$(curl -s "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" -H "$(auth_hdr)" \
-    | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((m['id'] for m in d if m.get('name')=='org-id-to-attribute'),''))")
-  if [ -n "$mapper_id" ]; then
-    code=$(api PUT "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers/$mapper_id" "$body")
-    echo "  PUT IdP mapper org-id-to-attribute -> $code"
-  else
-    code=$(api POST "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" "$body")
-    echo "  POST IdP mapper org-id-to-attribute -> $code"
-  fi
+  code=$(api POST "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" "$body")
+  echo "  POST IdP mapper org-id-to-attribute -> $code"
 }
 
 ensure_client_mapper() {
@@ -153,6 +152,10 @@ ensure_client_mapper() {
   [ -n "$internal_id" ] || return 0
   mapper_id=$(curl -s "$KC/admin/realms/$REALM/clients/$internal_id/protocol-mappers/models" -H "$(auth_hdr)" \
     | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((m['id'] for m in d if m.get('name')=='webex-org-id'),''))")
+  if [ -n "$mapper_id" ]; then
+    echo "  mapper webex-org-id on $client_name already present ($mapper_id)"
+    return 0
+  fi
   body='{
     "name": "webex-org-id",
     "protocol": "openid-connect",
@@ -166,13 +169,8 @@ ensure_client_mapper() {
       "userinfo.token.claim": "true"
     }
   }'
-  if [ -n "$mapper_id" ]; then
-    code=$(api PUT "$KC/admin/realms/$REALM/clients/$internal_id/protocol-mappers/models/$mapper_id" "$body")
-    echo "  PUT mapper webex-org-id on $client_name -> $code"
-  else
-    code=$(api POST "$KC/admin/realms/$REALM/clients/$internal_id/protocol-mappers/models" "$body")
-    echo "  POST mapper webex-org-id on $client_name -> $code"
-  fi
+  code=$(api POST "$KC/admin/realms/$REALM/clients/$internal_id/protocol-mappers/models" "$body")
+  echo "  POST mapper webex-org-id on $client_name -> $code"
 }
 
 echo "Ensuring realm '$REALM'..."
