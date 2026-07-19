@@ -46,12 +46,21 @@ function entitlementsFromTenant(tenant: SuiteTenant): EntitlementForm {
 export function AdminTenantsPage() {
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
-  const { data: me, isLoading: meLoading } = useQuery({ queryKey: ['suite-me'], queryFn: suiteApi.me });
+  const {
+    data: me,
+    isLoading: meLoading,
+    error: meError,
+  } = useQuery({ queryKey: ['suite-me'], queryFn: suiteApi.me, retry: false });
 
-  const { data: tenants, isLoading: tenantsLoading } = useQuery({
+  const {
+    data: tenants,
+    isLoading: tenantsLoading,
+    error: tenantsError,
+  } = useQuery({
     queryKey: ['suite-tenants'],
     queryFn: suiteApi.platform.listTenants,
     enabled: !!me?.is_superadmin,
+    retry: false,
   });
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -106,6 +115,21 @@ export function AdminTenantsPage() {
   });
 
   if (meLoading) return null;
+
+  if (meError) {
+    return (
+      <Container size="sm" py="xl">
+        <Stack>
+          <Alert color="red" title="Couldn't reach the suite service">
+            {meError instanceof Error ? meError.message : 'Something went wrong talking to the suite service.'}
+          </Alert>
+          <Button variant="default" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        </Stack>
+      </Container>
+    );
+  }
 
   if (!me?.is_superadmin) {
     return (
@@ -205,7 +229,16 @@ export function AdminTenantsPage() {
               </Table.Td>
             </Table.Tr>
           ))}
-          {!tenantsLoading && (tenants ?? []).length === 0 && (
+          {!tenantsLoading && tenantsError && (
+            <Table.Tr>
+              <Table.Td colSpan={6}>
+                <Text c="red" ta="center" py="md">
+                  {tenantsError instanceof Error ? tenantsError.message : 'Could not load tenants.'}
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          )}
+          {!tenantsLoading && !tenantsError && (tenants ?? []).length === 0 && (
             <Table.Tr>
               <Table.Td colSpan={6}>
                 <Text c="dimmed" ta="center" py="md">

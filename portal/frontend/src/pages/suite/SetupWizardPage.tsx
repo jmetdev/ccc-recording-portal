@@ -13,7 +13,11 @@ export function SetupWizardPage() {
   const [linkError, setLinkError] = useState('');
   const [linking, setLinking] = useState(false);
 
-  const { data: me, isLoading } = useQuery({ queryKey: ['suite-me'], queryFn: suiteApi.me });
+  const {
+    data: me,
+    isLoading,
+    error: meError,
+  } = useQuery({ queryKey: ['suite-me'], queryFn: suiteApi.me, retry: false });
 
   const confirmLink = async () => {
     setLinkError('');
@@ -48,7 +52,21 @@ export function SetupWizardPage() {
             </Center>
           )}
 
-          {!isLoading && me?.status === 'active' && me.tenant && (
+          {!isLoading && meError && (
+            <Stack>
+              <Alert color="red" title="Couldn't load your workspace">
+                {meError instanceof Error ? meError.message : 'Something went wrong talking to the suite service.'}
+              </Alert>
+              <Button variant="default" fullWidth radius="xl" onClick={() => window.location.reload()}>
+                Try again
+              </Button>
+              <Button variant="subtle" fullWidth radius="xl" onClick={logout}>
+                Sign out
+              </Button>
+            </Stack>
+          )}
+
+          {!isLoading && !meError && me?.status === 'active' && me.tenant && (
             <Stack>
               <Title order={3}>You're all set</Title>
               <Text c="dimmed">

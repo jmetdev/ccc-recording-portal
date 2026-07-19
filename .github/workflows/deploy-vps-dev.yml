@@ -278,6 +278,20 @@ jobs:
           done
           [ "$fail" = "0" ]
 
+      - name: Diagnose suite-backend OIDC config
+        run: |
+          echo "--- suite-backend resolved env (OIDC/SUITE only, values redacted except issuer) ---"
+          docker inspect --format='{{json .Config.Env}}' portal-suite-backend \
+            | python3 -c "
+          import json, sys
+          for e in json.load(sys.stdin):
+              k, _, v = e.partition('=')
+              if k == 'OIDC_ISSUER':
+                  print(f'{k}={v!r}')
+              elif k in ('SUPERADMIN_EMAILS', 'SUITE_INTERNAL_TOKEN', 'OIDC_AUDIENCE'):
+                  print(f'{k}=<set, len={len(v)}>' if v else f'{k}=<empty>')
+          "
+
       - name: Bootstrap Keycloak realm
         run: |
           set -a
