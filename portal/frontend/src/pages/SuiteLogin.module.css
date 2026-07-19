@@ -1,0 +1,46 @@
+.page {
+  background: #fff;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #74777d;
+}
+
+.headline {
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: #0a0a0a;
+}
+
+.gradientWord {
+  background: linear-gradient(105deg, #5ebff7 0%, #1997e4 42%, #7450d5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.card {
+  border: 1px solid #e9eaed;
+  box-shadow: 0 14px 36px rgba(30, 42, 61, 0.06);
+}
+
+.primaryBtn {
+  background: #0a0a0a !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.primaryBtn:hover {
+  background: #1a1a1a !important;
+}
+
+.secondaryBtn {
+  border-color: #e9eaed !important;
+  font-weight: 600;
+}

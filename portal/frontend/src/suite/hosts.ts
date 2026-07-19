@@ -7,19 +7,20 @@ const SUITE_HOSTS = new Set([
 
 export function isSuiteHost(hostname: string = window.location.hostname): boolean {
   if (SUITE_HOSTS.has(hostname)) return true;
-  // Local opt-in: vite --mode or ?suite=1 is not required; use env.
   if (import.meta.env.VITE_SUITE_HOST === 'true') return true;
   return false;
 }
 
-export type SuiteAppId = 'recording' | 'fax';
+export type SuiteAppId = 'recording' | 'fax' | 'spam';
 
 export type SuiteApp = {
   id: SuiteAppId;
+  index: string;
   name: string;
   description: string;
-  href: string;
+  href?: string;
   licensed: boolean;
+  meta?: string;
 };
 
 /** Product entry URLs for the current environment. */
@@ -33,21 +34,35 @@ export function suiteApps(): SuiteApp[] {
     ? 'https://fax.cloudcorecollab.com'
     : 'https://faxdev.cloudcorecollab.com';
 
-  // Dev default: both products licensed until a suite entitlements API exists.
   return [
     {
       id: 'recording',
-      name: 'CloudCoreRecord',
-      description: 'Call recording, search, and retention',
+      index: '01',
+      name: 'Cloud Core Record',
+      description:
+        'Search, tag, transcribe, and securely play Webex and UCM recordings—with role-based access that fits the way your teams work.',
       href: recording,
       licensed: true,
+      meta: 'Open app',
     },
     {
       id: 'fax',
-      name: 'CloudCoreFax',
-      description: 'Cloud fax inbox, outbound, and Webex Calling lines',
+      index: '02',
+      name: 'Cloud Core Fax',
+      description:
+        'Keep your existing PSTN connection and DIDs. Send and receive through Webex Calling or Zoom Phone, then deliver documents where your teams already work.',
       href: fax,
       licensed: true,
+      meta: 'Open app',
+    },
+    {
+      id: 'spam',
+      index: '03',
+      name: 'Cloud Core Spam & Scam',
+      description:
+        'Practical control over nuisance calls with local labels, routing rules, attack detection, and an optional Nomorobo layer.',
+      licensed: false,
+      meta: 'Coming to this environment',
     },
   ];
 }

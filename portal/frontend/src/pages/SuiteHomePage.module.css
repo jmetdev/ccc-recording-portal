@@ -1,78 +1,122 @@
 .page {
+  --ccc-ink: #0a0a0a;
+  --ccc-muted: #74777d;
+  --ccc-line: #e9eaed;
+  --ccc-soft: #f7f8fa;
+  --ccc-blue: #1997e4;
+  --ccc-teal: #25c7b5;
+  --ccc-violet: #7450d5;
   min-height: 100vh;
-  background:
-    radial-gradient(1200px 600px at 10% -10%, #d9ecfb 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, #e8eef8 0%, transparent 50%),
-    #f7f8fa;
-  padding: 48px 24px 64px;
+  background: #fff;
+  color: var(--ccc-ink);
+  padding: 28px 24px 72px;
 }
 
 .shell {
-  max-width: 820px;
+  max-width: 1080px;
   margin: 0 auto;
 }
 
+.header {
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--ccc-line);
+  margin-bottom: 48px;
+}
+
+.userEmail {
+  font-size: 0.875rem;
+  color: var(--ccc-muted);
+}
+
+.signOut {
+  border-color: var(--ccc-line) !important;
+  font-weight: 600;
+}
+
+.hero {
+  margin-bottom: 48px;
+  max-width: 720px;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ccc-muted);
+}
+
 .headline {
-  font-size: clamp(1.75rem, 3vw, 2.25rem);
-  font-weight: 700;
+  font-size: clamp(2.4rem, 5vw, 3.75rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  color: var(--ccc-ink);
+}
+
+.gradientWord {
+  background: linear-gradient(105deg, #5ebff7 0%, #1997e4 42%, #7450d5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.lead {
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--ccc-muted);
+  max-width: 36rem;
+}
+
+.sectionLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ccc-muted);
+  margin-bottom: 10px;
+}
+
+.sectionTitle {
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 600;
   letter-spacing: -0.03em;
-  color: #0a0a0a;
   line-height: 1.15;
+  margin-bottom: 24px;
+  max-width: 28rem;
 }
 
-.appTile {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 20px 22px;
-  border-radius: 14px;
-  border: 1px solid #e4e7ec;
-  background: #fff;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+.grid {
+  margin-bottom: 56px;
 }
 
-.appTile:hover {
-  border-color: #1997e4;
-  box-shadow: 0 10px 28px rgba(25, 151, 228, 0.12);
-  transform: translateY(-1px);
+.license {
+  border-top: 1px solid var(--ccc-line);
+  padding-top: 36px;
+  max-width: 640px;
 }
 
-.appTile:hover .chevron {
-  color: #1997e4;
-  transform: translateX(3px);
+.licenseTitle {
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
 }
 
-.appTileDisabled {
-  padding: 20px 22px;
-  border-radius: 14px;
-  border: 1px dashed #d0d5dd;
-  background: rgba(255, 255, 255, 0.55);
-  opacity: 0.85;
+.licenseBody {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--ccc-muted);
 }
 
-.appIcon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: #e7f4fd;
-  color: #0d78bd;
-  flex-shrink: 0;
-}
-
-.chevron {
-  color: #98a2b3;
-  margin-top: 4px;
-  transition:
-    color 160ms ease,
-    transform 160ms ease;
-}
-
-.licenseBlock {
-  padding-top: 8px;
-  border-top: 1px solid #e4e7ec;
+.licensePill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--ccc-line);
+  background: var(--ccc-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ccc-ink);
 }

@@ -1,4 +1,6 @@
 import { createTheme as mantineCreateTheme, type MantineColorsTuple, type MantineThemeOverride } from '@mantine/core';
+import { CloudCoreLogo } from '../components/CloudCoreLogo';
+import { SuiteAppCard } from '../components/SuiteAppCard';
 
 const brandBlue: MantineColorsTuple = [
   '#e7f4fd',
@@ -76,6 +78,12 @@ export function createTheme(overrides?: MantineThemeOverride) {
       Badge: {
         defaultProps: { radius: 'sm' },
       },
+      CloudCoreLogo: CloudCoreLogo.extend({
+        defaultProps: { height: 36 },
+      }),
+      SuiteAppCard: SuiteAppCard.extend({
+        defaultProps: { radius: 14 },
+      }),
     },
     ...overrides,
   });
