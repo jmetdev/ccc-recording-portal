@@ -225,6 +225,19 @@ jobs:
         run: |
           cd "$APP_DIR"
           docker compose --env-file .env --env-file .env.deploy pull
+          docker compose --env-file .env --env-file .env.deploy up -d db docker-proxy
+          # deploy/vps/initdb only runs against a brand-new postgres volume;
+          # this VPS's db predates the suite service, so create its database
+          # here instead (idempotent — safe to run on every deploy).
+          set -a; . .env; set +a
+          for i in $(seq 1 30); do
+            docker compose --env-file .env --env-file .env.deploy exec -T db pg_isready -U "${POSTGRES_USER:-portal}" && break
+            sleep 2
+          done
+          docker compose --env-file .env --env-file .env.deploy exec -T db \
+            psql -U "${POSTGRES_USER:-portal}" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'suite'" \
+            | grep -q 1 || docker compose --env-file .env --env-file .env.deploy exec -T db \
+            psql -U "${POSTGRES_USER:-portal}" -d postgres -c "CREATE DATABASE suite"
           docker compose --env-file .env --env-file .env.deploy up -d
 
       - name: Bootstrap Keycloak realm
