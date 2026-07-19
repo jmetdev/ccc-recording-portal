@@ -106,7 +106,76 @@ jobs:
           cp -a deploy/vps/initdb "$APP_DIR/deploy/vps/"
           cp keycloak/setup-realm-aws.sh "$APP_DIR/setup-realm-aws.sh"
           chmod +x "$APP_DIR/setup-realm-aws.sh"
+          if [ -f deploy/vps/enable-webex-sso.sh ]; then
+            cp deploy/vps/enable-webex-sso.sh "$APP_DIR/deploy/vps/enable-webex-sso.sh"
+            chmod +x "$APP_DIR/deploy/vps/enable-webex-sso.sh"
+          fi
           echo "IMAGE_TAG=$IMAGE_TAG" > "$APP_DIR/.env.deploy"
+
+      # GitHub Actions secrets → host .env (never echo values). When both IdP
+      # secrets are present, also turn on portal OIDC against authdev.
+      - name: Sync Webex IdP + OIDC settings
+        env:
+          WEBEX_IDP_CLIENT_ID: ${{ secrets.WEBEX_IDP_CLIENT_ID }}
+          WEBEX_IDP_CLIENT_SECRET: ${{ secrets.WEBEX_IDP_CLIENT_SECRET }}
+        run: |
+          python3 - "$APP_DIR/.env" <<'PY'
+          import os, sys
+          from pathlib import Path
+
+          def upsert(path: Path, key: str, value: str) -> None:
+              lines = path.read_text().splitlines() if path.exists() else []
+              out, found = [], False
+              for line in lines:
+                  if line.startswith(key + "="):
+                      out.append(f"{key}={value}")
+                      found = True
+                  else:
+                      out.append(line)
+              if not found:
+                  out.append(f"{key}={value}")
+              path.write_text("\n".join(out) + "\n")
+
+          env_path = Path(sys.argv[1])
+          cid = os.environ.get("WEBEX_IDP_CLIENT_ID", "").strip()
+          secret = os.environ.get("WEBEX_IDP_CLIENT_SECRET", "").strip()
+          if not cid or not secret:
+              print("WEBEX_IDP secrets missing — leaving IdP/OIDC unchanged")
+              raise SystemExit(0)
+
+          upsert(env_path, "WEBEX_IDP_CLIENT_ID", cid)
+          upsert(env_path, "WEBEX_IDP_CLIENT_SECRET", secret)
+          upsert(env_path, "OIDC_ENABLED", "true")
+          upsert(env_path, "OIDC_ISSUER", "https://authdev.cloudcorecollab.com/realms/ccc")
+          upsert(env_path, "OIDC_CLIENT_ID", "ccc-portal")
+          upsert(env_path, "KEYCLOAK_HOSTNAME", "https://authdev.cloudcorecollab.com")
+          print("Wrote WEBEX_IDP_* + OIDC_ENABLED=true into host .env")
+          PY
+
+          if [ -f /opt/cloudcorefax/.env ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+
+          def upsert(path: Path, key: str, value: str) -> None:
+              lines = path.read_text().splitlines() if path.exists() else []
+              out, found = [], False
+              for line in lines:
+                  if line.startswith(key + "="):
+                      out.append(f"{key}={value}")
+                      found = True
+                  else:
+                      out.append(line)
+              if not found:
+                  out.append(f"{key}={value}")
+              path.write_text("\n".join(out) + "\n")
+
+          path = Path("/opt/cloudcorefax/.env")
+          upsert(path, "OIDC_ENABLED", "true")
+          upsert(path, "OIDC_ISSUER", "https://authdev.cloudcorecollab.com/realms/ccc")
+          upsert(path, "OIDC_CLIENT_ID", "cloudcorefax-portal")
+          print("Enabled OIDC on fax .env")
+          PY
+          fi
 
       - name: Pull and up app stack
         run: |
