@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api, User } from '../api/client';
+import { clearOidcToken } from '../suite/api';
 
 interface AuthContextValue {
   user: User | null;
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    clearOidcToken();
     setUser(null);
   };
 

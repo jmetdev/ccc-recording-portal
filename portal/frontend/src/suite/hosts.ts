@@ -19,11 +19,15 @@ export type SuiteApp = {
   name: string;
   description: string;
   href?: string;
+  /** Static fallback only — real entitlement state comes from the suite API
+   * (see suiteApi.entitlements / SuiteHomePage) and overrides this. */
   licensed: boolean;
   meta?: string;
 };
 
-/** Product entry URLs for the current environment. */
+/** Product entry URLs + static marketing copy for the current environment.
+ * Licensing itself is not known here — callers should merge in real
+ * entitlements from suiteApi.entitlements(). */
 export function suiteApps(): SuiteApp[] {
   const host = window.location.hostname;
   const isProdPortal = host === 'portal.cloudcorecollab.com';
@@ -42,7 +46,7 @@ export function suiteApps(): SuiteApp[] {
       description:
         'Search, tag, transcribe, and securely play Webex and UCM recordings—with role-based access that fits the way your teams work.',
       href: recording,
-      licensed: true,
+      licensed: false,
       meta: 'Open app',
     },
     {
@@ -52,7 +56,7 @@ export function suiteApps(): SuiteApp[] {
       description:
         'Keep your existing PSTN connection and DIDs. Send and receive through Webex Calling or Zoom Phone, then deliver documents where your teams already work.',
       href: fax,
-      licensed: true,
+      licensed: false,
       meta: 'Open app',
     },
     {

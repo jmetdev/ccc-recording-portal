@@ -52,12 +52,32 @@ services:
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-ccc-portal}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_ORG_STRICT: ${OIDC_ORG_STRICT:-true}
+      SUITE_API_URL: http://suite-backend:8000
+      SUITE_INTERNAL_TOKEN: ${SUITE_INTERNAL_TOKEN:-change-me-suite-internal-token}
       RETENTION_SWEEP_INTERVAL_S: ${RETENTION_SWEEP_INTERVAL_S:-3600}
     volumes:
       - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+
+  suite-backend:
+    build:
+      context: ./suite/backend
+    container_name: portal-suite-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@db:5432/${SUITE_POSTGRES_DB:-suite}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD:-portal}@db:5432/${SUITE_POSTGRES_DB:-suite}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      SUPERADMIN_EMAILS: ${SUITE_SUPERADMIN_EMAILS:-}
+      SUITE_INTERNAL_TOKEN: ${SUITE_INTERNAL_TOKEN:-change-me-suite-internal-token}
+    ports:
+      - "${SUITE_BACKEND_PORT:-8001}:8000"
 
   frontend:
     build:
@@ -66,6 +86,7 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+      - suite-backend
     ports:
       - "${FRONTEND_PORT:-5173}:80"
 

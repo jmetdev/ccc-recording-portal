@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'portal/**'
+      - 'suite/**'
       - 'webex-connector/**'
       - 'keycloak/**'
       - 'deploy/docker-compose.vps.yml'
@@ -54,6 +55,9 @@ jobs:
             build_args: ""
           - image: keycloak
             context: ./keycloak
+            build_args: ""
+          - image: suite-backend
+            context: ./suite/backend
             build_args: ""
           - image: webex-connector
             context: ./webex-connector
@@ -202,6 +206,18 @@ jobs:
           done
           echo "::error::On-host smoke failed"
           docker compose -f "$APP_DIR/docker-compose.yml" --env-file "$APP_DIR/.env" logs --tail 80 backend || true
+          exit 1
+
+      - name: On-host smoke — suite API
+        run: |
+          for i in $(seq 1 36); do
+            code=$(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/suite-api/health || true)
+            echo "attempt $i: /suite-api/health -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "::error::Suite API smoke failed"
+          docker compose -f "$APP_DIR/docker-compose.yml" --env-file "$APP_DIR/.env" logs --tail 80 suite-backend || true
           exit 1
 
       - name: Smoke — Keycloak (local)

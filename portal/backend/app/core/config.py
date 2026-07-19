@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     # CloudCoreFax's tenant resolution.
     oidc_org_claim: str = "webex_org_id"
     oidc_auto_provision: bool = True
+    # When true (dev default), a webex_org_id claim that matches no tenant is
+    # a hard 403 (routes the user to the suite setup flow) instead of silently
+    # falling back to the default tenant. Only orgs with no org claim at all
+    # (e.g. local username/password login) use the slug-based fallback below.
+    oidc_org_strict: bool = True
+    # Suite portal service (tenant registry / entitlements) — consulted on an
+    # org-claim miss to provision-on-login instead of requiring the Webex
+    # Service App webhook to have fired first. Empty disables the lookup.
+    suite_api_url: str = ""
+    suite_internal_token: str = ""
 
     # ---- OAuth login providers (Webex / Zoom) ----
     # Users authenticate through the same platform that runs their calling

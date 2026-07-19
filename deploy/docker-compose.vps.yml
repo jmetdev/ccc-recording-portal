@@ -56,9 +56,29 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      SUITE_API_URL: http://suite-backend:8000
+      SUITE_INTERNAL_TOKEN: ${SUITE_INTERNAL_TOKEN:-}
       WEBEX_CONNECTOR_BACKEND: ${WEBEX_CONNECTOR_BACKEND:-}
     volumes:
       - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:rw
+    networks:
+      - ccc
+
+  suite-backend:
+    image: ghcr.io/jmetdev/ccc-recording-portal/suite-backend:${IMAGE_TAG:-dev}
+    container_name: portal-suite-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@db:5432/suite
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@db:5432/suite
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      SUPERADMIN_EMAILS: ${SUITE_SUPERADMIN_EMAILS:-}
+      SUITE_INTERNAL_TOKEN: ${SUITE_INTERNAL_TOKEN:?set SUITE_INTERNAL_TOKEN}
     networks:
       - ccc
 
@@ -68,6 +88,7 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+      - suite-backend
     ports:
       - "127.0.0.1:8081:80"
     networks:

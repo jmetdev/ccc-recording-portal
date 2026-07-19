@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
-import { RequireAuth, RequirePermission } from './auth/RouteGuards';
+import { RequireAuth, RequireOidcToken, RequirePermission } from './auth/RouteGuards';
 import { LoginPage } from './pages/LoginPage';
 import { SsoCallbackPage } from './pages/SsoCallbackPage';
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
@@ -11,6 +11,8 @@ import { RetentionPage } from './pages/RetentionPage';
 import { StoragePage } from './pages/StoragePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SuiteHomePage } from './pages/SuiteHomePage';
+import { SetupWizardPage } from './pages/suite/SetupWizardPage';
+import { AdminTenantsPage } from './pages/suite/AdminTenantsPage';
 import { isSuiteHost } from './suite/hosts';
 
 /** Preserve old /calls/:id deep links. */
@@ -55,6 +57,10 @@ function SuiteRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<SsoCallbackPage />} />
       <Route path="/auth/oauth-callback" element={<OAuthCallbackPage />} />
+      <Route element={<RequireOidcToken />}>
+        <Route path="/setup" element={<SetupWizardPage />} />
+        <Route path="/admin" element={<AdminTenantsPage />} />
+      </Route>
       <Route element={<RequireAuth />}>
         <Route index element={<SuiteHomePage />} />
       </Route>

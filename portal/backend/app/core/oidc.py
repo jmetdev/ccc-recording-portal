@@ -81,6 +81,20 @@ def _claim_roles(claims: dict) -> list[str]:
     return [r for r in roles if isinstance(r, str)]
 
 
+async def _suite_tenant_by_org(org_id: str) -> dict | None:
+    if not settings.suite_api_url or not settings.suite_internal_token:
+        return None
+    url = f"{settings.suite_api_url.rstrip('/')}/api/internal/tenants/by-org/{org_id}"
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(url, headers={"x-internal-token": settings.suite_internal_token})
+    except httpx.HTTPError:
+        return None
+    if resp.status_code != 200:
+        return None
+    return resp.json()
+
+
 async def _tenant_for_claims(db: AsyncSession, claims: dict) -> Tenant:
     org_id = claims.get(settings.oidc_org_claim)
     if org_id:
@@ -89,6 +103,22 @@ async def _tenant_for_claims(db: AsyncSession, claims: dict) -> Tenant:
         ).scalar_one_or_none()
         if tenant is not None:
             return tenant
+
+        if settings.oidc_org_strict:
+            suite_tenant = await _suite_tenant_by_org(org_id)
+            if suite_tenant and suite_tenant.get("status") == "active":
+                recording_entitlement = next(
+                    (e for e in suite_tenant.get("entitlements", []) if e.get("app") == "recording"),
+                    None,
+                )
+                if recording_entitlement and recording_entitlement.get("licensed"):
+                    from app.services.tenancy import provision_webex_tenant  # avoid import cycle
+
+                    return await provision_webex_tenant(db, org_id, suite_tenant.get("name"))
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "org_not_provisioned", "org_id": org_id},
+            )
 
     tenant_slug = claims.get(settings.oidc_tenant_claim) or settings.default_tenant_slug
     tenant = (

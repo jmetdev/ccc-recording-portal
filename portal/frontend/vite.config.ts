@@ -10,6 +10,11 @@ export default defineConfig({
         target: process.env.VITE_API_URL || 'http://localhost:8080',
         changeOrigin: true,
       },
+      '/suite-api': {
+        target: process.env.VITE_SUITE_API_URL || 'http://localhost:8001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/suite-api/, '/api'),
+      },
     },
   },
 });

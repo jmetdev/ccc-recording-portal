@@ -187,11 +187,16 @@ ensure_client cloudcorefax-portal \
   "https://faxdev.cloudcorecollab.com/auth/callback" \
   "http://localhost:5174/auth/callback"
 
+echo "Ensuring client 'ccc-suite'..."
+ensure_client ccc-suite \
+  "https://dev.cloudcorecollab.com/auth/callback" \
+  "http://localhost:5173/auth/callback"
+
 if [ -n "$WEBEX_CLIENT_ID" ] && [ -n "$WEBEX_CLIENT_SECRET" ]; then
   echo "Ensuring Webex identity-provider broker..."
   ensure_webex_idp
   ensure_idp_mapper
-  for CLIENT in ccc-portal cloudcorefax-portal; do
+  for CLIENT in ccc-portal cloudcorefax-portal ccc-suite; do
     ensure_client_mapper "$CLIENT"
   done
 else

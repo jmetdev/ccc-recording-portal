@@ -1,14 +1,28 @@
 import { Box, Button, Group, SimpleGrid, Stack, Text } from '@mantine/core';
 import { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthContext';
 import { CloudCoreLogo } from '../components/CloudCoreLogo';
 import { SuiteAppCard } from '../components/SuiteAppCard';
 import { suiteApps } from '../suite/hosts';
+import { suiteApi } from '../suite/api';
 import classes from './SuiteHomePage.module.css';
 
 export function SuiteHomePage() {
   const { user, logout } = useAuth();
-  const apps = suiteApps();
+  const { data: entitlements } = useQuery({
+    queryKey: ['suite-entitlements'],
+    queryFn: suiteApi.entitlements,
+    // The raw token backing these calls is short-lived; a stale/expired
+    // token here just means the launcher falls back to "not licensed"
+    // rather than breaking the page.
+    retry: false,
+  });
+  const licensedByApp = new Map((entitlements ?? []).map((e) => [e.app, e]));
+  const apps = suiteApps().map((app) => {
+    const entitlement = licensedByApp.get(app.id);
+    return entitlement ? { ...app, licensed: entitlement.licensed } : app;
+  });
   const licensedCount = apps.filter((a) => a.licensed).length;
 
   useEffect(() => {
