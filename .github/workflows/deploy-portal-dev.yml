@@ -4,10 +4,11 @@ name: Deploy portal-dev
 # The deployment checkout at /opt/ccc-recording-portal keeps its untracked
 # state (.env, runtime/recordings) and is fast-forwarded from the runner's
 # workspace, so the server never needs GitHub credentials of its own.
+#
+# Legacy on-prem target, superseded by deploy-vps-dev.yml (162.35.179.243).
+# Demoted to manual dispatch only.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:

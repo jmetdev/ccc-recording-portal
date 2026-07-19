@@ -4,19 +4,12 @@ name: Deploy AWS Dev
 # and smoke-tests https://dev.cloudcorecollab.com. Keyless auth via GitHub OIDC
 # assuming the ccc-dev-github-deploy role (no long-lived AWS keys).
 #
-# The legacy on-prem workflow (deploy-portal-dev.yml) is left untouched until
-# the AWS environment is accepted and we cut over.
+# Superseded by deploy-vps-dev.yml (162.35.179.243) — see
+# deploy/vps/aws-decommission.md step 4. Demoted to manual dispatch only;
+# the AWS resources themselves are still up until the rest of that checklist
+# runs, so this remains available for a one-off manual deploy if ever needed.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'portal/**'
-      - 'infra/**'
-      - 'keycloak/**'
-      - 'webex-connector/**'
-      - 'scripts/smoke-v2-ingest.py'
-      - '.github/workflows/deploy-aws-dev.yml'
   workflow_dispatch:
 
 concurrency:
