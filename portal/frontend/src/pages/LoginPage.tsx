@@ -19,6 +19,7 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const suite = isSuiteHost();
 
   const { data: sso } = useQuery({ queryKey: ['sso-config'], queryFn: api.ssoConfig, staleTime: Infinity });
@@ -52,6 +53,7 @@ export function LoginPage() {
   };
 
   if (suite) {
+    const webexPrimary = !!sso?.enabled && !showPasswordForm;
     return (
       <Center mih="100vh" className={suiteLoginClasses.page}>
         <Stack align="center" gap={32} w="100%" maw={420} px="md">
@@ -63,62 +65,80 @@ export function LoginPage() {
             </Text>
           </Stack>
           <Card padding="xl" radius={14} w="100%" className={suiteLoginClasses.card}>
-            <form onSubmit={submit}>
-              <Stack>
-                {error && <Alert color="red">{error}</Alert>}
-                <TextInput
-                  label="Username or email"
-                  value={username}
-                  onChange={(e) => setUsername(e.currentTarget.value)}
-                  required
-                />
-                <PasswordInput
-                  label="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.currentTarget.value)}
-                  required
-                />
-                <Button type="submit" loading={loading} fullWidth radius="xl" className={suiteLoginClasses.primaryBtn}>
-                  Sign in
-                </Button>
-                {(sso?.enabled || (sso?.oauth_providers?.length ?? 0) > 0) && (
-                  <>
-                    <Divider label="or" labelPosition="center" />
+            <Stack>
+              {error && <Alert color="red">{error}</Alert>}
+
+              {webexPrimary && (
+                <>
+                  <Button
+                    fullWidth
+                    radius="xl"
+                    loading={ssoLoading}
+                    onClick={ssoSignIn}
+                    className={suiteLoginClasses.primaryBtn}
+                  >
+                    Continue with Webex
+                  </Button>
+                  {(sso?.oauth_providers ?? []).map((p) => (
+                    <Button
+                      key={p}
+                      variant="default"
+                      fullWidth
+                      radius="xl"
+                      className={suiteLoginClasses.secondaryBtn}
+                      onClick={() => {
+                        window.location.href = `/api/auth/oauth/${p}/login`;
+                      }}
+                    >
+                      {`Sign in with ${PROVIDER_LABELS[p] ?? p}`}
+                    </Button>
+                  ))}
+                  <Divider label="or" labelPosition="center" />
+                  <Button variant="subtle" fullWidth radius="xl" onClick={() => setShowPasswordForm(true)}>
+                    Sign in with username and password
+                  </Button>
+                </>
+              )}
+
+              {!webexPrimary && (
+                <form onSubmit={submit}>
+                  <Stack>
+                    <TextInput
+                      label="Username or email"
+                      value={username}
+                      onChange={(e) => setUsername(e.currentTarget.value)}
+                      required
+                    />
+                    <PasswordInput
+                      label="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.currentTarget.value)}
+                      required
+                    />
+                    <Button type="submit" loading={loading} fullWidth radius="xl" className={suiteLoginClasses.primaryBtn}>
+                      Sign in
+                    </Button>
                     {sso?.enabled && (
                       <Button
-                        variant="default"
+                        variant="subtle"
                         fullWidth
                         radius="xl"
-                        loading={ssoLoading}
-                        onClick={ssoSignIn}
-                        className={suiteLoginClasses.secondaryBtn}
+                        onClick={() => setShowPasswordForm(false)}
                       >
-                        Continue with Webex
+                        Back to Webex sign-in
                       </Button>
                     )}
-                    {(sso?.oauth_providers ?? []).map((p) => (
-                      <Button
-                        key={p}
-                        variant="default"
-                        fullWidth
-                        radius="xl"
-                        className={suiteLoginClasses.secondaryBtn}
-                        onClick={() => {
-                          window.location.href = `/api/auth/oauth/${p}/login`;
-                        }}
-                      >
-                        {`Sign in with ${PROVIDER_LABELS[p] ?? p}`}
-                      </Button>
-                    ))}
-                  </>
-                )}
-              </Stack>
-            </form>
+                  </Stack>
+                </form>
+              )}
+            </Stack>
           </Card>
         </Stack>
       </Center>
     );
   }
+
+  const webexPrimary = !!sso?.enabled && !showPasswordForm;
 
   return (
     <Center mih="100vh" bg="#f7f8fa">
@@ -128,46 +148,63 @@ export function LoginPage() {
           <Text size="sm" c="dimmed" mb="lg">
             Sign in to your recording portal
           </Text>
-          <form onSubmit={submit}>
-            <Stack>
-              {error && <Alert color="red">{error}</Alert>}
-              <TextInput
-                label="Username or email"
-                value={username}
-                onChange={(e) => setUsername(e.currentTarget.value)}
-                required
-              />
-              <PasswordInput label="Password" value={password} onChange={(e) => setPassword(e.currentTarget.value)} required />
-              <Button type="submit" loading={loading} fullWidth>
-                Sign in
-              </Button>
-              {(sso?.enabled || (sso?.oauth_providers?.length ?? 0) > 0) && (
-                <>
-                  <Divider label="or" labelPosition="center" />
+          <Stack>
+            {error && <Alert color="red">{error}</Alert>}
+
+            {webexPrimary && (
+              <>
+                <Button fullWidth loading={ssoLoading} onClick={ssoSignIn}>
+                  Continue with Webex
+                </Button>
+                {(sso?.oauth_providers ?? []).map((p) => (
+                  <Button
+                    key={p}
+                    variant="light"
+                    fullWidth
+                    onClick={() => {
+                      window.location.href = `/api/auth/oauth/${p}/login`;
+                    }}
+                  >
+                    {`Sign in with ${PROVIDER_LABELS[p] ?? p}`}
+                  </Button>
+                ))}
+                <Divider label="or" labelPosition="center" />
+                <Button variant="subtle" fullWidth onClick={() => setShowPasswordForm(true)}>
+                  Sign in with username and password
+                </Button>
+              </>
+            )}
+
+            {!webexPrimary && (
+              <form onSubmit={submit}>
+                <Stack>
+                  <TextInput
+                    label="Username or email"
+                    value={username}
+                    onChange={(e) => setUsername(e.currentTarget.value)}
+                    required
+                  />
+                  <PasswordInput
+                    label="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.currentTarget.value)}
+                    required
+                  />
+                  <Button type="submit" loading={loading} fullWidth>
+                    Sign in
+                  </Button>
                   {sso?.enabled && (
-                    <Button variant="light" fullWidth loading={ssoLoading} onClick={ssoSignIn}>
-                      Continue with Webex
+                    <Button variant="subtle" fullWidth onClick={() => setShowPasswordForm(false)}>
+                      Back to Webex sign-in
                     </Button>
                   )}
-                  {(sso?.oauth_providers ?? []).map((p) => (
-                    <Button
-                      key={p}
-                      variant="light"
-                      fullWidth
-                      onClick={() => {
-                        window.location.href = `/api/auth/oauth/${p}/login`;
-                      }}
-                    >
-                      {`Sign in with ${PROVIDER_LABELS[p] ?? p}`}
-                    </Button>
-                  ))}
-                </>
-              )}
-              <Text size="xs" c="dimmed">
-                Use your organization account if SSO is enabled.
-              </Text>
-            </Stack>
-          </form>
+                  <Text size="xs" c="dimmed">
+                    Use your organization account if SSO is enabled.
+                  </Text>
+                </Stack>
+              </form>
+            )}
+          </Stack>
         </Card>
         <Text size="xs" c="dimmed">
           Part of the CloudCoreCollab suite
