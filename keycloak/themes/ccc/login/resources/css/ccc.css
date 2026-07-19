@@ -1,71 +1,142 @@
-/* CCC Recording Portal / CloudCoreFax branded Keycloak login theme.
- *
- * Extends keycloak.v2 (PatternFly-based) rather than overriding templates, so
- * the standard login/OTP/broker-redirect flows keep working — only the
- * palette/typography changes to match portal/frontend/src/theme/index.ts
- * (brandBlue #1997e4, Manrope/DM Mono). Verify selector names against the
- * actual running Keycloak 26 instance and adjust if PatternFly's variable
- * names differ from what's assumed here.
- */
+/* CloudCoreCollab Keycloak login — matches portal brand (Manrope, #1997e4). */
 
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
 :root,
 .pf-v5-c-page,
-#kc-container-wrapper {
+#kc-container-wrapper,
+.login-pf body {
   --pf-v5-global--primary-color--100: #1997e4;
   --pf-v5-global--primary-color--200: #0d78bd;
+  --pf-v5-global--active-color--100: #1997e4;
   --pf-v5-global--link--Color: #1997e4;
   --pf-v5-global--link--Color--hover: #0d78bd;
   --pf-v5-global--FontFamily--sans-serif: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
   --pf-v5-global--FontFamily--monospace: 'DM Mono', ui-monospace, SFMono-Regular, monospace;
+  --pf-v5-global--BackgroundColor--100: #f7f8fa;
+  --pf-v5-global--BorderRadius--sm: 8px;
+  --pf-v5-global--BorderRadius--md: 12px;
 }
 
+html,
 body,
-#kc-header-wrapper {
-  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+.login-pf body {
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #d9ecfb 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #e8eef8 0%, transparent 50%),
+    #f7f8fa !important;
+  min-height: 100%;
 }
 
-/* Primary action buttons (Sign In, Continue, etc.) */
-.pf-v5-c-button.pf-m-primary {
-  background-color: #1997e4;
-  border-color: #1997e4;
+/* Hide stock Keycloak wordmark; brand comes from #kc-header-wrapper text + CSS */
+#kc-header .pf-v5-c-brand,
+.kc-logo-text,
+#kc-header img {
+  display: none !important;
+}
+
+#kc-header {
+  margin-bottom: 1.5rem;
+}
+
+#kc-header-wrapper {
+  color: #0a0a0a !important;
+  font-weight: 700 !important;
+  font-size: 1.5rem !important;
+  letter-spacing: -0.02em;
+  text-transform: none !important;
+}
+
+#kc-header-wrapper::before {
+  content: '';
+  display: inline-block;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-right: 0.5rem;
+  vertical-align: -0.35rem;
+  background: url('../img/cloud.svg') center / contain no-repeat;
+}
+
+/* Card */
+#kc-content-wrapper,
+.pf-v5-c-login__main,
+.card-pf {
+  background: #ffffff !important;
+  border: 1px solid #e9eaed !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06) !important;
+}
+
+#kc-page-title,
+#kc-form-options,
+.pf-v5-c-login__main-header,
+.pf-v5-c-title {
+  font-family: 'Manrope', sans-serif !important;
+}
+
+#kc-page-title {
+  font-weight: 600 !important;
+  color: #0a0a0a !important;
+}
+
+/* Inputs */
+.pf-v5-c-form-control,
+input.pf-v5-c-form-control {
+  border-radius: 8px !important;
+}
+
+/* Primary buttons */
+.pf-v5-c-button.pf-m-primary,
+input[type='submit'].pf-v5-c-button {
+  background-color: #1997e4 !important;
+  border-color: #1997e4 !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
 }
 .pf-v5-c-button.pf-m-primary:hover,
 .pf-v5-c-button.pf-m-primary:focus {
-  background-color: #0d78bd;
-  border-color: #0d78bd;
+  background-color: #0d78bd !important;
+  border-color: #0d78bd !important;
 }
 
-/* Card / form container radius to match the portal's defaultRadius: 'md' */
-#kc-container-wrapper,
-.pf-v5-c-login__main {
-  border-radius: 8px;
+/* Broker / social providers (Continue with Webex) */
+#kc-social-providers ul,
+.pf-v5-c-login__main-footer-links {
+  padding: 0 !important;
+  list-style: none !important;
 }
 
-#kc-header-wrapper {
-  color: #1997e4;
-  font-weight: 700;
+.pf-v5-c-login__main-footer-links-item-link,
+#kc-social-providers a {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.5rem;
+  width: 100%;
+  border: 1px solid #1997e4 !important;
+  border-radius: 8px !important;
+  padding: 0.7rem 1rem !important;
+  color: #0d78bd !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+  background: #ffffff !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-/* Social/broker login links (e.g. "Continue with webex") render as plain
- * footer links by default (.pf-v5-c-login__main-footer-links-item-link) —
- * verified against the actual rendered markup, not assumed. Style as a
- * bordered pill so it reads as an intentional action, not a stray link. */
-.pf-v5-c-login__main-footer-links-item-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #1997e4;
-  border-radius: 8px;
-  padding: 10px 16px;
-  color: #1997e4;
-  font-weight: 600;
-  text-decoration: none;
-  transition: background-color 0.15s ease;
-}
 .pf-v5-c-login__main-footer-links-item-link:hover,
-.pf-v5-c-login__main-footer-links-item-link:focus {
-  background-color: #e7f4fd;
-  text-decoration: none;
+#kc-social-providers a:hover {
+  background-color: #eaf3fe !important;
+  text-decoration: none !important;
+}
+
+#kc-info,
+#kc-info-wrapper {
+  color: #74777d;
+  font-size: 0.85rem;
+}
+
+/* Local login secondary */
+.pf-v5-c-button.pf-m-link {
+  color: #1997e4 !important;
 }

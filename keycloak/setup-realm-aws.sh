@@ -35,12 +35,13 @@ api() {
 
 ensure_realm() {
   local code
+  local body='{"realm":"'"$REALM"'","enabled":true,"loginTheme":"ccc","displayName":"CloudCoreCollab","displayNameHtml":"<strong>CloudCoreCollab</strong>","registrationAllowed":false,"resetPasswordAllowed":false,"rememberMe":true,"loginWithEmailAllowed":true,"duplicateEmailsAllowed":false,"editUsernameAllowed":false}'
   code=$(api GET "$KC/admin/realms/$REALM")
   if [ "$code" = "200" ]; then
-    code=$(api PUT "$KC/admin/realms/$REALM" "{\"realm\": \"$REALM\", \"enabled\": true, \"loginTheme\": \"ccc\"}")
+    code=$(api PUT "$KC/admin/realms/$REALM" "$body")
     echo "  PUT realm $REALM -> $code"
   else
-    code=$(api POST "$KC/admin/realms" "{\"realm\": \"$REALM\", \"enabled\": true, \"loginTheme\": \"ccc\"}")
+    code=$(api POST "$KC/admin/realms" "$body")
     echo "  POST realm $REALM -> $code"
   fi
 }
@@ -84,9 +85,13 @@ ensure_webex_idp() {
   body=$(cat <<EOF
 {
   "alias": "webex",
+  "displayName": "Webex",
   "providerId": "oidc",
   "enabled": true,
   "trustEmail": true,
+  "storeToken": false,
+  "linkOnly": false,
+  "firstBrokerLoginFlowAlias": "first broker login",
   "config": {
     "clientId": "$WEBEX_CLIENT_ID",
     "clientSecret": "$WEBEX_CLIENT_SECRET",
@@ -97,7 +102,9 @@ ensure_webex_idp() {
     "clientAuthMethod": "client_secret_post",
     "syncMode": "IMPORT",
     "useJwksUrl": "false",
-    "validateSignature": "false"
+    "validateSignature": "false",
+    "guiOrder": "1",
+    "hideOnLoginPage": "false"
   }
 }
 EOF

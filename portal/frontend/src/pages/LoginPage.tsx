@@ -39,7 +39,8 @@ export function LoginPage() {
     setError('');
     setSsoLoading(true);
     try {
-      await beginSsoLogin(sso.issuer, sso.client_id);
+      // Skip the Keycloak chooser and go straight to the Webex broker.
+      await beginSsoLogin(sso.issuer, sso.client_id, { idpHint: 'webex' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not reach the identity provider');
       setSsoLoading(false);
@@ -72,7 +73,7 @@ export function LoginPage() {
                   <Divider label="or" labelPosition="center" />
                   {sso?.enabled && (
                     <Button variant="light" fullWidth loading={ssoLoading} onClick={ssoSignIn}>
-                      Sign in with SSO
+                      Continue with Webex
                     </Button>
                   )}
                   {(sso?.oauth_providers ?? []).map((p) => (

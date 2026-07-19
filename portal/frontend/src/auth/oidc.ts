@@ -39,7 +39,11 @@ export function ssoRedirectUri(): string {
   return `${window.location.origin}/auth/callback`;
 }
 
-export async function beginSsoLogin(issuer: string, clientId: string): Promise<void> {
+export async function beginSsoLogin(
+  issuer: string,
+  clientId: string,
+  options?: { idpHint?: string },
+): Promise<void> {
   const doc = await discover(issuer);
   const verifier = randomVerifier();
   sessionStorage.setItem(VERIFIER_KEY, verifier);
@@ -54,6 +58,9 @@ export async function beginSsoLogin(issuer: string, clientId: string): Promise<v
     code_challenge: await s256(verifier),
     code_challenge_method: 'S256',
   });
+  if (options?.idpHint) {
+    params.set('kc_idp_hint', options.idpHint);
+  }
   window.location.assign(`${doc.authorization_endpoint}?${params}`);
 }
 

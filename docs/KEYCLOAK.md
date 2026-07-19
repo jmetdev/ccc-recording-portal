@@ -67,6 +67,33 @@ Local username/password login keeps working alongside SSO.
 
 ## Cross-app SSO with CloudCoreFax (Phase D)
 
+Public VPS hostnames (Universal SSL):
+
+| Role | Hostname |
+|------|----------|
+| Recording portal | `https://recorddev.cloudcorecollab.com` (alias `dev.`) |
+| Fax portal | `https://faxdev.cloudcorecollab.com` |
+| Keycloak | `https://authdev.cloudcorecollab.com` |
+
+Webex Integration redirect URI (exact):
+
+```
+https://authdev.cloudcorecollab.com/realms/ccc/broker/webex/endpoint
+```
+
+Enable on the VPS after registering the Integration:
+
+```
+WEBEX_IDP_CLIENT_ID=... WEBEX_IDP_CLIENT_SECRET=... \
+  /opt/ccc-recording-portal/deploy/vps/enable-webex-sso.sh
+```
+
+(or from this repo: `deploy/vps/enable-webex-sso.sh` after syncing to the host)
+
+The portal login button **Continue with Webex** sends `kc_idp_hint=webex` so
+users skip the Keycloak chooser and go straight to Webex. The branded `ccc`
+login theme still applies to Keycloak pages (first-broker linking, errors).
+
 The same realm brokers Webex login for **both** products, so logging into
 either app doesn't require a second login for the other. This is one realm
 with a second client and a Webex identity-provider broker — not a second
