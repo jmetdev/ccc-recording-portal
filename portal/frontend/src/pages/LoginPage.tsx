@@ -52,6 +52,23 @@ export function LoginPage() {
     }
   };
 
+  // Break-glass path for the suite host: Keycloak's own hosted login form
+  // (no idp hint), so a local Keycloak account works even if Webex is
+  // unreachable. Unlike the recording host's local form below, this can't
+  // go through the recording backend's local JWT — the suite backend only
+  // trusts Keycloak-issued tokens, whichever authenticator produced them.
+  const localKeycloakSignIn = async () => {
+    if (!sso?.issuer || !sso.client_id) return;
+    setError('');
+    setSsoLoading(true);
+    try {
+      await beginSsoLogin(sso.issuer, sso.client_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reach the identity provider');
+      setSsoLoading(false);
+    }
+  };
+
   if (suite) {
     const webexPrimary = !!sso?.enabled && !showPasswordForm;
     return (
@@ -101,35 +118,26 @@ export function LoginPage() {
               )}
 
               {!webexPrimary && (
-                <form onSubmit={submit}>
-                  <Stack>
-                    <TextInput
-                      label="Username or email"
-                      value={username}
-                      onChange={(e) => setUsername(e.currentTarget.value)}
-                      required
-                    />
-                    <PasswordInput
-                      label="Password"
-                      value={password}
-                      onChange={(e) => setPassword(e.currentTarget.value)}
-                      required
-                    />
-                    <Button type="submit" loading={loading} fullWidth radius="xl" className={suiteLoginClasses.primaryBtn}>
-                      Sign in
+                <Stack>
+                  <Text size="sm" c="dimmed">
+                    Local Keycloak accounts (break-glass, not tied to Webex) sign in on Keycloak's own
+                    page.
+                  </Text>
+                  <Button
+                    fullWidth
+                    radius="xl"
+                    loading={ssoLoading}
+                    onClick={localKeycloakSignIn}
+                    className={suiteLoginClasses.primaryBtn}
+                  >
+                    Sign in with a local account
+                  </Button>
+                  {sso?.enabled && (
+                    <Button variant="subtle" fullWidth radius="xl" onClick={() => setShowPasswordForm(false)}>
+                      Back to Webex sign-in
                     </Button>
-                    {sso?.enabled && (
-                      <Button
-                        variant="subtle"
-                        fullWidth
-                        radius="xl"
-                        onClick={() => setShowPasswordForm(false)}
-                      >
-                        Back to Webex sign-in
-                      </Button>
-                    )}
-                  </Stack>
-                </form>
+                  )}
+                </Stack>
               )}
             </Stack>
           </Card>

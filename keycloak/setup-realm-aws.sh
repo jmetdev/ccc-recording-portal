@@ -9,6 +9,12 @@ ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}"
 REALM="${KEYCLOAK_REALM:-ccc}"
 WEBEX_CLIENT_ID="${WEBEX_IDP_CLIENT_ID:-}"
 WEBEX_CLIENT_SECRET="${WEBEX_IDP_CLIENT_SECRET:-}"
+# Break-glass local account: not Webex-federated, so it still works if the
+# Webex broker/IdP is unreachable. Token carries this email — must match an
+# entry in SUITE_SUPERADMIN_EMAILS to get suite superadmin access.
+BREAKGLASS_USERNAME="${SUITE_BREAKGLASS_USERNAME:-}"
+BREAKGLASS_EMAIL="${SUITE_BREAKGLASS_EMAIL:-}"
+BREAKGLASS_PASSWORD="${SUITE_BREAKGLASS_PASSWORD:-}"
 
 echo "Waiting for Keycloak at $KC..."
 for i in $(seq 1 60); do
@@ -173,6 +179,37 @@ ensure_client_mapper() {
   echo "  POST mapper webex-org-id on $client_name -> $code"
 }
 
+ensure_breakglass_user() {
+  local user_id code body
+  user_id=$(curl -s "$KC/admin/realms/$REALM/users?username=$BREAKGLASS_USERNAME&exact=true" -H "$(auth_hdr)" \
+    | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[0]['id'] if d else '')")
+  body=$(cat <<EOF
+{
+  "username": "$BREAKGLASS_USERNAME",
+  "email": "$BREAKGLASS_EMAIL",
+  "emailVerified": true,
+  "enabled": true
+}
+EOF
+)
+  if [ -n "$user_id" ]; then
+    code=$(api PUT "$KC/admin/realms/$REALM/users/$user_id" "$body")
+    echo "  PUT breakglass user $BREAKGLASS_USERNAME -> $code"
+  else
+    code=$(api POST "$KC/admin/realms/$REALM/users" "$body")
+    echo "  POST breakglass user $BREAKGLASS_USERNAME -> $code"
+    user_id=$(curl -s "$KC/admin/realms/$REALM/users?username=$BREAKGLASS_USERNAME&exact=true" -H "$(auth_hdr)" \
+      | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[0]['id'] if d else '')")
+  fi
+  # Reset on every run so rotating SUITE_BREAKGLASS_PASSWORD takes effect.
+  body=$(cat <<EOF
+{"type": "password", "value": "$BREAKGLASS_PASSWORD", "temporary": false}
+EOF
+)
+  code=$(api PUT "$KC/admin/realms/$REALM/users/$user_id/reset-password" "$body")
+  echo "  PUT breakglass user password -> $code"
+}
+
 echo "Ensuring realm '$REALM'..."
 ensure_realm
 
@@ -201,6 +238,13 @@ if [ -n "$WEBEX_CLIENT_ID" ] && [ -n "$WEBEX_CLIENT_SECRET" ]; then
   done
 else
   echo "Skipping Webex IdP broker — set WEBEX_IDP_CLIENT_ID/SECRET to enable."
+fi
+
+if [ -n "$BREAKGLASS_USERNAME" ] && [ -n "$BREAKGLASS_EMAIL" ] && [ -n "$BREAKGLASS_PASSWORD" ]; then
+  echo "Ensuring break-glass local user '$BREAKGLASS_USERNAME'..."
+  ensure_breakglass_user
+else
+  echo "Skipping break-glass user — set SUITE_BREAKGLASS_USERNAME/EMAIL/PASSWORD to enable."
 fi
 
 echo "Keycloak realm bootstrap complete."

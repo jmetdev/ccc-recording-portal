@@ -190,6 +190,9 @@ jobs:
         env:
           SUITE_INTERNAL_TOKEN: ${{ secrets.SUITE_INTERNAL_TOKEN }}
           SUITE_SUPERADMIN_EMAILS: ${{ secrets.SUITE_SUPERADMIN_EMAILS }}
+          SUITE_BREAKGLASS_USERNAME: ${{ secrets.SUITE_BREAKGLASS_USERNAME }}
+          SUITE_BREAKGLASS_EMAIL: ${{ secrets.SUITE_BREAKGLASS_EMAIL }}
+          SUITE_BREAKGLASS_PASSWORD: ${{ secrets.SUITE_BREAKGLASS_PASSWORD }}
         run: |
           python3 - "$APP_DIR/.env" <<'PY'
           import os, sys
@@ -211,6 +214,9 @@ jobs:
           env_path = Path(sys.argv[1])
           token = os.environ.get("SUITE_INTERNAL_TOKEN", "").strip()
           emails = os.environ.get("SUITE_SUPERADMIN_EMAILS", "").strip()
+          bg_user = os.environ.get("SUITE_BREAKGLASS_USERNAME", "").strip()
+          bg_email = os.environ.get("SUITE_BREAKGLASS_EMAIL", "").strip()
+          bg_pass = os.environ.get("SUITE_BREAKGLASS_PASSWORD", "").strip()
           if token:
               upsert(env_path, "SUITE_INTERNAL_TOKEN", token)
               print("Wrote SUITE_INTERNAL_TOKEN into host .env")
@@ -219,6 +225,13 @@ jobs:
           if emails:
               upsert(env_path, "SUITE_SUPERADMIN_EMAILS", emails)
               print("Wrote SUITE_SUPERADMIN_EMAILS into host .env")
+          if bg_user and bg_email and bg_pass:
+              upsert(env_path, "SUITE_BREAKGLASS_USERNAME", bg_user)
+              upsert(env_path, "SUITE_BREAKGLASS_EMAIL", bg_email)
+              upsert(env_path, "SUITE_BREAKGLASS_PASSWORD", bg_pass)
+              print("Wrote SUITE_BREAKGLASS_* into host .env")
+          else:
+              print("SUITE_BREAKGLASS_* secrets incomplete — leaving host .env unchanged")
           PY
 
       - name: Pull and up app stack
