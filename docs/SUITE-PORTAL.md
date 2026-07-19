@@ -27,9 +27,10 @@ Rules:
 - **No production cutover yet** — leave `portal.` / `record.` / `fax.` /
   `auth.` alone until explicitly scheduled.
 
-Today’s interim reality (pre-split): `dev.cloudcorecollab.com` still fronts the
-recording SPA while SSO is proven. Target is to move that SPA to
-`recorddev.` and put the suite launcher on `dev.`.
+The frontend switches by hostname: `dev.` / `portal.` render the suite
+launcher (`SuiteHomePage`); `recorddev.` / `record.` render the recording app.
+Both currently ship from the same frontend image until a dedicated suite
+service exists.
 
 ## User journeys
 

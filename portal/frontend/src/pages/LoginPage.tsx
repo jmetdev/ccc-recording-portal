@@ -6,6 +6,8 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { beginSsoLogin } from '../auth/oidc';
 import { BrandMark } from '../components/BrandMark';
+import { SuiteBrandMark } from '../components/SuiteBrandMark';
+import { isSuiteHost } from '../suite/hosts';
 
 const PROVIDER_LABELS: Record<string, string> = { webex: 'Webex', zoom: 'Zoom' };
 
@@ -16,6 +18,7 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
+  const suite = isSuiteHost();
 
   const { data: sso } = useQuery({ queryKey: ['sso-config'], queryFn: api.ssoConfig, staleTime: Infinity });
 
@@ -50,10 +53,10 @@ export function LoginPage() {
   return (
     <Center mih="100vh" bg="#f7f8fa">
       <Stack align="center" gap="xl">
-        <BrandMark size={28} textSize={22} />
+        {suite ? <SuiteBrandMark size={28} textSize={22} /> : <BrandMark size={28} textSize={22} />}
         <Card padding="xl" radius="lg" w={400}>
           <Text size="sm" c="dimmed" mb="lg">
-            Sign in to your recording portal
+            {suite ? 'Sign in to CloudCoreCollab' : 'Sign in to your recording portal'}
           </Text>
           <form onSubmit={submit}>
             <Stack>
@@ -96,9 +99,11 @@ export function LoginPage() {
             </Stack>
           </form>
         </Card>
-        <Text size="xs" c="dimmed">
-          Part of the CloudCoreCollab suite
-        </Text>
+        {!suite && (
+          <Text size="xs" c="dimmed">
+            Part of the CloudCoreCollab suite
+          </Text>
+        )}
       </Stack>
     </Center>
   );

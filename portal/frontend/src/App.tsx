@@ -10,6 +10,8 @@ import { SearchPage } from './pages/SearchPage';
 import { RetentionPage } from './pages/RetentionPage';
 import { StoragePage } from './pages/StoragePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SuiteHomePage } from './pages/SuiteHomePage';
+import { isSuiteHost } from './suite/hosts';
 
 /** Preserve old /calls/:id deep links. */
 function CallRedirect() {
@@ -17,34 +19,51 @@ function CallRedirect() {
   return <Navigate to={`/recordings/${id}`} replace />;
 }
 
-export function App() {
+function RecordingRoutes() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/auth/callback" element={<SsoCallbackPage />} />
-        <Route path="/auth/oauth-callback" element={<OAuthCallbackPage />} />
-        <Route element={<RequireAuth />}>
-          <Route element={<AppLayout />}>
-            <Route index element={<OverviewPage />} />
-            <Route path="recordings" element={<RecordingsPage />} />
-            <Route path="recordings/:id" element={<RecordingsPage />} />
-            <Route path="calls" element={<Navigate to="/recordings" replace />} />
-            <Route path="calls/:id" element={<CallRedirect />} />
-            <Route element={<RequirePermission permission="view_transcripts" />}>
-              <Route path="search" element={<SearchPage />} />
-            </Route>
-            <Route element={<RequirePermission permission="manage_retention" />}>
-              <Route path="retention" element={<RetentionPage />} />
-            </Route>
-            <Route path="storage" element={<StoragePage />} />
-            <Route element={<RequirePermission permission="manage_users" />}>
-              <Route path="settings" element={<SettingsPage />} />
-            </Route>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/auth/callback" element={<SsoCallbackPage />} />
+      <Route path="/auth/oauth-callback" element={<OAuthCallbackPage />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<AppLayout />}>
+          <Route index element={<OverviewPage />} />
+          <Route path="recordings" element={<RecordingsPage />} />
+          <Route path="recordings/:id" element={<RecordingsPage />} />
+          <Route path="calls" element={<Navigate to="/recordings" replace />} />
+          <Route path="calls/:id" element={<CallRedirect />} />
+          <Route element={<RequirePermission permission="view_transcripts" />}>
+            <Route path="search" element={<SearchPage />} />
+          </Route>
+          <Route element={<RequirePermission permission="manage_retention" />}>
+            <Route path="retention" element={<RetentionPage />} />
+          </Route>
+          <Route path="storage" element={<StoragePage />} />
+          <Route element={<RequirePermission permission="manage_users" />}>
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
+}
+
+function SuiteRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/auth/callback" element={<SsoCallbackPage />} />
+      <Route path="/auth/oauth-callback" element={<OAuthCallbackPage />} />
+      <Route element={<RequireAuth />}>
+        <Route index element={<SuiteHomePage />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+export function App() {
+  const suite = isSuiteHost();
+  return <BrowserRouter>{suite ? <SuiteRoutes /> : <RecordingRoutes />}</BrowserRouter>;
 }
