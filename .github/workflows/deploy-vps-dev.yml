@@ -181,6 +181,46 @@ jobs:
           PY
           fi
 
+      # Same upsert pattern as the Webex IdP sync above — lets these live as
+      # GitHub Actions secrets instead of a manual VPS .env edit. Missing
+      # SUITE_INTERNAL_TOKEN is left for the operator to notice via the
+      # compose ":?set SUITE_INTERNAL_TOKEN" failure rather than silently
+      # deploying without it.
+      - name: Sync suite portal settings
+        env:
+          SUITE_INTERNAL_TOKEN: ${{ secrets.SUITE_INTERNAL_TOKEN }}
+          SUITE_SUPERADMIN_EMAILS: ${{ secrets.SUITE_SUPERADMIN_EMAILS }}
+        run: |
+          python3 - "$APP_DIR/.env" <<'PY'
+          import os, sys
+          from pathlib import Path
+
+          def upsert(path: Path, key: str, value: str) -> None:
+              lines = path.read_text().splitlines() if path.exists() else []
+              out, found = [], False
+              for line in lines:
+                  if line.startswith(key + "="):
+                      out.append(f"{key}={value}")
+                      found = True
+                  else:
+                      out.append(line)
+              if not found:
+                  out.append(f"{key}={value}")
+              path.write_text("\n".join(out) + "\n")
+
+          env_path = Path(sys.argv[1])
+          token = os.environ.get("SUITE_INTERNAL_TOKEN", "").strip()
+          emails = os.environ.get("SUITE_SUPERADMIN_EMAILS", "").strip()
+          if token:
+              upsert(env_path, "SUITE_INTERNAL_TOKEN", token)
+              print("Wrote SUITE_INTERNAL_TOKEN into host .env")
+          else:
+              print("SUITE_INTERNAL_TOKEN secret missing — leaving host .env unchanged")
+          if emails:
+              upsert(env_path, "SUITE_SUPERADMIN_EMAILS", emails)
+              print("Wrote SUITE_SUPERADMIN_EMAILS into host .env")
+          PY
+
       - name: Pull and up app stack
         run: |
           cd "$APP_DIR"
