@@ -92,10 +92,9 @@ class Settings(BaseSettings):
     # Fernet key for encrypting Service App tokens at rest (app/core/crypto.py).
     crypto_key: str = ""
 
-    # ---- Hosted per-tenant Webex connector (Phase E) ----
-    # One shared ECS task definition; a separate service/task/secrets/ALB
-    # target is provisioned per tenant at onboarding time (services/
-    # webex_connector.py). Empty cluster/task-def ARN disables provisioning.
+    # ---- Hosted per-tenant Webex connector (Phase E / VPS docker) ----
+    # WEBEX_CONNECTOR_BACKEND: "" (disabled), "ecs", or "docker"
+    webex_connector_backend: str = ""
     webex_connector_region: str = ""
     webex_connector_cluster_arn: str = ""
     webex_connector_task_definition_arn: str = ""
@@ -103,8 +102,12 @@ class Settings(BaseSettings):
     webex_connector_listener_arn: str = ""
     webex_connector_subnet_ids: str = ""  # comma-separated
     webex_connector_security_group_ids: str = ""  # comma-separated
-    webex_connector_domain: str = ""  # e.g. webex-connector.dev.cloudcorecollab.com
+    webex_connector_domain: str = ""  # e.g. dev.cloudcorecollab.com
     webex_connector_ssm_prefix: str = "/ccc/dev/webex-connector"
+    # Docker backend (VPS)
+    webex_connector_image: str = ""
+    webex_connector_network: str = "ccc"
+    webex_connector_portal_url: str = "http://backend:8000"
 
     # Retention sweep cadence; 0 disables the background task.
     retention_sweep_interval_s: int = 3600

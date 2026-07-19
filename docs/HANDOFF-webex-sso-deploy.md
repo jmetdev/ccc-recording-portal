@@ -1,25 +1,17 @@
-# Handoff — Webex Control Hub onboarding + cross-app SSO, deploy to AWS dev
+# Handoff — Webex Control Hub onboarding + cross-app SSO
 
 **Repos:** `ccc-recording-portal` (this repo) and `cloudcorefax`
-(`/Users/jmetcalf/Projects/cloudcorefax`), both on `main`, both with all
-changes **uncommitted** in the working tree. Account `765366202604`,
-region `us-east-1`, both apps share one VPC/ALB (`dev.cloudcorecollab.com`
-and `fax.dev.cloudcorecollab.com`).
+(`/Users/jmetcalf/Projects/cloudcorefax`).
 
-Full design doc: `/Users/jmetcalf/.claude/plans/i-need-to-get-validated-cupcake.md`
-(has a STATUS section at the top with the same phase summary as below, plus
-full design rationale for each phase).
+**Runtime:** Phases A–G shipped to **AWS dev** (`deploy-aws-dev.yml`). Phases
+**H–M** add a **VPS dev** path (`162.35.179.243`, `deploy-vps-dev.yml`) with
+GHCR images, Docker-native per-tenant orchestration, and Keycloak on the VPS.
+See `deploy/vps/README.md` and `deploy/vps/aws-decommission.md`.
 
-## What this delivers
-
-Automates Webex tenant onboarding via a Service App, correlates each
-product's tenant_id with the customer's Webex org_id, syncs Webex Control Hub
-groups into ccc-recording-portal's roles/permissions, and replaces each
-product's shared multi-tenant gateway process with a genuinely isolated
-per-tenant instance (own container, own credentials) for privacy. The code
-also includes a locally verified Keycloak-brokered cross-app SSO design, but
-the AWS dev deployment does not include Keycloak and therefore does not
-enable cross-app SSO.
+**Keycloak:** AWS dev **does** run Keycloak (`ccc-dev-keycloak`,
+`auth.dev.cloudcorecollab.com`) with realm bootstrap via
+`keycloak/setup-realm-aws.sh`. `OIDC_ENABLED` stays false until the Cloudflare
+tunnel cutover (issuer URL must be publicly reachable).
 
 ## State by phase
 
@@ -28,10 +20,11 @@ enable cross-app SSO.
 | A | ccc-recording-portal | Tenant role-seeding fix + real `webex_org_id` column (migration 006) | done, verified against real DB |
 | B | ccc-recording-portal | Owner/customer Webex docs | done |
 | C | ccc-recording-portal | Service App webhook onboarding (migration 007) | done, verified live (real HMAC sig tests) |
-| D | ccc-recording-portal | Cross-app SSO via Keycloak Webex broker | local implementation verified; **not deployed or enabled in AWS dev** because no AWS Keycloak service exists |
+| D | ccc-recording-portal | Cross-app SSO via Keycloak Webex broker | implemented; Keycloak on AWS + VPS; `OIDC_ENABLED=false` until tunnel cutover |
 | E | ccc-recording-portal | Per-tenant isolated hosted Webex connector (migration 008) | done, verified (moto-mocked AWS round-trip); **recording-retrieval logic is a stub** pending a live-org API spike |
 | F | ccc-recording-portal | Control Hub group→role sync (migration 009) | done, verified against real DB with a **stubbed** Webex client; **Groups API shape unvalidated** |
-| G | cloudcorefax | Per-tenant isolated FreeSWITCH gateway (migration 008) | done, verified (moto + a live two-tenant cross-tenant-isolation attack test against the running app) |
+| G | cloudcorefax | Per-tenant isolated FreeSWITCH gateway (migration 008) | done |
+| H–M | both | VPS dev migration (GHCR, compose, docker backends) | see `deploy/vps/` |
 
 Everything above compiles/typechecks clean and CDK synths clean as of this
 handoff (re-verify with the commands in "Pre-deploy checks" below — don't

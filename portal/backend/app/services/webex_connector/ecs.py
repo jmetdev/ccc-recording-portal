@@ -24,8 +24,8 @@ from app.models import ConnectorCredential, WebexConnectorInstance
 logger = logging.getLogger(__name__)
 
 
-def connector_provisioning_enabled() -> bool:
-    return bool(
+def provisioning_enabled() -> bool:
+    return settings.webex_connector_backend == "ecs" and bool(
         settings.webex_connector_cluster_arn
         and settings.webex_connector_task_definition_arn
         and settings.webex_connector_subnet_id_list
@@ -73,8 +73,8 @@ async def launch_tenant_connector(
     db: AsyncSession, tenant_id: int, connector_credential: ConnectorCredential, connector_token: str
 ) -> WebexConnectorInstance:
     """Idempotently stand up this tenant's isolated connector instance."""
-    if not connector_provisioning_enabled():
-        raise RuntimeError("Hosted Webex connector infra is not configured")
+    if not provisioning_enabled():
+        raise RuntimeError("Hosted Webex connector infra is not configured (WEBEX_CONNECTOR_BACKEND=ecs)")
 
     existing = await get_instance(db, tenant_id)
     if existing is not None and existing.status in ("provisioning", "running"):

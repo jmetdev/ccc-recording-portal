@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Idempotent Keycloak realm bootstrap for AWS dev (and local with env overrides).
+# Idempotent Keycloak realm bootstrap (AWS dev + VPS). Upserts realm, clients,
+# Webex IdP broker, and protocol mappers so secret/redirect rotations apply.
 set -euo pipefail
 
 KC="${KEYCLOAK_URL:?Set KEYCLOAK_URL}"
 ADMIN_USER="${KEYCLOAK_ADMIN:-admin}"
 ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}"
 REALM="${KEYCLOAK_REALM:-ccc}"
-WEBEX_CLIENT_ID="${WEBEX_IDP_CLIENT_ID:?Set WEBEX_IDP_CLIENT_ID}"
-WEBEX_CLIENT_SECRET="${WEBEX_IDP_CLIENT_SECRET:?Set WEBEX_IDP_CLIENT_SECRET}"
+WEBEX_CLIENT_ID="${WEBEX_IDP_CLIENT_ID:-}"
+WEBEX_CLIENT_SECRET="${WEBEX_IDP_CLIENT_SECRET:-}"
 
 echo "Waiting for Keycloak at $KC..."
 for i in $(seq 1 60); do
@@ -20,65 +21,116 @@ TOKEN=$(curl -s -X POST "$KC/realms/master/protocol/openid-connect/token" \
   -d "client_id=admin-cli" -d "username=$ADMIN_USER" -d "password=$ADMIN_PASS" -d "grant_type=password" \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 
-auth() { echo "Authorization: Bearer $TOKEN"; }
+auth_hdr() { printf 'Authorization: Bearer %s' "$TOKEN"; }
 
-put_json() {
-  local method=$1 url=$2 body=$3
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X "$method" "$url" -H "$(auth)" -H 'Content-Type: application/json' -d "$body")
-  echo "  $method $url -> $code"
+api() {
+  local method=$1 url=$2 body=${3:-}
+  if [ -n "$body" ]; then
+    curl -s -o /tmp/kc_resp.json -w '%{http_code}' -X "$method" "$url" \
+      -H "$(auth_hdr)" -H 'Content-Type: application/json' -d "$body"
+  else
+    curl -s -o /tmp/kc_resp.json -w '%{http_code}' -X "$method" "$url" -H "$(auth_hdr)"
+  fi
 }
 
-echo "Ensuring realm '$REALM'..."
-put_json POST "$KC/admin/realms" "{\"realm\": \"$REALM\", \"enabled\": true, \"loginTheme\": \"ccc\"}"
+ensure_realm() {
+  local code
+  code=$(api GET "$KC/admin/realms/$REALM")
+  if [ "$code" = "200" ]; then
+    code=$(api PUT "$KC/admin/realms/$REALM" "{\"realm\": \"$REALM\", \"enabled\": true, \"loginTheme\": \"ccc\"}")
+    echo "  PUT realm $REALM -> $code"
+  else
+    code=$(api POST "$KC/admin/realms" "{\"realm\": \"$REALM\", \"enabled\": true, \"loginTheme\": \"ccc\"}")
+    echo "  POST realm $REALM -> $code"
+  fi
+}
 
-for spec in \
-  'ccc-portal|https://dev.cloudcorecollab.com/auth/callback|http://localhost:5173/auth/callback' \
-  'cloudcorefax-portal|https://fax.dev.cloudcorecollab.com/auth/callback|http://localhost:5174/auth/callback'
-do
-  IFS='|' read -r cid redirect_prod redirect_dev <<<"$spec"
-  echo "Ensuring client '$cid'..."
-  put_json POST "$KC/admin/realms/$REALM/clients" "{
-    \"clientId\": \"$cid\",
-    \"publicClient\": true,
-    \"standardFlowEnabled\": true,
-    \"redirectUris\": [\"$redirect_prod\", \"$redirect_dev\"],
-    \"webOrigins\": [\"+\"],
-    \"attributes\": {\"pkce.code.challenge.method\": \"S256\"}
-  }"
-done
+ensure_client() {
+  local cid=$1 redirect_prod=$2 redirect_dev=$3
+  local internal_id code body
+  internal_id=$(curl -s "$KC/admin/realms/$REALM/clients?clientId=$cid" -H "$(auth_hdr)" \
+    | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[0]['id'] if d else '')")
+  body=$(cat <<EOF
+{
+  "clientId": "$cid",
+  "publicClient": true,
+  "standardFlowEnabled": true,
+  "redirectUris": ["$redirect_prod", "$redirect_dev"],
+  "webOrigins": ["+"],
+  "attributes": {"pkce.code.challenge.method": "S256"}
+}
+EOF
+)
+  if [ -n "$internal_id" ]; then
+    code=$(api PUT "$KC/admin/realms/$REALM/clients/$internal_id" "$body")
+    echo "  PUT client $cid -> $code"
+  else
+    code=$(api POST "$KC/admin/realms/$REALM/clients" "$body")
+    echo "  POST client $cid -> $code"
+  fi
+}
 
-echo "Ensuring Webex identity-provider broker..."
-put_json POST "$KC/admin/realms/$REALM/identity-provider/instances" "{
-  \"alias\": \"webex\",
-  \"providerId\": \"oidc\",
-  \"enabled\": true,
-  \"trustEmail\": true,
-  \"config\": {
-    \"clientId\": \"$WEBEX_CLIENT_ID\",
-    \"clientSecret\": \"$WEBEX_CLIENT_SECRET\",
-    \"authorizationUrl\": \"https://webexapis.com/v1/authorize\",
-    \"tokenUrl\": \"https://webexapis.com/v1/access_token\",
-    \"userInfoUrl\": \"https://webexapis.com/v1/people/me\",
-    \"defaultScope\": \"spark:people_read\",
-    \"clientAuthMethod\": \"client_secret_post\",
-    \"syncMode\": \"IMPORT\",
-    \"useJwksUrl\": \"false\",
-    \"validateSignature\": \"false\"
+ensure_webex_idp() {
+  local code body
+  body=$(cat <<EOF
+{
+  "alias": "webex",
+  "providerId": "oidc",
+  "enabled": true,
+  "trustEmail": true,
+  "config": {
+    "clientId": "$WEBEX_CLIENT_ID",
+    "clientSecret": "$WEBEX_CLIENT_SECRET",
+    "authorizationUrl": "https://webexapis.com/v1/authorize",
+    "tokenUrl": "https://webexapis.com/v1/access_token",
+    "userInfoUrl": "https://webexapis.com/v1/people/me",
+    "defaultScope": "spark:people_read",
+    "clientAuthMethod": "client_secret_post",
+    "syncMode": "IMPORT",
+    "useJwksUrl": "false",
+    "validateSignature": "false"
   }
-}"
+}
+EOF
+)
+  code=$(api GET "$KC/admin/realms/$REALM/identity-provider/instances/webex")
+  if [ "$code" = "200" ]; then
+    code=$(api PUT "$KC/admin/realms/$REALM/identity-provider/instances/webex" "$body")
+    echo "  PUT IdP webex -> $code"
+  else
+    code=$(api POST "$KC/admin/realms/$REALM/identity-provider/instances" "$body")
+    echo "  POST IdP webex -> $code"
+  fi
+}
 
-echo "Ensuring broker + client mappers..."
-put_json POST "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" '{
-  "name": "org-id-to-attribute",
-  "identityProviderAlias": "webex",
-  "identityProviderMapper": "oidc-user-attribute-idp-mapper",
-  "config": {"syncMode": "INHERIT", "claim": "orgId", "user.attribute": "webex_org_id"}
-}'
+ensure_idp_mapper() {
+  local name=$1 body mapper_id code
+  body='{
+    "name": "org-id-to-attribute",
+    "identityProviderAlias": "webex",
+    "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+    "config": {"syncMode": "INHERIT", "claim": "orgId", "user.attribute": "webex_org_id"}
+  }'
+  mapper_id=$(curl -s "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" -H "$(auth_hdr)" \
+    | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((m['id'] for m in d if m.get('name')=='org-id-to-attribute'),''))")
+  if [ -n "$mapper_id" ]; then
+    code=$(api PUT "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers/$mapper_id" "$body")
+    echo "  PUT IdP mapper org-id-to-attribute -> $code"
+  else
+    code=$(api POST "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" "$body")
+    echo "  POST IdP mapper org-id-to-attribute -> $code"
+  fi
+}
 
-for CLIENT in ccc-portal cloudcorefax-portal; do
-  CID=$(curl -s "$KC/admin/realms/$REALM/clients?clientId=$CLIENT" -H "$(auth)" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[0]['id'] if d else '')")
-  [ -n "$CID" ] || continue
-  put_json POST "$KC/admin/realms/$REALM/clients/$CID/protocol-mappers/models" '{
+ensure_client_mapper() {
+  local client_name=$1
+  local internal_id mapper_id code body
+  internal_id=$(curl -s "$KC/admin/realms/$REALM/clients?clientId=$client_name" -H "$(auth_hdr)" \
+    | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[0]['id'] if d else '')")
+  [ -n "$internal_id" ] || return 0
+  mapper_id=$(curl -s "$KC/admin/realms/$REALM/clients/$internal_id/protocol-mappers/models" -H "$(auth_hdr)" \
+    | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((m['id'] for m in d if m.get('name')=='webex-org-id'),''))")
+  body='{
     "name": "webex-org-id",
     "protocol": "openid-connect",
     "protocolMapper": "oidc-usermodel-attribute-mapper",
@@ -91,6 +143,36 @@ for CLIENT in ccc-portal cloudcorefax-portal; do
       "userinfo.token.claim": "true"
     }
   }'
+  if [ -n "$mapper_id" ]; then
+    code=$(api PUT "$KC/admin/realms/$REALM/clients/$internal_id/protocol-mappers/models/$mapper_id" "$body")
+    echo "  PUT mapper webex-org-id on $client_name -> $code"
+  else
+    code=$(api POST "$KC/admin/realms/$REALM/clients/$internal_id/protocol-mappers/models" "$body")
+    echo "  POST mapper webex-org-id on $client_name -> $code"
+  fi
+}
+
+echo "Ensuring realm '$REALM'..."
+ensure_realm
+
+for spec in \
+  'ccc-portal|https://dev.cloudcorecollab.com/auth/callback|http://localhost:5173/auth/callback' \
+  'cloudcorefax-portal|https://fax.dev.cloudcorecollab.com/auth/callback|http://localhost:5174/auth/callback'
+do
+  IFS='|' read -r cid redirect_prod redirect_dev <<<"$spec"
+  echo "Ensuring client '$cid'..."
+  ensure_client "$cid" "$redirect_prod" "$redirect_dev"
 done
+
+if [ -n "$WEBEX_CLIENT_ID" ] && [ -n "$WEBEX_CLIENT_SECRET" ]; then
+  echo "Ensuring Webex identity-provider broker..."
+  ensure_webex_idp
+  ensure_idp_mapper
+  for CLIENT in ccc-portal cloudcorefax-portal; do
+    ensure_client_mapper "$CLIENT"
+  done
+else
+  echo "Skipping Webex IdP broker — set WEBEX_IDP_CLIENT_ID/SECRET to enable."
+fi
 
 echo "Keycloak realm bootstrap complete."

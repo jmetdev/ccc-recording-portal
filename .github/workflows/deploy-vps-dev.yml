@@ -1,0 +1,166 @@
+name: Deploy VPS Dev
+
+# Build images on GitHub-hosted runners → GHCR → deploy on self-hosted VPS runner.
+# No SSH. Secrets stay in /opt/ccc-recording-portal/.env on the VPS.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'portal/**'
+      - 'webex-connector/**'
+      - 'keycloak/**'
+      - 'deploy/docker-compose.vps.yml'
+      - 'deploy/vps/webhook-router/**'
+      - 'deploy/vps/initdb/**'
+      - 'keycloak/setup-realm-aws.sh'
+      - '.github/workflows/deploy-vps-dev.yml'
+  workflow_dispatch:
+    inputs:
+      require_public_smoke:
+        description: Fail if public URLs are unreachable (post-cutover)
+        type: boolean
+        default: false
+
+concurrency:
+  group: vps-dev-deploy-ccc
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  APP_DIR: /opt/ccc-recording-portal
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: jmetdev/ccc-recording-portal
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: backend
+            context: ./portal/backend
+            build_args: |
+              INSTALL_DOCKER_CLI=true
+          - image: frontend
+            context: ./portal/frontend
+            build_args: |
+              VITE_API_URL=/api
+          - image: media-handler
+            context: ./portal/media-handler
+            build_args: ""
+          - image: keycloak
+            context: ./keycloak
+            build_args: ""
+          - image: webex-connector
+            context: ./webex-connector
+            build_args: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          build-args: ${{ matrix.build_args }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.image }}:dev
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.image }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, vps-dev]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install compose + support files
+        env:
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          mkdir -p "$APP_DIR/deploy/vps" "$APP_DIR/runtime/recordings"
+          cp deploy/docker-compose.vps.yml "$APP_DIR/docker-compose.yml"
+          cp -a deploy/vps/webhook-router "$APP_DIR/deploy/vps/"
+          cp -a deploy/vps/initdb "$APP_DIR/deploy/vps/"
+          cp keycloak/setup-realm-aws.sh "$APP_DIR/setup-realm-aws.sh"
+          chmod +x "$APP_DIR/setup-realm-aws.sh"
+          echo "IMAGE_TAG=$IMAGE_TAG" > "$APP_DIR/.env.deploy"
+
+      - name: Pull and up app stack
+        run: |
+          cd "$APP_DIR"
+          docker compose --env-file .env --env-file .env.deploy pull
+          docker compose --env-file .env --env-file .env.deploy up -d
+
+      - name: Bootstrap Keycloak realm
+        run: |
+          set -a
+          # shellcheck disable=SC1091
+          . "$APP_DIR/.env"
+          set +a
+          export KEYCLOAK_URL=http://127.0.0.1:8180
+          "$APP_DIR/setup-realm-aws.sh"
+
+      - name: On-host smoke
+        run: |
+          for i in $(seq 1 36); do
+            code=$(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/api/health || true)
+            echo "attempt $i: /api/health -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "::error::On-host smoke failed"
+          docker compose -f "$APP_DIR/docker-compose.yml" --env-file "$APP_DIR/.env" logs --tail 80 backend || true
+          exit 1
+
+      - name: Smoke — Keycloak (local)
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:8180/realms/ccc/.well-known/openid-configuration || true)
+            echo "Keycloak discovery: $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "::warning::Keycloak realm discovery not ready"
+
+      - name: Smoke — public URLs
+        env:
+          REQUIRE_PUBLIC: ${{ github.event.inputs.require_public_smoke || 'false' }}
+        run: |
+          for url in \
+            https://dev.cloudcorecollab.com/api/health \
+            https://auth.dev.cloudcorecollab.com/realms/ccc/.well-known/openid-configuration
+          do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || echo 000)
+            echo "$url -> $code"
+            if [ "$code" != "200" ]; then
+              if [ "$REQUIRE_PUBLIC" = "true" ]; then
+                echo "::error::Public smoke failed: $url"
+                exit 1
+              fi
+              echo "::warning::Public smoke soft-fail (pre-cutover): $url"
+            fi
+          done
+
+      - name: Prune dangling images
+        if: success()
+        run: docker image prune -f

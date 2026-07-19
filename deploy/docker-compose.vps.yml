@@ -1,0 +1,140 @@
+# VPS production compose — images from GHCR; secrets in .env (hand-provisioned).
+# CI copies this to /opt/ccc-recording-portal/docker-compose.yml and sets IMAGE_TAG.
+
+name: ccc-recording-portal
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: portal-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-portal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-portal}
+    volumes:
+      - portal_pgdata:/var/lib/postgresql/data
+      - ./deploy/vps/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-portal}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ccc
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: portal-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      POST: 1
+      DELETE: 1
+      VOLUMES: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - ccc
+
+  backend:
+    image: ghcr.io/jmetdev/ccc-recording-portal/backend:${IMAGE_TAG:-dev}
+    container_name: portal-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-portal}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-portal}
+      RECORDINGS_DIR: /recordings
+      DOCKER_HOST: tcp://docker-proxy:2375
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      WEBEX_CONNECTOR_BACKEND: ${WEBEX_CONNECTOR_BACKEND:-}
+    volumes:
+      - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:rw
+    networks:
+      - ccc
+
+  frontend:
+    image: ghcr.io/jmetdev/ccc-recording-portal/frontend:${IMAGE_TAG:-dev}
+    container_name: portal-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8081:80"
+    networks:
+      - ccc
+
+  webhook-router:
+    image: nginx:alpine
+    container_name: portal-webhook-router
+    restart: unless-stopped
+    volumes:
+      - ./deploy/vps/webhook-router/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:8083:80"
+    networks:
+      - ccc
+
+  media-handler:
+    image: ghcr.io/jmetdev/ccc-recording-portal/media-handler:${IMAGE_TAG:-dev}
+    container_name: portal-media-handler
+    restart: unless-stopped
+    depends_on:
+      - backend
+    env_file:
+      - .env
+    environment:
+      BACKEND_URL: http://backend:8000
+      RECORDINGS_DIR: /recordings
+    volumes:
+      - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:rw
+    networks:
+      - ccc
+
+  keycloak:
+    image: ghcr.io/jmetdev/ccc-recording-portal/keycloak:${IMAGE_TAG:-dev}
+    container_name: portal-keycloak
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER:-portal}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-https://auth.dev.cloudcorecollab.com}
+      KC_PROXY_HEADERS: xforwarded
+      KC_CACHE: local
+    ports:
+      - "127.0.0.1:8180:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    networks:
+      - ccc
+
+networks:
+  ccc:
+    name: ccc
+    driver: bridge
+
+volumes:
+  portal_pgdata:

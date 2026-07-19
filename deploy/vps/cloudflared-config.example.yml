@@ -1,0 +1,19 @@
+# Cloudflare tunnel ingress for CCC dev on VPS 162.35.179.243.
+# Owner: cloudflared tunnel login && cloudflared tunnel create ccc-dev
+# Then copy this to /etc/cloudflared/config.yml and set tunnel + credentials-file.
+#
+# tunnel: <tunnel-uuid>
+# credentials-file: /home/deploy/.cloudflared/<tunnel-uuid>.json
+
+ingress:
+  # Per-tenant Webex connector webhooks (dedicated nginx router, not the SPA).
+  - hostname: dev.cloudcorecollab.com
+    path: /t/*
+    service: http://127.0.0.1:8083
+  - hostname: dev.cloudcorecollab.com
+    service: http://127.0.0.1:8081
+  - hostname: fax.dev.cloudcorecollab.com
+    service: http://127.0.0.1:8082
+  - hostname: auth.dev.cloudcorecollab.com
+    service: http://127.0.0.1:8180
+  - service: http_status:404
