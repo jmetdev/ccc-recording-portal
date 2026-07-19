@@ -4,9 +4,11 @@
 # Prerequisites:
 #   1. Register a Webex OAuth Integration (NOT Service App) at
 #      https://developer.webex.com → My Webex Apps → Create an Integration
-#   2. Scope: spark:people_read
-#   3. Redirect URI (exact):
+#   2. Redirect URI (exact):
 #      https://authdev.cloudcorecollab.com/realms/ccc/broker/webex/endpoint
+#   3. IdP uses Login with Webex OIDC scopes (email profile); Keycloak adds
+#      openid automatically. Only add spark:* scopes on the Integration AND
+#      via WEBEX_IDP_SCOPES if you need API access / orgId mapping.
 #
 # Usage (on VPS as deploy, or via ssh):
 #   WEBEX_IDP_CLIENT_ID=... WEBEX_IDP_CLIENT_SECRET=... \

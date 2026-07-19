@@ -82,6 +82,12 @@ EOF
 
 ensure_webex_idp() {
   local code body
+  # Login with Webex (OIDC). Keycloak always prepends "openid" to defaultScope.
+  # Do NOT put spark:* API scopes here unless those scopes are checked on the
+  # Webex Integration — otherwise Webex returns invalid_scope. OIDC scopes
+  # (email/profile) do not need to be registered. Optional extra scopes via
+  # WEBEX_IDP_SCOPES (space-separated), e.g. "email profile spark:people_read".
+  local scopes="${WEBEX_IDP_SCOPES:-email profile}"
   body=$(cat <<EOF
 {
   "alias": "webex",
@@ -97,8 +103,9 @@ ensure_webex_idp() {
     "clientSecret": "$WEBEX_CLIENT_SECRET",
     "authorizationUrl": "https://webexapis.com/v1/authorize",
     "tokenUrl": "https://webexapis.com/v1/access_token",
-    "userInfoUrl": "https://webexapis.com/v1/people/me",
-    "defaultScope": "spark:people_read",
+    "userInfoUrl": "https://webexapis.com/v1/userinfo",
+    "issuer": "https://idbroker.webex.com/idb",
+    "defaultScope": "$scopes",
     "clientAuthMethod": "client_secret_post",
     "syncMode": "IMPORT",
     "useJwksUrl": "false",

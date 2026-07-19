@@ -116,8 +116,15 @@ but-present for one release as a rollback path).
 
 1. **Register a plain Webex OAuth integration** (not a Service App) at
    <https://developer.webex.com> → My Webex Apps → Create an Integration.
-   Scope: `spark:people_read` only. Redirect URI: Keycloak's broker callback,
+   Redirect URI: Keycloak's broker callback,
    `<keycloak-host>/realms/ccc/broker/webex/endpoint`.
+   Login uses Webex **Login with Webex** (OIDC). Keycloak always sends
+   `openid` plus `defaultScope` (`email profile` by default). Do **not** add
+   `spark:*` API scopes to the IdP unless those scopes are also checked on the
+   Integration — otherwise Webex returns `invalid_scope`. Optional:
+   `WEBEX_IDP_SCOPES=email profile spark:people_read` after enabling
+   `spark:people_read` on the Integration (needed for `orgId` → tenant mapping
+   via `/v1/people/me`; without it, users fall back to the default tenant).
 2. **Add a second client** on the same `ccc` realm for CloudCoreFax:
    Client ID `cloudcorefax-portal`, same public/PKCE/standard-flow settings as
    `ccc-portal` above, redirect URIs pointed at CloudCoreFax's own origin.
@@ -125,10 +132,9 @@ but-present for one release as a rollback path).
    OpenID Connect v1.0): alias `webex`, Authorization URL
    `https://webexapis.com/v1/authorize`, Token URL
    `https://webexapis.com/v1/access_token`, User Info URL
-   `https://webexapis.com/v1/people/me`, Client ID/Secret from step 1, Client
-   Authentication `client_secret_post`. Webex doesn't publish an OIDC
-   discovery document, so leave "Use JWKS URL" / signature validation off —
-   Keycloak treats it as a plain OAuth2 provider via the three explicit URLs.
+   `https://webexapis.com/v1/userinfo`, Default Scopes `email profile`,
+   Client ID/Secret from step 1, Client Authentication `client_secret_post`.
+   Discovery: `https://webexapis.com/v1/.well-known/openid-configuration`.
 4. **Map `orgId` into a claim both clients carry**: on the `webex` identity
    provider, add a mapper (*User Attribute* importer) from claim `orgId` to
    user attribute `webex_org_id`; then on **both** `ccc-portal` and
