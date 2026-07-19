@@ -58,7 +58,11 @@ async def verify_oidc_token(token: str) -> dict:
             algorithms=[header.get("alg", "RS256")],
             audience=audience or None,
             issuer=settings.oidc_issuer.rstrip("/"),
-            options={"verify_aud": bool(audience)},
+            # ID tokens carry an at_hash claim tying them to the access token
+            # issued alongside them; jose refuses to decode without one
+            # unless this is disabled. We only use this token to identify the
+            # caller, never to validate a paired access token.
+            options={"verify_aud": bool(audience), "verify_at_hash": False},
         )
     except JWTError:
         raise unauthorized from None
