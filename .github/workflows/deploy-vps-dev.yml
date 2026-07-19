@@ -240,6 +240,22 @@ jobs:
             psql -U "${POSTGRES_USER:-portal}" -d postgres -c "CREATE DATABASE suite"
           docker compose --env-file .env --env-file .env.deploy up -d
 
+      - name: Diagnose frontend/backend image state
+        run: |
+          cd "$APP_DIR"
+          echo "--- .env.deploy ---"; cat .env.deploy
+          echo "--- docker compose ps ---"
+          docker compose --env-file .env --env-file .env.deploy ps
+          echo "--- running image refs ---"
+          for c in portal-frontend portal-backend portal-suite-backend; do
+            echo "$c: $(docker inspect --format='{{.Config.Image}}' "$c" 2>&1)"
+            echo "$c created: $(docker inspect --format='{{.Created}}' "$c" 2>&1)"
+          done
+          echo "--- local frontend index.html asset refs ---"
+          docker compose --env-file .env --env-file .env.deploy exec -T frontend sh -c "grep -o 'assets/index-[A-Za-z0-9_-]*\.js' /usr/share/nginx/html/index.html"
+          echo "--- nginx conf in container has /suite-api/? ---"
+          docker compose --env-file .env --env-file .env.deploy exec -T frontend sh -c "grep -c suite-api /etc/nginx/conf.d/default.conf || true"
+
       - name: Bootstrap Keycloak realm
         run: |
           set -a
