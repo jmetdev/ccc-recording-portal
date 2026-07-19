@@ -187,8 +187,11 @@ ensure_breakglass_user() {
 {
   "username": "$BREAKGLASS_USERNAME",
   "email": "$BREAKGLASS_EMAIL",
+  "firstName": "Break-glass",
+  "lastName": "Admin",
   "emailVerified": true,
-  "enabled": true
+  "enabled": true,
+  "requiredActions": []
 }
 EOF
 )
