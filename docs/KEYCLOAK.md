@@ -67,13 +67,16 @@ Local username/password login keeps working alongside SSO.
 
 ## Cross-app SSO with CloudCoreFax (Phase D)
 
-Public VPS hostnames (Universal SSL):
+Public VPS hostnames (Universal SSL). Target naming (suite vs apps) is in
+[SUITE-PORTAL.md](./SUITE-PORTAL.md) — **production hosts are not live yet**.
 
 | Role | Hostname |
 |------|----------|
-| Recording portal | `https://recorddev.cloudcorecollab.com` (alias `dev.`) |
-| Fax portal | `https://faxdev.cloudcorecollab.com` |
+| Suite portal (login + app launcher) | `https://dev.cloudcorecollab.com` *(interim: still recording SPA until split)* |
+| Recording app (direct) | `https://recorddev.cloudcorecollab.com` |
+| Fax app (direct) | `https://faxdev.cloudcorecollab.com` |
 | Keycloak | `https://authdev.cloudcorecollab.com` |
+| Production (reserved, do not deploy yet) | `portal.` / `record.` / `fax.` / `auth.` `.cloudcorecollab.com` |
 
 Webex Integration redirect URI (exact):
 
