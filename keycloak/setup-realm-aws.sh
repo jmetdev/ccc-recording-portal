@@ -120,7 +120,7 @@ EOF
 }
 
 ensure_idp_mapper() {
-  local name=$1 body mapper_id code
+  local body mapper_id code
   body='{
     "name": "org-id-to-attribute",
     "identityProviderAlias": "webex",
