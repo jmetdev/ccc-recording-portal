@@ -224,37 +224,46 @@ jobs:
       - name: Pull and up app stack
         run: |
           cd "$APP_DIR"
-          docker compose --env-file .env --env-file .env.deploy pull
-          docker compose --env-file .env --env-file .env.deploy up -d db docker-proxy
+          # Multiple --env-file flags aren't reliably merged across compose
+          # versions (observed: IMAGE_TAG from .env.deploy silently lost,
+          # containers kept running the stale ":dev" tag indefinitely even
+          # though every deploy reported success). Export everything into the
+          # real shell environment instead — compose always honors that.
+          set -a
+          . .env
+          . .env.deploy
+          set +a
+          docker compose pull
+          docker compose up -d db docker-proxy
           # deploy/vps/initdb only runs against a brand-new postgres volume;
           # this VPS's db predates the suite service, so create its database
           # here instead (idempotent — safe to run on every deploy).
-          set -a; . .env; set +a
           for i in $(seq 1 30); do
-            docker compose --env-file .env --env-file .env.deploy exec -T db pg_isready -U "${POSTGRES_USER:-portal}" && break
+            docker compose exec -T db pg_isready -U "${POSTGRES_USER:-portal}" && break
             sleep 2
           done
-          docker compose --env-file .env --env-file .env.deploy exec -T db \
+          docker compose exec -T db \
             psql -U "${POSTGRES_USER:-portal}" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'suite'" \
-            | grep -q 1 || docker compose --env-file .env --env-file .env.deploy exec -T db \
+            | grep -q 1 || docker compose exec -T db \
             psql -U "${POSTGRES_USER:-portal}" -d postgres -c "CREATE DATABASE suite"
-          docker compose --env-file .env --env-file .env.deploy up -d
+          docker compose up -d --remove-orphans
 
-      - name: Diagnose frontend/backend image state
+      - name: Verify running images match this deploy's tag
         run: |
           cd "$APP_DIR"
-          echo "--- .env.deploy ---"; cat .env.deploy
-          echo "--- docker compose ps ---"
-          docker compose --env-file .env --env-file .env.deploy ps
-          echo "--- running image refs ---"
+          set -a; . .env.deploy; set +a
+          fail=0
           for c in portal-frontend portal-backend portal-suite-backend; do
-            echo "$c: $(docker inspect --format='{{.Config.Image}}' "$c" 2>&1)"
-            echo "$c created: $(docker inspect --format='{{.Created}}' "$c" 2>&1)"
+            running="$(docker inspect --format='{{.Config.Image}}' "$c")"
+            expected="ghcr.io/jmetdev/ccc-recording-portal/${c#portal-}:${IMAGE_TAG}"
+            if [ "$running" != "$expected" ]; then
+              echo "::error::$c is running '$running', expected '$expected' — container was not recreated"
+              fail=1
+            else
+              echo "$c OK: $running"
+            fi
           done
-          echo "--- local frontend index.html asset refs ---"
-          docker compose --env-file .env --env-file .env.deploy exec -T frontend sh -c "grep -o 'assets/index-[A-Za-z0-9_-]*\.js' /usr/share/nginx/html/index.html"
-          echo "--- nginx conf in container has /suite-api/? ---"
-          docker compose --env-file .env --env-file .env.deploy exec -T frontend sh -c "grep -c suite-api /etc/nginx/conf.d/default.conf || true"
+          [ "$fail" = "0" ]
 
       - name: Bootstrap Keycloak realm
         run: |
