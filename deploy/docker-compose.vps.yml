@@ -117,7 +117,7 @@ services:
       KC_DB_USERNAME: ${POSTGRES_USER:-portal}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-https://auth.dev.cloudcorecollab.com}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-https://authdev.cloudcorecollab.com}
       KC_PROXY_HEADERS: xforwarded
       KC_CACHE: local
     ports:

@@ -147,8 +147,9 @@ jobs:
           REQUIRE_PUBLIC: ${{ github.event.inputs.require_public_smoke || 'false' }}
         run: |
           for url in \
+            https://recorddev.cloudcorecollab.com/api/health \
             https://dev.cloudcorecollab.com/api/health \
-            https://auth.dev.cloudcorecollab.com/realms/ccc/.well-known/openid-configuration
+            https://authdev.cloudcorecollab.com/realms/ccc/.well-known/openid-configuration
           do
             code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || echo 000)
             echo "$url -> $code"

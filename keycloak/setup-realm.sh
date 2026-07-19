@@ -36,7 +36,7 @@ curl -s -X POST "$KC/admin/realms/$REALM/clients" -H "$(auth)" -H "Content-Type:
   "clientId": "ccc-portal",
   "publicClient": true,
   "standardFlowEnabled": true,
-  "redirectUris": ["http://localhost:5173/auth/callback", "https://dev.cloudcorecollab.com/auth/callback"],
+  "redirectUris": ["http://localhost:5173/auth/callback", "https://recorddev.cloudcorecollab.com/auth/callback", "https://dev.cloudcorecollab.com/auth/callback"],
   "webOrigins": ["+"],
   "attributes": {"pkce.code.challenge.method": "S256"}
 }' -o /dev/null -w "  -> %{http_code}\n"
@@ -46,7 +46,7 @@ curl -s -X POST "$KC/admin/realms/$REALM/clients" -H "$(auth)" -H "Content-Type:
   "clientId": "cloudcorefax-portal",
   "publicClient": true,
   "standardFlowEnabled": true,
-  "redirectUris": ["http://localhost:5174/auth/callback", "https://fax.dev.cloudcorecollab.com/auth/callback"],
+  "redirectUris": ["http://localhost:5174/auth/callback", "https://faxdev.cloudcorecollab.com/auth/callback"],
   "webOrigins": ["+"],
   "attributes": {"pkce.code.challenge.method": "S256"}
 }' -o /dev/null -w "  -> %{http_code}\n"

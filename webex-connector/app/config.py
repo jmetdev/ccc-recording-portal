@@ -18,7 +18,7 @@ logger = logging.getLogger("webex_connector.config")
 METADATA_URI = os.environ.get("ECS_CONTAINER_METADATA_URI_V4", "")
 AWS_REGION = os.environ.get("AWS_REGION", "")
 SSM_PREFIX = os.environ.get("SSM_PREFIX", "/ccc/dev/webex-connector")
-PORTAL_URL = os.environ.get("PORTAL_URL", "https://dev.cloudcorecollab.com").rstrip("/")
+PORTAL_URL = os.environ.get("PORTAL_URL", "https://recorddev.cloudcorecollab.com").rstrip("/")
 
 
 def _env_config() -> dict[str, str] | None:

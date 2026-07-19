@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     webex_connector_listener_arn: str = ""
     webex_connector_subnet_ids: str = ""  # comma-separated
     webex_connector_security_group_ids: str = ""  # comma-separated
-    webex_connector_domain: str = ""  # e.g. dev.cloudcorecollab.com
+    webex_connector_domain: str = ""  # e.g. recorddev.cloudcorecollab.com
     webex_connector_ssm_prefix: str = "/ccc/dev/webex-connector"
     # Docker backend (VPS)
     webex_connector_image: str = ""

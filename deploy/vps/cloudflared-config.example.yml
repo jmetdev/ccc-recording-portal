@@ -1,4 +1,6 @@
-# Cloudflare tunnel ingress for CCC dev on VPS 162.35.179.243.
+# Cloudflare tunnel ingress for CCC/Fax/Auth on VPS 162.35.179.243.
+# Flat hostnames (Universal SSL covers *.cloudcorecollab.com, not *.dev.*).
+#
 # Owner: cloudflared tunnel login && cloudflared tunnel create ccc-dev
 # Then copy this to /etc/cloudflared/config.yml and set tunnel + credentials-file.
 #
@@ -6,14 +8,14 @@
 # credentials-file: /home/deploy/.cloudflared/<tunnel-uuid>.json
 
 ingress:
-  # Per-tenant Webex connector webhooks (dedicated nginx router, not the SPA).
-  - hostname: dev.cloudcorecollab.com
-    path: /t/*
-    service: http://127.0.0.1:8083
+  # Recording portal (SPA + /api + /api/ws + /t/*/webhook via frontend nginx)
+  - hostname: recorddev.cloudcorecollab.com
+    service: http://127.0.0.1:8081
+  # Alias kept for existing bookmarks / OAuth clients during cutover
   - hostname: dev.cloudcorecollab.com
     service: http://127.0.0.1:8081
-  - hostname: fax.dev.cloudcorecollab.com
+  - hostname: faxdev.cloudcorecollab.com
     service: http://127.0.0.1:8082
-  - hostname: auth.dev.cloudcorecollab.com
+  - hostname: authdev.cloudcorecollab.com
     service: http://127.0.0.1:8180
   - service: http_status:404

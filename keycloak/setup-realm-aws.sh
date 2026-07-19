@@ -46,8 +46,17 @@ ensure_realm() {
 }
 
 ensure_client() {
-  local cid=$1 redirect_prod=$2 redirect_dev=$3
-  local internal_id code body
+  local cid=$1
+  shift
+  local redirects=("$@")
+  local internal_id code body uri_json=""
+  local i=0
+  for uri in "${redirects[@]}"; do
+    [ -n "$uri" ] || continue
+    if [ $i -gt 0 ]; then uri_json+=", "; fi
+    uri_json+="\"$uri\""
+    i=$((i + 1))
+  done
   internal_id=$(curl -s "$KC/admin/realms/$REALM/clients?clientId=$cid" -H "$(auth_hdr)" \
     | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[0]['id'] if d else '')")
   body=$(cat <<EOF
@@ -55,7 +64,7 @@ ensure_client() {
   "clientId": "$cid",
   "publicClient": true,
   "standardFlowEnabled": true,
-  "redirectUris": ["$redirect_prod", "$redirect_dev"],
+  "redirectUris": [$uri_json],
   "webOrigins": ["+"],
   "attributes": {"pkce.code.challenge.method": "S256"}
 }
@@ -155,14 +164,16 @@ ensure_client_mapper() {
 echo "Ensuring realm '$REALM'..."
 ensure_realm
 
-for spec in \
-  'ccc-portal|https://dev.cloudcorecollab.com/auth/callback|http://localhost:5173/auth/callback' \
-  'cloudcorefax-portal|https://fax.dev.cloudcorecollab.com/auth/callback|http://localhost:5174/auth/callback'
-do
-  IFS='|' read -r cid redirect_prod redirect_dev <<<"$spec"
-  echo "Ensuring client '$cid'..."
-  ensure_client "$cid" "$redirect_prod" "$redirect_dev"
-done
+echo "Ensuring client 'ccc-portal'..."
+ensure_client ccc-portal \
+  "https://recorddev.cloudcorecollab.com/auth/callback" \
+  "https://dev.cloudcorecollab.com/auth/callback" \
+  "http://localhost:5173/auth/callback"
+
+echo "Ensuring client 'cloudcorefax-portal'..."
+ensure_client cloudcorefax-portal \
+  "https://faxdev.cloudcorecollab.com/auth/callback" \
+  "http://localhost:5174/auth/callback"
 
 if [ -n "$WEBEX_CLIENT_ID" ] && [ -n "$WEBEX_CLIENT_SECRET" ]; then
   echo "Ensuring Webex identity-provider broker..."

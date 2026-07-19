@@ -76,8 +76,18 @@ Use a PAT with **read:packages** only; set a calendar reminder to rotate it.
 
 ## Cloudflare tunnel
 
-See `cloudflared-config.example.yml`. Webhook path `/t/*` routes to the
-webhook-router on port 8083, not the SPA nginx.
+Flat hostnames under `*.cloudcorecollab.com` (Universal SSL — no nested
+`*.dev.*`):
+
+| Hostname | Service |
+|----------|---------|
+| `recorddev.cloudcorecollab.com` | Recording portal `:8081` |
+| `dev.cloudcorecollab.com` | Same (alias) |
+| `faxdev.cloudcorecollab.com` | Fax portal `:8082` |
+| `authdev.cloudcorecollab.com` | Keycloak `:8180` |
+
+See `cloudflared-config.example.yml`. Frontend nginx proxies `/t/*/webhook`
+to per-tenant connector containers.
 
 ## Integration tests (Phase K)
 
