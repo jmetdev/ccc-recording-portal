@@ -90,10 +90,11 @@ ensure_webex_idp() {
   local code body
   # Login with Webex (OIDC). Keycloak always prepends "openid" to defaultScope.
   # spark:people_read is required to get orgId back from Webex (needed for the
-  # webex_org_id claim the suite/tenant-linking flow depends on) — only safe
-  # once that scope is also checked on the Webex Integration itself, otherwise
-  # Webex returns invalid_scope. Override via WEBEX_IDP_SCOPES if needed.
-  local scopes="${WEBEX_IDP_SCOPES:-email profile spark:people_read}"
+  # webex_org_id claim the suite/tenant-linking flow depends on), but Webex
+  # rejected it with invalid_scope on 2026-07-20 despite the Integration
+  # reportedly having it checked — reverted to the safe default until that's
+  # sorted out. Set WEBEX_IDP_SCOPES to re-enable once confirmed working.
+  local scopes="${WEBEX_IDP_SCOPES:-email profile}"
   body=$(cat <<EOF
 {
   "alias": "webex",
