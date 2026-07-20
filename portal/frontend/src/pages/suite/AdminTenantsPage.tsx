@@ -286,7 +286,12 @@ export function AdminTenantsPage() {
                   key={a.id}
                   label={a.label}
                   checked={entitlements[a.id]}
-                  onChange={(e) => setEntitlements((prev) => ({ ...prev, [a.id]: e.currentTarget.checked }))}
+                  onChange={(e) => {
+                    // Capture before the async state updater runs — React
+                    // nulls currentTarget after the handler returns.
+                    const checked = e.currentTarget.checked;
+                    setEntitlements((prev) => ({ ...prev, [a.id]: checked }));
+                  }}
                 />
               ))}
             </Stack>
@@ -311,7 +316,10 @@ export function AdminTenantsPage() {
                 key={a.id}
                 label={a.label}
                 checked={entitlements[a.id]}
-                onChange={(e) => setEntitlements((prev) => ({ ...prev, [a.id]: e.currentTarget.checked }))}
+                onChange={(e) => {
+                  const checked = e.currentTarget.checked;
+                  setEntitlements((prev) => ({ ...prev, [a.id]: checked }));
+                }}
               />
             ))}
           </Stack>
