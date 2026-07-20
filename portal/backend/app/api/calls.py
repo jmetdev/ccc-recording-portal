@@ -48,9 +48,22 @@ async def dashboard_stats(
         await db.execute(distinct_call_count_stmt(user.tenant_id, group_id, Call.started_at >= today))
     ).scalar_one()
     calls_total = (await db.execute(distinct_call_count_stmt(user.tenant_id, group_id))).scalar_one()
-    fs_channels = await list_active_recording_channels()
-    if fs_channels:
-        recording_now = len(fs_channels)
+    # FreeSWITCH fs_cli is host-local and not tenant-scoped. Only use it for
+    # the legacy default tenant (shared lab box); everyone else reads
+    # recording_now from their own Call rows.
+    from app.services.tenancy import get_default_tenant_id
+
+    if user.tenant_id == await get_default_tenant_id(db):
+        fs_channels = await list_active_recording_channels()
+        recording_now = (
+            len(fs_channels)
+            if fs_channels
+            else (
+                await db.execute(
+                    distinct_call_count_stmt(user.tenant_id, group_id, Call.status == CallStatus.RECORDING)
+                )
+            ).scalar_one()
+        )
     else:
         recording_now = (
             await db.execute(distinct_call_count_stmt(user.tenant_id, group_id, Call.status == CallStatus.RECORDING))
@@ -91,11 +104,20 @@ async def live_calls(user=Depends(get_current_user), db: AsyncSession = Depends(
 
 @router.get("/freeswitch/live-channels", response_model=list[LiveChannelOut])
 async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    channels = await list_active_recording_channels()
-    if channels:
-        return [LiveChannelOut.model_validate(c) for c in channels]
-
+    # Permission check first so users without call access get a clean 403
+    # instead of leaking host-local FreeSWITCH state.
     group_id = await scoped_call_filter(user)
+
+    # Host-local fs_cli is only meaningful for the legacy default tenant on a
+    # shared lab box. Multi-tenant cloud tenants get live state from their own
+    # Call rows (fed by their on-prem / Webex connectors).
+    from app.services.tenancy import get_default_tenant_id
+
+    if user.tenant_id == await get_default_tenant_id(db):
+        channels = await list_active_recording_channels()
+        if channels:
+            return [LiveChannelOut.model_validate(c) for c in channels]
+
     stmt = (
         select(Call)
         .where(Call.status == CallStatus.RECORDING, Call.tenant_id == user.tenant_id)

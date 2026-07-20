@@ -34,6 +34,13 @@ export function SetupWizardPage() {
 
   const apps = suiteApps();
   const licensedApps = (me?.tenant?.entitlements ?? []).filter((e) => e.licensed);
+  const licensedByApp = new Map((me?.tenant?.entitlements ?? []).map((e) => [e.app, e]));
+  const recordingApp = (() => {
+    const app = apps.find((a) => a.id === 'recording');
+    if (!app) return null;
+    const entitlement = licensedByApp.get('recording');
+    return entitlement ? { ...app, licensed: entitlement.licensed } : app;
+  })();
 
   return (
     <Center mih="100vh" className={suiteLoginClasses.page}>
@@ -88,12 +95,33 @@ export function SetupWizardPage() {
                   })}
                 </Stack>
               )}
-              <Text size="sm" c="dimmed">
-                Each product also manages its own connectors and org authorization (e.g. the Webex
-                Service App) once you open it — visit that product's Settings to finish connecting
-                your calling platform.
-              </Text>
-              <Button component={Link} to="/" fullWidth radius="xl" className={suiteLoginClasses.primaryBtn}>
+              {recordingApp?.licensed && recordingApp.href && (
+                <Alert color="blue" title="Next: provision your recording connector">
+                  Open Cloud Core Record, then go to{' '}
+                  <Text span fw={600}>
+                    Settings → Connectors
+                  </Text>{' '}
+                  to create an on-prem CUCM credential (or finish Webex setup). Live recordings and
+                  connector status appear there once the edge stack is installed.
+                  <Button
+                    component="a"
+                    href={`${recordingApp.href}/settings?tab=connectors`}
+                    fullWidth
+                    radius="xl"
+                    mt="md"
+                    className={suiteLoginClasses.primaryBtn}
+                  >
+                    Open connector setup
+                  </Button>
+                </Alert>
+              )}
+              {!recordingApp?.licensed && (
+                <Text size="sm" c="dimmed">
+                  Each product also manages its own connectors and org authorization once you open
+                  it — visit that product's Settings to finish connecting your calling platform.
+                </Text>
+              )}
+              <Button component={Link} to="/" fullWidth radius="xl" variant="default">
                 Go to your workspace
               </Button>
             </Stack>

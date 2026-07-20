@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ActionIcon,
@@ -376,10 +377,18 @@ function DangerZone() {
 }
 
 export function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'users';
+  const setTab = (value: string | null) => {
+    const next = value && value !== 'users' ? value : null;
+    if (next) setSearchParams({ tab: next }, { replace: true });
+    else setSearchParams({}, { replace: true });
+  };
+
   return (
     <Stack gap="lg">
       <Title order={2}>Settings</Title>
-      <Tabs defaultValue="users" keepMounted={false}>
+      <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List>
           <Tabs.Tab value="users" leftSection={<IconUsers size={16} />}>
             Users

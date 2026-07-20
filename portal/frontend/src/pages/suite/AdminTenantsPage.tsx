@@ -270,7 +270,7 @@ export function AdminTenantsPage() {
           />
           <TextInput
             label="Admin email"
-            description="The customer's initial admin — their first Webex sign-in links this tenant"
+            description="Customer's initial tenant admin — their first Webex sign-in links this org and grants them the full admin role in licensed products"
             type="email"
             value={adminEmail}
             onChange={(e) => setAdminEmail(e.currentTarget.value)}

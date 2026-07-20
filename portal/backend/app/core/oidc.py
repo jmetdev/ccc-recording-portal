@@ -99,6 +99,72 @@ async def _suite_tenant_by_org(org_id: str) -> dict | None:
     return resp.json()
 
 
+async def _assign_role_if_missing(db: AsyncSession, user_id: int, role_id: int) -> bool:
+    existing = (
+        await db.execute(
+            select(user_roles.c.user_id).where(
+                user_roles.c.user_id == user_id, user_roles.c.role_id == role_id
+            )
+        )
+    ).first()
+    if existing is not None:
+        return False
+    await db.execute(user_roles.insert().values(user_id=user_id, role_id=role_id))
+    return True
+
+
+async def _ensure_suite_admin_role(
+    db: AsyncSession,
+    user: User,
+    *,
+    claims: dict | None = None,
+    org_id: str | None = None,
+) -> bool:
+    """Grant the tenant's admin role when the caller is the suite-registered admin.
+
+    Suite tenants are created with an ``admin_email``. Webex/Keycloak SSO does
+    not carry portal role names, so without this the first sign-in creates a
+    user with zero permissions — no Settings, no connector provisioning, and
+    403s on live-call endpoints that call ``scoped_call_filter``.
+    """
+    email = ((claims or {}).get("email") or user.email or "").lower()
+    resolved_org = org_id or (claims or {}).get(settings.oidc_org_claim)
+    if not resolved_org and user.tenant is not None:
+        resolved_org = user.tenant.webex_org_id
+    if not email or not resolved_org or user.tenant_id is None:
+        return False
+
+    suite_tenant = await _suite_tenant_by_org(str(resolved_org))
+    if not suite_tenant:
+        return False
+    if (suite_tenant.get("admin_email") or "").lower() != email:
+        return False
+
+    from app.services.tenancy import seed_tenant_roles
+
+    await seed_tenant_roles(db, user.tenant_id)
+    admin_role = (
+        await db.execute(select(Role).where(Role.tenant_id == user.tenant_id, Role.name == "admin"))
+    ).scalar_one_or_none()
+    if admin_role is None:
+        return False
+    return await _assign_role_if_missing(db, user.id, admin_role.id)
+
+
+async def _apply_claim_roles(db: AsyncSession, user: User, tenant_id: int, claims: dict) -> bool:
+    role_names = _claim_roles(claims)
+    if not role_names:
+        return False
+    roles = (
+        await db.execute(select(Role).where(Role.tenant_id == tenant_id, Role.name.in_(role_names)))
+    ).scalars().all()
+    changed = False
+    for role in roles:
+        if await _assign_role_if_missing(db, user.id, role.id):
+            changed = True
+    return changed
+
+
 async def _tenant_for_claims(db: AsyncSession, claims: dict) -> Tenant:
     org_id = claims.get(settings.oidc_org_claim)
     if org_id:
@@ -144,13 +210,21 @@ async def resolve_oidc_user(db: AsyncSession, token: str) -> User:
 
     result = await db.execute(select(User).where(User.oidc_subject == sub))
     user = result.scalar_one_or_none()
+    linked_subject = False
     if user is None and email:
         result = await db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
         if user is not None:
             user.oidc_subject = sub
-            await db.commit()
+            linked_subject = True
+
     if user is not None:
+        # Heal suite admins who signed in before role assignment existed, and
+        # pick up any IdP role claims that appeared since last login.
+        changed = await _ensure_suite_admin_role(db, user, claims=claims)
+        changed = (await _apply_claim_roles(db, user, user.tenant_id, claims)) or changed
+        if linked_subject or changed:
+            await db.commit()
         return await load_user(db, user.id)
 
     if not settings.oidc_auto_provision or not email:
@@ -171,14 +245,25 @@ async def resolve_oidc_user(db: AsyncSession, token: str) -> User:
     db.add(user)
     await db.flush()
 
-    role_names = _claim_roles(claims)
-    if role_names:
-        roles = (
-            await db.execute(
-                select(Role).where(Role.tenant_id == tenant.id, Role.name.in_(role_names))
-            )
-        ).scalars().all()
-        for role in roles:
-            await db.execute(user_roles.insert().values(user_id=user.id, role_id=role.id))
+    await _apply_claim_roles(db, user, tenant.id, claims)
+    await _ensure_suite_admin_role(db, user, claims=claims)
     await db.commit()
     return await load_user(db, user.id)
+
+
+async def ensure_suite_admin_for_user(db: AsyncSession, user: User) -> User:
+    """Best-effort heal for an already-authenticated portal session.
+
+    Used by ``/auth/me`` so a suite admin who signed in before role assignment
+    existed picks up ``admin`` without forcing another SSO round-trip.
+    """
+    from app.core.rbac import load_user, user_permissions
+    from app.models import Permission
+
+    if user.is_superadmin or Permission.MANAGE_USERS.value in user_permissions(user):
+        return user
+    if await _ensure_suite_admin_role(db, user):
+        await db.commit()
+        reloaded = await load_user(db, user.id)
+        return reloaded or user
+    return user

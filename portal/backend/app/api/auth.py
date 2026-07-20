@@ -95,7 +95,10 @@ async def login(
 
 
 @router.get("/me", response_model=UserOut)
-async def me(user: User = Depends(get_current_user)):
+async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from app.core.oidc import ensure_suite_admin_for_user
+
+    user = await ensure_suite_admin_for_user(db, user)
     return serialize_user(user)
 
 
