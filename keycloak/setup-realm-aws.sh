@@ -137,10 +137,24 @@ ensure_idp_mapper() {
   local body mapper_id code
   mapper_id=$(curl -s "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" -H "$(auth_hdr)" \
     | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((m['id'] for m in d if m.get('name')=='org-id-to-attribute'),''))")
+  # The org id lives on Webex's *id_token* under claim "org_id" (underscore),
+  # NOT "orgId" and NOT in the /v1/userinfo response Keycloak reads for
+  # profile/email — verified directly against a stored broker token. Mapping
+  # "orgId" (which is only in /v1/people/me) always yielded an empty attribute.
+  # oidc-user-attribute-idp-mapper resolves the claim across the id_token +
+  # userinfo, so "org_id" is found on the id_token while email still comes
+  # from userinfo.
+  #
+  # NOTE: id_token org_id is the plain UUID (ca7f318a-...); the Service App
+  # webhook + recording direct-OAuth path (oauth.py) store the base64
+  # spark-URI form (Y2lz...) from /v1/people/me. Consistent within the suite
+  # flow (link writes and later reads the same claim); reconcile the two forms
+  # before an org is provisioned by BOTH paths.
+  #
   # FORCE (not INHERIT/IMPORT) so this re-syncs on every login, not just the
   # user's first-ever broker login — IMPORT left an already-existing user
-  # permanently stuck with no webex_org_id after they'd logged in once before
-  # the spark:people_read scope was working.
+  # permanently stuck with no webex_org_id after logging in once before the
+  # claim was working.
   #
   # PUT 500s if the body omits "id" — Keycloak's admin API needs it to match
   # the mapper being updated (a prior fix here just skipped updates entirely
@@ -152,7 +166,7 @@ ensure_idp_mapper() {
   "name": "org-id-to-attribute",
   "identityProviderAlias": "webex",
   "identityProviderMapper": "oidc-user-attribute-idp-mapper",
-  "config": {"syncMode": "FORCE", "claim": "orgId", "user.attribute": "webex_org_id"}
+  "config": {"syncMode": "FORCE", "claim": "org_id", "user.attribute": "webex_org_id"}
 }
 EOF
 )
@@ -163,7 +177,7 @@ EOF
       "name": "org-id-to-attribute",
       "identityProviderAlias": "webex",
       "identityProviderMapper": "oidc-user-attribute-idp-mapper",
-      "config": {"syncMode": "FORCE", "claim": "orgId", "user.attribute": "webex_org_id"}
+      "config": {"syncMode": "FORCE", "claim": "org_id", "user.attribute": "webex_org_id"}
     }'
     code=$(api POST "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" "$body")
     echo "  POST IdP mapper org-id-to-attribute -> $code"
