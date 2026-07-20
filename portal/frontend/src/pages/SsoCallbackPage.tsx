@@ -21,13 +21,11 @@ export function SsoCallbackPage() {
     (async () => {
       try {
         const idpToken = await completeSsoLogin();
-        if (suite) {
-          // The suite backend verifies this raw Keycloak token directly (no
-          // portal user record needed) — store it before anything else so a
-          // brand-new tenant whose admin isn't provisioned in the recording
-          // backend yet can still reach the setup wizard.
-          setOidcToken(idpToken);
-        }
+        // Store the raw Keycloak token on every host: the suite backend
+        // verifies it directly (so a brand-new tenant's admin can reach the
+        // setup wizard before any portal user exists), and logout uses it as
+        // the id_token_hint to end the Keycloak SSO session.
+        setOidcToken(idpToken);
         try {
           const tokens = await api.ssoExchange(idpToken);
           localStorage.setItem('access_token', tokens.access_token);

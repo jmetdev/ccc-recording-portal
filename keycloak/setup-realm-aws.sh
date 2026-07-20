@@ -56,12 +56,18 @@ ensure_client() {
   local cid=$1
   shift
   local redirects=("$@")
-  local internal_id code body uri_json=""
+  local internal_id code body uri_json="" post_logout=""
   local i=0
   for uri in "${redirects[@]}"; do
     [ -n "$uri" ] || continue
     if [ $i -gt 0 ]; then uri_json+=", "; fi
     uri_json+="\"$uri\""
+    # Allow RP-initiated logout to redirect back to this client's origin
+    # (post_logout_redirect_uri must be registered or Keycloak rejects it).
+    # ## is Keycloak's delimiter for multiple post-logout URIs.
+    local origin="${uri%/auth/callback}"
+    if [ -n "$post_logout" ]; then post_logout+="##"; fi
+    post_logout+="$origin/*"
     i=$((i + 1))
   done
   internal_id=$(curl -s "$KC/admin/realms/$REALM/clients?clientId=$cid" -H "$(auth_hdr)" \
@@ -73,7 +79,7 @@ ensure_client() {
   "standardFlowEnabled": true,
   "redirectUris": [$uri_json],
   "webOrigins": ["+"],
-  "attributes": {"pkce.code.challenge.method": "S256"}
+  "attributes": {"pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "$post_logout"}
 }
 EOF
 )

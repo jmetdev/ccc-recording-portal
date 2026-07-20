@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api, User } from '../api/client';
-import { clearOidcToken } from '../suite/api';
+import { clearOidcToken, getOidcToken } from '../suite/api';
+import { ssoLogout } from './oidc';
 
 interface AuthContextValue {
   user: User | null;
@@ -44,10 +45,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    const idToken = getOidcToken();
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     clearOidcToken();
     setUser(null);
+    // End the Keycloak SSO session too, otherwise "sign out" only drops local
+    // tokens and the next login silently re-uses the session (can't switch
+    // users). ssoLogout redirects the browser when there's a session to end;
+    // fall back to a local redirect for plain username/password logins.
+    ssoLogout(idToken).then((redirected) => {
+      if (!redirected) window.location.assign('/login');
+    });
   };
 
   return (

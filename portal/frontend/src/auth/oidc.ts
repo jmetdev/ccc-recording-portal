@@ -4,11 +4,50 @@
 const VERIFIER_KEY = 'sso_code_verifier';
 const ISSUER_KEY = 'sso_issuer';
 const CLIENT_KEY = 'sso_client_id';
+// Persisted across the session (localStorage, not session) so logout can build
+// the RP-initiated end-session URL even after a full page reload.
+const LOGOUT_ISSUER_KEY = 'sso_logout_issuer';
+const LOGOUT_CLIENT_KEY = 'sso_logout_client_id';
 
 type DiscoveryDoc = {
   authorization_endpoint: string;
   token_endpoint: string;
+  end_session_endpoint?: string;
 };
+
+/** Remember which issuer/client to end-session against at logout time. */
+export function rememberSsoSession(issuer: string, clientId: string): void {
+  localStorage.setItem(LOGOUT_ISSUER_KEY, issuer);
+  localStorage.setItem(LOGOUT_CLIENT_KEY, clientId);
+}
+
+/**
+ * RP-initiated logout: terminate the Keycloak SSO session so the next login
+ * actually re-authenticates instead of silently re-using the session. Returns
+ * true if it redirected the browser (caller should stop), false if there was
+ * no SSO session to end (caller falls back to a local redirect).
+ */
+export async function ssoLogout(idToken: string | null, postLogoutPath = '/login'): Promise<boolean> {
+  const issuer = localStorage.getItem(LOGOUT_ISSUER_KEY);
+  const clientId = localStorage.getItem(LOGOUT_CLIENT_KEY);
+  localStorage.removeItem(LOGOUT_ISSUER_KEY);
+  localStorage.removeItem(LOGOUT_CLIENT_KEY);
+  if (!issuer) return false;
+  let endSession: string | undefined;
+  try {
+    endSession = (await discover(issuer)).end_session_endpoint;
+  } catch {
+    return false;
+  }
+  if (!endSession) return false;
+  const params = new URLSearchParams({
+    post_logout_redirect_uri: `${window.location.origin}${postLogoutPath}`,
+  });
+  if (idToken) params.set('id_token_hint', idToken);
+  else if (clientId) params.set('client_id', clientId);
+  window.location.assign(`${endSession}?${params}`);
+  return true;
+}
 
 function base64url(bytes: Uint8Array): string {
   let s = '';
@@ -49,6 +88,8 @@ export async function beginSsoLogin(
   sessionStorage.setItem(VERIFIER_KEY, verifier);
   sessionStorage.setItem(ISSUER_KEY, issuer);
   sessionStorage.setItem(CLIENT_KEY, clientId);
+  // Persisted (localStorage) so logout can end the Keycloak session later.
+  rememberSsoSession(issuer, clientId);
 
   const params = new URLSearchParams({
     response_type: 'code',
