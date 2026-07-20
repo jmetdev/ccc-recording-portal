@@ -137,18 +137,37 @@ ensure_idp_mapper() {
   local body mapper_id code
   mapper_id=$(curl -s "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" -H "$(auth_hdr)" \
     | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((m['id'] for m in d if m.get('name')=='org-id-to-attribute'),''))")
+  # FORCE (not INHERIT/IMPORT) so this re-syncs on every login, not just the
+  # user's first-ever broker login — IMPORT left an already-existing user
+  # permanently stuck with no webex_org_id after they'd logged in once before
+  # the spark:people_read scope was working.
+  #
+  # PUT 500s if the body omits "id" — Keycloak's admin API needs it to match
+  # the mapper being updated (a prior fix here just skipped updates entirely
+  # to dodge this; that's why FORCE never actually reached an existing mapper).
   if [ -n "$mapper_id" ]; then
-    echo "  IdP mapper org-id-to-attribute already present ($mapper_id)"
-    return 0
+    body=$(cat <<EOF
+{
+  "id": "$mapper_id",
+  "name": "org-id-to-attribute",
+  "identityProviderAlias": "webex",
+  "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+  "config": {"syncMode": "FORCE", "claim": "orgId", "user.attribute": "webex_org_id"}
+}
+EOF
+)
+    code=$(api PUT "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers/$mapper_id" "$body")
+    echo "  PUT IdP mapper org-id-to-attribute -> $code"
+  else
+    body='{
+      "name": "org-id-to-attribute",
+      "identityProviderAlias": "webex",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {"syncMode": "FORCE", "claim": "orgId", "user.attribute": "webex_org_id"}
+    }'
+    code=$(api POST "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" "$body")
+    echo "  POST IdP mapper org-id-to-attribute -> $code"
   fi
-  body='{
-    "name": "org-id-to-attribute",
-    "identityProviderAlias": "webex",
-    "identityProviderMapper": "oidc-user-attribute-idp-mapper",
-    "config": {"syncMode": "INHERIT", "claim": "orgId", "user.attribute": "webex_org_id"}
-  }'
-  code=$(api POST "$KC/admin/realms/$REALM/identity-provider/instances/webex/mappers" "$body")
-  echo "  POST IdP mapper org-id-to-attribute -> $code"
 }
 
 ensure_client_mapper() {
