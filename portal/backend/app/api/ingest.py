@@ -1,8 +1,4 @@
 from datetime import datetime, timezone, timedelta
-import json
-import logging
-import os
-import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select, text
@@ -20,27 +16,6 @@ from app.services.tenancy import get_default_tenant_id
 from app.services.transcription import is_transcription_enabled
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
-logger = logging.getLogger(__name__)
-DEBUG_LOG = os.path.join(settings.recordings_dir, ".debug-d3dd31.log")
-
-
-def _ingest_debug(message: str, data: dict, hypothesis_id: str = "H5") -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "d3dd31",
-            "timestamp": int(time.time() * 1000),
-            "location": "ingest.py",
-            "message": message,
-            "data": data,
-            "hypothesisId": hypothesis_id,
-            "runId": "post-fix5",
-        }
-        with open(DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        logger.info("ingest-debug %s %s", message, data)
-    # #endregion
 
 
 def verify_ingest_token(x_ingest_token: str | None = Header(default=None)):
@@ -103,7 +78,6 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
     db.add(call)
     await db.commit()
     await db.refresh(call)
-    _ingest_debug("ingest start created call", {"call_id": call.id, "refci": payload.refci}, "H5")
 
     await live_hub.broadcast({"event": "call_started", "call_id": call.id, "refci": call.refci}, tenant_id)
     return {"status": "ok", "call_id": call.id}
@@ -170,11 +144,6 @@ async def ingest_complete(payload: IngestCompletePayload, db: AsyncSession = Dep
         )
 
     await db.commit()
-    _ingest_debug(
-        "ingest complete",
-        {"call_id": call.id, "refci": payload.refci, "files": payload.files, "recording_ids": recording_ids},
-        "H1",
-    )
     await live_hub.broadcast({"event": "call_completed", "call_id": call.id, "refci": call.refci}, tenant_id)
     return {"status": "ok", "call_id": call.id, "recording_ids": recording_ids}
 
@@ -207,16 +176,6 @@ async def ingest_fail(payload: IngestFailPayload, db: AsyncSession = Depends(get
         updated_ids.append(call.id)
 
     await db.commit()
-    _ingest_debug(
-        "ingest fail",
-        {
-            "refci": payload.refci,
-            "reason": payload.reason,
-            "call_ids": updated_ids,
-            "duration_s": payload.duration_s,
-        },
-        "H4",
-    )
     for call_id in updated_ids:
         await live_hub.broadcast(
             {"event": "call_completed", "call_id": call_id, "refci": payload.refci}, tenant_id

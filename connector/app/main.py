@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from app import pipeline, spool
 from app.config import config
 from app.portal import PortalClient
+from app.workers import router as workers_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("connector")
@@ -38,7 +39,8 @@ def _require_token(x_ingest_token: str | None = Header(default=None)) -> None:
 
 def _worker() -> None:
     while not _stop.is_set():
-        job = spool.claim_due()
+        # Media jobs only — whisper claims ``transcribe`` via /api/workers.
+        job = spool.claim_due(kinds=("complete", "fail"))
         if job is None:
             time.sleep(2)
             continue
@@ -72,12 +74,18 @@ async def lifespan(app: FastAPI):
     threads = [threading.Thread(target=_worker, daemon=True), threading.Thread(target=_heartbeat, daemon=True)]
     for t in threads:
         t.start()
-    logger.info("connector up: portal=%s source=%s", config.PORTAL_URL, config.SOURCE)
+    logger.info(
+        "connector up: portal=%s source=%s transcribe=%s",
+        config.PORTAL_URL,
+        config.SOURCE,
+        config.TRANSCRIBE,
+    )
     yield
     _stop.set()
 
 
 app = FastAPI(title="ccc-connector", lifespan=lifespan)
+app.include_router(workers_router)
 
 
 @app.get("/health")

@@ -1,12 +1,21 @@
 <include>
   <context name="public">
-    <!-- EXAMPLE ONLY — for lab / docs.
-         Production installs must use connector/install.sh, which renders
-         cucm_bib.xml.template with __CUCM_SRC_REGEX__ from --cucm-nodes.
-         Do not deploy this file as-is to customer hosts. -->
+    <!-- CUCM BIB recording: destination 1034 from CCM cluster nodes.
+
+         Hard-won quirks of this FreeSWITCH build (1.11.1):
+         - Inline condition= attributes on <action> tags are IGNORED (the action
+           always runs). All branching must use <condition>/<anti-action> blocks.
+         - execute_on_hangup is never executed at teardown; api_hangup_hook works.
+         - A leading '+' on a record_session path makes FS treat it as relative
+           and record under /usr/share/freeswitch/sounds/. Never prefix the path.
+
+         __CUCM_SRC_REGEX__ is replaced by connector/install.sh from --cucm-nodes
+         (e.g. ^(172\.25\.100\.10|172\.25\.100\.11)$). Do not hand-edit the
+         generated dialplan under /opt/ccc-connector/freeswitch/dialplan/.
+    -->
     <extension name="cucm_bib_1034">
       <condition field="destination_number" expression="^1034$"/>
-      <condition field="${network_addr}" expression="^(172\.25\.100\.10|172\.25\.100\.11|172\.25\.100\.30|172\.25\.100\.31)$">
+      <condition field="${network_addr}" expression="__CUCM_SRC_REGEX__">
         <action application="set" data="bib_refci=${sip_from_x-refci}"/>
         <action application="set" data="bib_far_refci=${sip_from_x-farendrefci}"/>
         <action application="set" data="bib_near_addr=${sip_from_x-nearendaddr}"/>
@@ -19,6 +28,8 @@
         <action application="set" data="bib_far_name=${caller_id_name}"/>
       </condition>
 
+      <!-- CUCM does not reliably expose the x- URI params as sip_from_* vars;
+           fall back to parsing the raw From header. -->
       <condition field="${bib_refci}" expression="^$" break="never">
         <action application="set" data="bib_refci=${regex(${sip_full_from}|x-refci=([^;>]+)|%1)}"/>
       </condition>
@@ -32,6 +43,9 @@
         <action application="set" data="bib_session=${regex(${sip_full_from}|x-sessionid=([^;>]+)|%1)}"/>
       </condition>
 
+      <!-- The near-end media fork carries ';x-nearend;' in the From URI, the
+           far-end fork ';x-farend;'. Portal hooks run once per call, on the
+           far fork only (anti-action branch). -->
       <condition field="${sip_full_from}" expression=";x-nearend[;>]" break="never">
         <action application="set" data="bib_leg=near"/>
         <anti-action application="set" data="bib_leg=far"/>
@@ -45,7 +59,9 @@
         <action application="set" data="RECORD_MIN_SEC=0"/>
         <action application="set" data="record_waste_resources=true"/>
         <action application="set" data="recording_file=$${recordings_dir}/cucm_${bib_refci}_${bib_leg}_${bib_near_addr}-${bib_far_addr}_${strftime(%Y%m%d-%H%M%S)}_${uuid}.wav"/>
+
         <action application="log" data="CRIT CUCM-BIB-1034 src=${network_addr} leg=${bib_leg} refci=${bib_refci} near=${bib_near_addr} far=${bib_far_addr} file=${recording_file}"/>
+
         <action application="answer"/>
         <action application="record_session" data="${recording_file}"/>
         <action application="sleep" data="3600000"/>

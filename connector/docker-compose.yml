@@ -1,17 +1,23 @@
 name: ccc-connector
 
 # On-prem CUCM edge stack. FreeSWITCH records BIB media and posts lifecycle hooks
-# to the connector, which transcodes/peaks/transcribes locally and pushes results
-# to the cloud portal over the v2 API. Both use host networking so FreeSWITCH can
-# receive CUCM RTP and reach the connector at 127.0.0.1.
+# to the connector, which transcodes/peaks and pushes results to the cloud portal.
+# The whisper sidecar claims local transcribe jobs and posts transcripts back
+# through the connector. All three use host networking so FreeSWITCH can receive
+# CUCM RTP and reach the connector/whisper at 127.0.0.1.
 
 services:
   freeswitch:
-    # Prebuilt image (bakes the BIB dialplan + hook scripts). Published from the
-    # ccc-freeswitch-docker repo — see connector/freeswitch-publish.yml.
+    # Base image from ccc-freeswitch-docker (Sofia/SIP). CUCM BIB dialplan + hook
+    # scripts are bind-mounted from DATA_DIR (vendored by install.sh) because the
+    # published GHCR tag is shared with the Webex trunk build and does not bake
+    # BIB assets.
     image: ghcr.io/jmetdev/ccc-freeswitch-docker:${FS_IMAGE_TAG:-latest}
     network_mode: host
     restart: unless-stopped
+    # Silence SCHED_FIFO / nice warnings (cosmetic; FS runs without this).
+    cap_add:
+      - SYS_NICE
     environment:
       PORTAL_API_URL: http://127.0.0.1:9000        # -> the connector shim
       INGEST_TOKEN: ${INGEST_TOKEN}
@@ -20,6 +26,20 @@ services:
       - ${DATA_DIR:-/opt/ccc-connector}/recordings:/var/lib/freeswitch/recordings
       # Per-tenant CUCM node ACL (written by install.sh from --cucm-nodes)
       - ${DATA_DIR:-/opt/ccc-connector}/freeswitch/acl.conf.xml:/etc/freeswitch/autoload_configs/acl.conf.xml:ro
+      # BIB recording dialplan (destination 1034) + lifecycle hooks
+      - ${DATA_DIR:-/opt/ccc-connector}/freeswitch/dialplan/cucm_bib.xml:/etc/freeswitch/dialplan/cucm_bib.xml:ro
+      - ${DATA_DIR:-/opt/ccc-connector}/freeswitch/scripts:/usr/local/sbin:ro
+    # Image HEALTHCHECK uses bare fs_cli (no ESL password) and always fails.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "fs_cli -H 127.0.0.1 -P 8021 -p ChangeMe-ESL-Password -x status | grep -q ^UP || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   connector:
     build: .
@@ -33,9 +53,29 @@ services:
       CONNECTOR_TOKEN: ${CONNECTOR_TOKEN}
       CONNECTOR_SOURCE: cucm
       INGEST_TOKEN: ${INGEST_TOKEN}
+      WORKER_TOKEN: ${WORKER_TOKEN}
       RECORDINGS_DIR: /recordings
+      TRANSCRIBE: ${TRANSCRIBE:-true}
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
       LISTEN_PORT: "9000"
     volumes:
       # Same host dir as FreeSWITCH's recordings, so the connector reads the WAVs.
       - ${DATA_DIR:-/opt/ccc-connector}/recordings:/recordings
+
+  whisper:
+    build:
+      context: ./whisper
+    image: ccc-connector-whisper:local
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - connector
+    profiles: ["transcription"]
+    environment:
+      CONNECTOR_URL: http://127.0.0.1:9000
+      WORKER_TOKEN: ${WORKER_TOKEN}
+      RECORDINGS_DIR: /recordings
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      POLL_INTERVAL: ${WHISPER_POLL_INTERVAL:-5}
+    volumes:
+      - ${DATA_DIR:-/opt/ccc-connector}/recordings:/recordings:ro

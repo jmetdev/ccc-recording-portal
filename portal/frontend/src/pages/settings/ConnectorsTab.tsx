@@ -36,8 +36,7 @@ export function ConnectorsTab() {
 
   const installCmd =
     created && created.kind === 'cucm'
-      ? `curl -fsSL https://raw.githubusercontent.com/jmetdev/ccc-recording-portal/main/connector/install.sh \\\n  | sudo bash -s -- --token ${created.token} --portal ${window.location.origin}` +
-        (cucmNodes.trim() ? ` --cucm-nodes ${cucmNodes.replace(/\s+/g, '')}` : '')
+      ? `curl -fsSL https://raw.githubusercontent.com/jmetdev/ccc-recording-portal/main/connector/install.sh \\\n  | sudo bash -s -- --token ${created.token} --portal ${window.location.origin} --cucm-nodes ${cucmNodes.replace(/\s+/g, '')}`
       : '';
 
   const create = useMutation({
@@ -143,13 +142,18 @@ export function ConnectorsTab() {
           {kind === 'cucm' && (
             <TextInput
               label="CUCM node IPs"
-              description="Comma-separated cluster node addresses allowed to send BIB media"
+              description="Required — comma-separated cluster node addresses written into FreeSWITCH ACL + BIB dialplan"
               placeholder="10.0.0.10, 10.0.0.11"
               value={cucmNodes}
               onChange={(e) => setCucmNodes(e.currentTarget.value)}
+              required
             />
           )}
-          <Button onClick={() => create.mutate()} disabled={!name} loading={create.isPending}>
+          <Button
+            onClick={() => create.mutate()}
+            disabled={!name || (kind === 'cucm' && !cucmNodes.trim())}
+            loading={create.isPending}
+          >
             Create
           </Button>
           {create.isError && (
@@ -199,11 +203,36 @@ export function ConnectorsTab() {
                 What it does
               </Text>
               <List size="sm" type="ordered" spacing={4}>
-                <List.Item>Installs Docker-CE and creates the mount layout under <Text span ff="monospace" fz="xs">/opt/ccc-connector</Text>.</List.Item>
-                <List.Item>Downloads and builds the connector, and pulls the FreeSWITCH image.</List.Item>
-                <List.Item>Writes your CUCM node ACL and the connector token, then starts both containers.</List.Item>
-                <List.Item>Point CUCM Built-In-Bridge recording at this FreeSWITCH (destination <Text span ff="monospace" fz="xs">1034</Text>).</List.Item>
-                <List.Item>This connector flips to <Text span c="green">Active</Text> here once it heartbeats.</List.Item>
+                <List.Item>
+                  Installs Docker-CE and creates the mount layout under{' '}
+                  <Text span ff="monospace" fz="xs">
+                    /opt/ccc-connector
+                  </Text>
+                  .
+                </List.Item>
+                <List.Item>
+                  Pulls the shared FreeSWITCH image and builds the connector.
+                </List.Item>
+                <List.Item>
+                  Renders FreeSWITCH ACL + BIB dialplan from your CUCM node IPs, vendors hook
+                  scripts, then starts FreeSWITCH, the connector, and the whisper transcription
+                  sidecar (ESL healthcheck + SYS_NICE).
+                </List.Item>
+                <List.Item>
+                  Point CUCM Built-In-Bridge recording at this host SIP{' '}
+                  <Text span ff="monospace" fz="xs">
+                    :5070
+                  </Text>
+                  , destination{' '}
+                  <Text span ff="monospace" fz="xs">
+                    1034
+                  </Text>
+                  .
+                </List.Item>
+                <List.Item>
+                  This connector flips to <Text span c="green">Active</Text> here once it
+                  heartbeats.
+                </List.Item>
               </List>
             </>
           ) : (

@@ -3,10 +3,10 @@
 # can pull it (ghcr.io/jmetdev/ccc-freeswitch-docker:latest) instead of building
 # FreeSWITCH from source on every customer host.
 #
-# The published image must bake the BIB integration (dialplan + hook scripts from
-# ccc-recording-portal/freeswitch/) so only the per-tenant ACL is mounted at
-# runtime. Vendor those files into this repo's build context, or add a step that
-# fetches them, before the docker build.
+# The published image stays generic (Sofia/SIP runtime). CUCM BIB dialplan, ACL,
+# and hook scripts are NOT baked here — connector/install.sh renders and
+# bind-mounts them from --cucm-nodes at deploy time. Do not add a separate BIB
+# FreeSWITCH image/repo for that.
 
 name: Publish FreeSWITCH image
 

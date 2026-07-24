@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import fcntl
 import glob
-import json
 import os
 import subprocess
 import sys
@@ -14,26 +13,6 @@ import time
 import wave
 
 RECORDINGS_DIR = os.environ.get("RECORDINGS_DIR", "/var/lib/freeswitch/recordings")
-DEBUG_LOG = os.path.join(RECORDINGS_DIR, ".debug-d3dd31.log")
-
-
-def _debug_log(message: str, data: dict | None = None, hypothesis_id: str = "H3") -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "d3dd31",
-            "timestamp": int(time.time() * 1000),
-            "location": "bib-hangup-hook.py",
-            "message": message,
-            "data": data or {},
-            "hypothesisId": hypothesis_id,
-            "runId": "post-fix5",
-        }
-        with open(DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-    # #endregion
 
 
 def find_latest(pattern: str) -> str | None:
@@ -139,37 +118,13 @@ def main() -> None:
     try:
         fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        _debug_log("hangup hook skipped duplicate", {"refci": args.refci}, hypothesis_id="H2")
         return
 
     hangup_at = time.time()
-    _debug_log(
-        "hangup hook started",
-        {
-            "refci": args.refci,
-            "recordings_dir": recordings_dir,
-            "dir_exists": os.path.isdir(recordings_dir),
-            "hangup_at": hangup_at,
-        },
-        hypothesis_id="H2",
-    )
     file_pairs: list[str] = []
     time.sleep(2)
     for attempt in range(12):
         file_pairs = collect_file_pairs(args.refci, recordings_dir, args.base)
-        near_glob = glob.glob(os.path.join(recordings_dir, f"cucm_{args.refci}_near_*.wav"))
-        far_glob = glob.glob(os.path.join(recordings_dir, f"cucm_{args.refci}_far_*.wav"))
-        _debug_log(
-            "hangup poll for recordings",
-            {
-                "refci": args.refci,
-                "attempt": attempt,
-                "file_pairs": file_pairs,
-                "near_matches": [os.path.basename(p) for p in near_glob],
-                "far_matches": [os.path.basename(p) for p in far_glob],
-            },
-            hypothesis_id="H3" if attempt == 0 else "H4",
-        )
         if file_pairs:
             break
         time.sleep(2)
@@ -177,11 +132,6 @@ def main() -> None:
     if not file_pairs:
         reason = "no recordings found after hangup retries"
         fail_duration_s = call_duration_at_hangup(args.refci, recordings_dir, hangup_at)
-        _debug_log(
-            "hangup failed - no recordings",
-            {"refci": args.refci, "fail_duration_s": fail_duration_s},
-            hypothesis_id="H4",
-        )
         print(f"bib-hangup-hook: {reason} for refci={args.refci}", file=sys.stderr)
         notify_fail(args.refci, reason, duration_s=fail_duration_s)
         return
@@ -205,11 +155,6 @@ def main() -> None:
     if duration_s is not None:
         complete_cmd.extend(["--duration-s", f"{duration_s:.3f}"])
 
-    _debug_log(
-        "hangup calling ingest complete",
-        {"refci": args.refci, "file_pairs": file_pairs, "duration_s": duration_s},
-        hypothesis_id="H1",
-    )
     subprocess.run(complete_cmd, check=False)
 
 

@@ -2,7 +2,7 @@
 
 Two tables:
   calls  — refci -> cloud call_id + start metadata (call_id filled once known)
-  jobs   — queued work (complete/fail) with retry/backoff
+  jobs   — queued work (complete/fail/transcribe) with retry/backoff
 """
 
 from __future__ import annotations
@@ -16,6 +16,9 @@ import time
 from app.config import config
 
 _lock = threading.Lock()
+
+# How long a claimed job is leased before another worker can reclaim it.
+_CLAIM_LEASE_S = 600
 
 
 def _conn() -> sqlite3.Connection:
@@ -68,11 +71,29 @@ def enqueue(kind: str, refci: str, payload: dict) -> None:
         )
 
 
-def claim_due() -> sqlite3.Row | None:
+def claim_due(kinds: tuple[str, ...] | None = None) -> sqlite3.Row | None:
+    """Claim the next due job, leasing it so concurrent workers don't double-take."""
     with _lock, _conn() as c:
-        return c.execute(
-            "SELECT * FROM jobs WHERE next_at <= ? ORDER BY id LIMIT 1", (time.time(),)
-        ).fetchone()
+        params: list = [time.time()]
+        q = "SELECT * FROM jobs WHERE next_at <= ?"
+        if kinds:
+            placeholders = ",".join("?" for _ in kinds)
+            q += f" AND kind IN ({placeholders})"
+            params.extend(kinds)
+        q += " ORDER BY id LIMIT 1"
+        row = c.execute(q, params).fetchone()
+        if row is None:
+            return None
+        c.execute(
+            "UPDATE jobs SET next_at=? WHERE id=?",
+            (time.time() + _CLAIM_LEASE_S, row["id"]),
+        )
+        return row
+
+
+def get_job(job_id: int) -> sqlite3.Row | None:
+    with _lock, _conn() as c:
+        return c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
 
 
 def mark_done(job_id: int) -> None:
@@ -81,7 +102,6 @@ def mark_done(job_id: int) -> None:
 
 
 def mark_retry(job_id: int, attempts: int) -> None:
-    # exponential backoff capped at RETRY_MAX_S
     delay = min(config.RETRY_MAX_S, 2 ** min(attempts, 8))
     with _lock, _conn() as c:
         c.execute(

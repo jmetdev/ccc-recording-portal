@@ -63,7 +63,7 @@ class PortalClient:
     ) -> None:
         body = {
             "leg": leg,
-            "source": "whisper",  # connector runs faster-whisper locally
+            "source": "whisper",  # on-prem whisper sidecar via connector workers API
             "language": language,
             "text": text,
             "segments_json": segments,
