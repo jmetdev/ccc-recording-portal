@@ -54,6 +54,11 @@ export function ConnectorsTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant-connectors'] }),
   });
 
+  const remove = useMutation({
+    mutationFn: (id: number) => api.tenant.deleteConnector(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant-connectors'] }),
+  });
+
   const rows = connectors.data ?? [];
 
   return (
@@ -112,22 +117,45 @@ export function ConnectorsTab() {
                   {c.version || '—'}
                 </Table.Td>
                 <Table.Td ta="right">
-                  {c.enabled && (
+                  <Group gap="xs" justify="flex-end" wrap="nowrap">
+                    {c.enabled && (
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="orange"
+                        loading={revoke.isPending && revoke.variables === c.id}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Revoke connector "${c.name}"? It will stop authenticating immediately.`,
+                            )
+                          ) {
+                            revoke.mutate(c.id);
+                          }
+                        }}
+                      >
+                        Revoke
+                      </Button>
+                    )}
                     <Button
                       size="xs"
                       variant="light"
                       color="red"
                       leftSection={<IconTrash size={14} />}
-                      loading={revoke.isPending && revoke.variables === c.id}
+                      loading={remove.isPending && remove.variables === c.id}
                       onClick={() => {
-                        if (window.confirm(`Revoke connector "${c.name}"? It will stop authenticating immediately.`)) {
-                          revoke.mutate(c.id);
+                        if (
+                          window.confirm(
+                            `Permanently delete connector "${c.name}"? This cannot be undone.`,
+                          )
+                        ) {
+                          remove.mutate(c.id);
                         }
                       }}
                     >
-                      Revoke
+                      Delete
                     </Button>
-                  )}
+                  </Group>
                 </Table.Td>
               </Table.Tr>
             ))}
