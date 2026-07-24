@@ -14,6 +14,7 @@ from app.models import (
     Permission,
     Tenant,
     User,
+    WebexConnectorInstance,
 )
 from app.schemas import (
     AuditLogOut,
@@ -24,6 +25,7 @@ from app.schemas import (
     TenantOut,
     TenantUpdate,
 )
+from app.services import webex_connector as wxc
 from app.services.audit import record_audit
 from app.services.retention import sweep_expired_calls
 from app.services.tenancy import seed_tenant_roles
@@ -149,13 +151,14 @@ async def create_connector(
     return ConnectorCredentialCreated(**base.model_dump(), token=token)
 
 
-@router.delete("/connectors/{connector_id}")
+@router.post("/connectors/{connector_id}/revoke")
 async def revoke_connector(
     connector_id: int,
     request: Request,
     admin: User = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
+    """Invalidate the connector's API key without removing the credential row."""
     cred = (
         await db.execute(select(ConnectorCredential).where(ConnectorCredential.id == connector_id))
     ).scalar_one_or_none()
@@ -171,6 +174,45 @@ async def revoke_connector(
         resource_id=cred.id,
         request=request,
     )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/connectors/{connector_id}")
+async def delete_connector(
+    connector_id: int,
+    request: Request,
+    admin: User = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently remove a connector credential (platform admin)."""
+    cred = (
+        await db.execute(select(ConnectorCredential).where(ConnectorCredential.id == connector_id))
+    ).scalar_one_or_none()
+    if cred is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+
+    linked = (
+        await db.execute(
+            select(WebexConnectorInstance).where(
+                WebexConnectorInstance.connector_credential_id == cred.id
+            )
+        )
+    ).scalar_one_or_none()
+    if linked is not None:
+        await wxc.teardown_tenant_connector(db, cred.tenant_id)
+
+    await record_audit(
+        db,
+        tenant_id=cred.tenant_id,
+        action="connector.delete",
+        user=admin,
+        resource_type="connector",
+        resource_id=cred.id,
+        detail={"name": cred.name, "kind": cred.kind.value},
+        request=request,
+    )
+    await db.delete(cred)
     await db.commit()
     return {"status": "ok"}
 
