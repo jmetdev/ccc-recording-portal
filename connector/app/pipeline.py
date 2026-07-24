@@ -1,11 +1,11 @@
-"""Per-call media pipeline: transcode + peaks + whisper, then upload to the cloud."""
+"""Per-call media pipeline: transcode + peaks + upload, then queue whisper."""
 
 from __future__ import annotations
 
 import logging
 import os
 
-from app import media, spool, transcribe
+from app import media, spool
 from app.config import config
 from app.portal import PortalClient
 
@@ -30,7 +30,7 @@ def process_complete(portal: PortalClient, refci: str, files: dict, duration_s: 
     call_id = _ensure_call_id(portal, refci)
 
     # 1) transcode + peaks + upload each available leg
-    uploaded: dict[str, str] = {}
+    uploaded_rels: dict[str, str] = {}
     for leg, rel in files.items():
         wav = _abs(rel)
         if not os.path.isfile(wav):
@@ -44,26 +44,20 @@ def process_complete(portal: PortalClient, refci: str, files: dict, duration_s: 
             call_id, leg, m4a, "audio/mp4",
             duration_s=dur, sample_rate=rate, channels=channels, peaks=peaks,
         )
-        uploaded[leg] = wav
+        uploaded_rels[leg] = rel
 
-    # 2) transcribe per-speaker legs (fallback to stereo), attach transcripts
-    if config.TRANSCRIBE:
-        selected = [leg for leg in ("near", "far") if leg in uploaded]
-        if not selected and "stereo" in uploaded:
-            selected = ["stereo"]
-        for leg in selected:
-            try:
-                text, segments, language = transcribe.transcribe_file(uploaded[leg], config.WHISPER_MODEL)
-                if not text:
-                    continue
-                sentiment, score = transcribe.simple_sentiment(text)
-                portal.create_transcript(call_id, leg, text, segments, language, sentiment, score)
-            except Exception:
-                logger.exception("transcription failed for call %s leg %s", refci, leg)
-
-    # 3) mark the cloud call complete (processed => no cloud jobs enqueued)
+    # 2) mark the cloud call complete (processed => no cloud jobs enqueued)
     portal.complete(refci, duration_s)
-    logger.info("call %s complete: legs=%s", refci, list(uploaded))
+    logger.info("call %s media complete: legs=%s", refci, list(uploaded_rels))
+
+    # 3) queue on-prem whisper sidecar when transcription is enabled
+    if config.TRANSCRIBE and uploaded_rels:
+        spool.enqueue(
+            "transcribe",
+            refci,
+            {"call_id": call_id, "paths": uploaded_rels},
+        )
+        logger.info("call %s queued for whisper transcription", refci)
 
 
 def process_fail(portal: PortalClient, refci: str, reason: str | None, duration_s: float | None) -> None:

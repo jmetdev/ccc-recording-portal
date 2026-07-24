@@ -17,9 +17,11 @@ class Config:
     LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "9000"))
     INGEST_TOKEN = os.environ.get("INGEST_TOKEN", "")  # shared secret with FS hooks
 
-    # Local media pipeline
+    # Local media pipeline + on-prem whisper sidecar
     WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
     TRANSCRIBE = os.environ.get("TRANSCRIBE", "true").lower() == "true"
+    # Shared secret between the whisper container and this connector
+    WORKER_TOKEN = os.environ.get("WORKER_TOKEN", "")
 
     # Durable spool (survives restarts) + retry
     SPOOL_DB = os.environ.get("SPOOL_DB", "/recordings/.connector/spool.db")

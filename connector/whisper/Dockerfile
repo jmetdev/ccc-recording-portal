@@ -1,18 +1,13 @@
 FROM python:3.12-slim
 
-# ffmpeg for transcode/peaks. Transcription runs in the separate whisper service.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg ca-certificates \
+        ffmpeg ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY worker.py .
 
-COPY app ./app
-
-ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-EXPOSE 9000
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9000"]
+CMD ["python", "worker.py"]

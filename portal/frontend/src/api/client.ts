@@ -249,6 +249,8 @@ export const api = {
         body: JSON.stringify(body),
       }),
     revokeConnector: (id: number) =>
+      request<{ status: string }>(`/tenant/connectors/${id}/revoke`, { method: 'POST' }),
+    deleteConnector: (id: number) =>
       request<{ status: string }>(`/tenant/connectors/${id}`, { method: 'DELETE' }),
     storageStats: () => request<StorageStats>('/tenant/storage-stats'),
   },

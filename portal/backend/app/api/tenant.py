@@ -22,6 +22,7 @@ from app.models import (
     Recording,
     Tenant,
     User,
+    WebexConnectorInstance,
 )
 from app.schemas import (
     ConnectorCredentialCreate,
@@ -31,6 +32,7 @@ from app.schemas import (
     TenantSettingsOut,
     TenantSettingsUpdate,
 )
+from app.services import webex_connector as wxc
 from app.services.audit import record_audit
 from app.services.call_stats import distinct_call_count_stmt
 
@@ -122,13 +124,14 @@ async def create_tenant_connector(
     return ConnectorCredentialCreated(**base.model_dump(), token=token)
 
 
-@router.delete("/connectors/{connector_id}")
+@router.post("/connectors/{connector_id}/revoke")
 async def revoke_tenant_connector(
     connector_id: int,
     request: Request,
     user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
+    """Invalidate the connector's API key without removing the credential row."""
     cred = (
         await db.execute(
             select(ConnectorCredential).where(
@@ -149,6 +152,54 @@ async def revoke_tenant_connector(
         resource_id=cred.id,
         request=request,
     )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/connectors/{connector_id}")
+async def delete_tenant_connector(
+    connector_id: int,
+    request: Request,
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently remove a connector credential.
+
+    If the credential backs a hosted Webex connector instance, tear that
+    instance down first (CASCADE would only drop the DB row).
+    """
+    cred = (
+        await db.execute(
+            select(ConnectorCredential).where(
+                ConnectorCredential.id == connector_id,
+                ConnectorCredential.tenant_id == user.tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if cred is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+
+    linked = (
+        await db.execute(
+            select(WebexConnectorInstance).where(
+                WebexConnectorInstance.connector_credential_id == cred.id
+            )
+        )
+    ).scalar_one_or_none()
+    if linked is not None:
+        await wxc.teardown_tenant_connector(db, user.tenant_id)
+
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="connector.delete",
+        user=user,
+        resource_type="connector",
+        resource_id=cred.id,
+        detail={"name": cred.name, "kind": cred.kind.value},
+        request=request,
+    )
+    await db.delete(cred)
     await db.commit()
     return {"status": "ok"}
 
