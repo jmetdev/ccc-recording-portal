@@ -1,8 +1,8 @@
 <include>
   <context name="public">
-    <!-- EXAMPLE ONLY — for lab / docs.
+    <!-- EXAMPLE ONLY - for lab / docs.
          Production installs must use connector/install.sh, which renders
-         cucm_bib.xml.template with __CUCM_SRC_REGEX__ from --cucm-nodes.
+         cucm_bib.xml.template with __CUCM_SRC_REGEX__ from the cucm-nodes flag.
          Do not deploy this file as-is to customer hosts. -->
     <extension name="cucm_bib_1034">
       <condition field="destination_number" expression="^1034$"/>

@@ -9,8 +9,9 @@
          - A leading '+' on a record_session path makes FS treat it as relative
            and record under /usr/share/freeswitch/sounds/. Never prefix the path.
 
-         __CUCM_SRC_REGEX__ is replaced by connector/install.sh from --cucm-nodes
-         (e.g. ^(172\.25\.100\.10|172\.25\.100\.11)$). Do not hand-edit the
+         __CUCM_SRC_REGEX__ is replaced by connector/install.sh from the
+         cucm-nodes install flag (e.g. ^(172\.25\.100\.10|172\.25\.100\.11)$).
+         Do not hand edit the
          generated dialplan under /opt/ccc-connector/freeswitch/dialplan/.
     -->
     <extension name="cucm_bib_1034">
