@@ -61,7 +61,9 @@ log "writing FreeSWITCH CUCM ACL ..."
       [ -n "$ip" ] && echo "      <node type=\"allow\" cidr=\"$ip/32\"/>"
     done
   else
-    echo "      <!-- No --cucm-nodes given; add your CUCM node IPs and reload FreeSWITCH -->"
+    # NB: FreeSWITCH's XML parser (switch_xml.c) rejects a literal '--' inside an
+    # XML comment with "unclosed <!--", so this text must not contain a double hyphen.
+    echo "      <!-- No CUCM nodes provided; add your CUCM node IPs here (installer flag: cucm-nodes) and reload FreeSWITCH -->"
   fi
   echo '    </list>'
   echo '  </network-lists>'
