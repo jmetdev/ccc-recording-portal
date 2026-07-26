@@ -100,17 +100,8 @@ def process_job(client: httpx.Client, model, payload: dict) -> dict:
 def main() -> None:
     from faster_whisper import WhisperModel
 
-    # #region agent log
-    print(
-        f"[debug-60931a] whisper boot ok model={WHISPER_MODEL} "
-        f"connector={CONNECTOR_URL} hypothesisId=E"
-    )
-    # #endregion
     print(f"whisper worker starting model={WHISPER_MODEL} connector={CONNECTOR_URL}")
     model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
-    # #region agent log
-    print("[debug-60931a] WhisperModel loaded hypothesisId=E")
-    # #endregion
 
     with httpx.Client(timeout=600.0) as client:
         while True:
@@ -127,12 +118,6 @@ def main() -> None:
                     continue
 
                 job_id = job["id"]
-                # #region agent log
-                print(
-                    f"[debug-60931a] claimed job_id={job_id} "
-                    f"call_id={job.get('payload', {}).get('call_id')} hypothesisId=C"
-                )
-                # #endregion
                 try:
                     result = process_job(client, model, job["payload"])
                     client.post(
@@ -140,26 +125,14 @@ def main() -> None:
                         headers=api_headers(),
                         json={"result": result},
                     ).raise_for_status()
-                    # #region agent log
-                    print(
-                        f"[debug-60931a] job_id={job_id} complete result_legs="
-                        f"{list(result.keys())} hypothesisId=C"
-                    )
-                    # #endregion
                 except Exception as exc:
                     client.post(
                         f"{CONNECTOR_URL}/api/workers/jobs/{job_id}/complete",
                         headers=api_headers(),
                         json={"error": str(exc)},
                     )
-                    # #region agent log
-                    print(f"[debug-60931a] job_id={job_id} error={exc!s} hypothesisId=C")
-                    # #endregion
             except Exception as exc:
                 print(f"whisper loop error: {exc}")
-                # #region agent log
-                print(f"[debug-60931a] loop error={exc!s} hypothesisId=D")
-                # #endregion
                 time.sleep(POLL_INTERVAL)
 
 
