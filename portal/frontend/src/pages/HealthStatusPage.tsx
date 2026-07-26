@@ -75,11 +75,25 @@ function formatTime(value: string | null | undefined) {
   return new Date(value).toLocaleString();
 }
 
+function containerDisplayName(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('freeswitch') || n === 'sip-switch') return 'SIP Switch';
+  if (n.includes('whisper')) return 'Whisper';
+  if (n === 'connector') return 'Connector';
+  if (n.includes('media-handler')) return 'Media handler';
+  if (n.includes('backend')) return 'Backend';
+  if (n.includes('frontend')) return 'Frontend';
+  if (n.includes('db')) return 'Database';
+  return name;
+}
+
 function ContainerIcon({ name }: { name: string }) {
-  if (name.includes('db')) return <IconDatabase size={20} />;
-  if (name.includes('whisper')) return <IconMicrophone size={20} />;
-  if (name.includes('freeswitch')) return <IconPhone size={20} />;
-  if (name.includes('frontend')) return <IconServer size={20} />;
+  const n = name.toLowerCase();
+  if (n.includes('db')) return <IconDatabase size={20} />;
+  if (n.includes('whisper')) return <IconMicrophone size={20} />;
+  if (n.includes('freeswitch') || n === 'sip-switch') return <IconPhone size={20} />;
+  if (n.includes('frontend')) return <IconServer size={20} />;
+  if (n === 'connector') return <IconPlugConnected size={20} />;
   return <IconBrandDocker size={20} />;
 }
 
@@ -128,7 +142,7 @@ function StatusBanner({ status }: { status: SystemStatus }) {
     >
       <Group gap="lg">
         <Text size="sm">
-          {status.summary.containers_healthy}/{status.summary.containers_total} containers healthy
+          {status.summary.containers_healthy}/{status.summary.containers_total} services healthy
         </Text>
         <Text size="sm">{status.summary.recent_failures} recent failed call(s)</Text>
         {coveragePct != null && (
@@ -175,6 +189,28 @@ export function HealthStatusPage() {
   const rec = status.services.recordings;
   const fs = status.services.freeswitch;
   const tx = status.services.transcription;
+  const whisper = tx.whisper;
+  const transcriptionOk =
+    whisper?.ok === true ||
+    (whisper?.ok == null && (tx.total_calls === 0 || tx.transcribed_calls >= tx.total_calls));
+  const transcriptionDetail = (() => {
+    if (whisper?.ok === true) {
+      const coverage =
+        tx.total_calls === 0
+          ? 'no completed calls yet'
+          : `${tx.transcribed_calls}/${tx.total_calls} calls transcribed`;
+      return `${whisper.detail || 'whisper reachable'} · ${coverage}`;
+    }
+    if (whisper?.ok === false) return whisper.detail || 'whisper unreachable';
+    if (tx.total_calls === 0) return 'No completed calls yet';
+    return `${tx.transcribed_calls}/${tx.total_calls} calls transcribed`;
+  })();
+  const sipOk = fs.ok ?? fs.fs_cli_configured;
+  const sipDetail =
+    fs.detail ||
+    (fs.fs_cli_configured
+      ? `${fs.active_recording_channels} active recording channel(s)`
+      : 'not configured');
 
   return (
     <Stack gap="lg">
@@ -198,49 +234,62 @@ export function HealthStatusPage() {
       <StatusBanner status={status} />
 
       <div>
-        <Text fw={600} mb="sm">
-          Containers
-        </Text>
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-          {status.containers.map((container) => (
-            <Card key={container.name} withBorder padding="md" radius="md" className={classes.containerCard}>
-              <Group justify="space-between" mb="xs">
-                <Group gap="xs">
-                  <ThemeIcon variant="light" size="md" color={containerStateColor(container.state)}>
-                    <ContainerIcon name={container.name} />
-                  </ThemeIcon>
-                  <Text fw={600} size="sm">
-                    {container.name}
-                  </Text>
+        <Group justify="space-between" mb="sm">
+          <Text fw={600}>Services</Text>
+          {status.summary.docker_usable === false && status.containers.some((c) => c.source === 'connector') && (
+            <Text size="xs" c="dimmed">
+              Reported by connector (portal Docker unavailable)
+            </Text>
+          )}
+        </Group>
+        {status.containers.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            No local containers configured. Edge SIP Switch / whisper status appears here once a
+            connector heartbeats.
+          </Text>
+        ) : (
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+            {status.containers.map((container) => (
+              <Card key={container.name} withBorder padding="md" radius="md" className={classes.containerCard}>
+                <Group justify="space-between" mb="xs">
+                  <Group gap="xs">
+                    <ThemeIcon variant="light" size="md" color={containerStateColor(container.state)}>
+                      <ContainerIcon name={container.name} />
+                    </ThemeIcon>
+                    <Text fw={600} size="sm">
+                      {containerDisplayName(container.name)}
+                    </Text>
+                  </Group>
+                  <Badge color={containerStateColor(container.state)} variant="filled">
+                    {container.state}
+                  </Badge>
                 </Group>
-                <Badge color={containerStateColor(container.state)} variant="filled">
-                  {container.state}
-                </Badge>
-              </Group>
-              <Stack gap={4}>
-                <Text size="xs" c="dimmed">
-                  Status: {container.status}
-                  {container.health ? ` · health: ${container.health}` : ''}
-                </Text>
-                {container.image && (
-                  <Text size="xs" c="dimmed" lineClamp={1}>
-                    {container.image}
-                  </Text>
-                )}
-                {container.started_at && (
+                <Stack gap={4}>
                   <Text size="xs" c="dimmed">
-                    Started {formatTime(container.started_at)}
+                    Status: {container.status}
+                    {container.health ? ` · health: ${container.health}` : ''}
+                    {container.source === 'connector' ? ' · via connector' : ''}
                   </Text>
-                )}
-                {container.detail && (
-                  <Text size="xs" c="red">
-                    {container.detail}
-                  </Text>
-                )}
-              </Stack>
-            </Card>
-          ))}
-        </SimpleGrid>
+                  {container.image && (
+                    <Text size="xs" c="dimmed" lineClamp={1}>
+                      {container.image}
+                    </Text>
+                  )}
+                  {container.started_at && (
+                    <Text size="xs" c="dimmed">
+                      Started {formatTime(container.started_at)}
+                    </Text>
+                  )}
+                  {container.detail && (
+                    <Text size="xs" c={container.state === 'healthy' ? 'dimmed' : 'red'}>
+                      {container.detail}
+                    </Text>
+                  )}
+                </Stack>
+              </Card>
+            ))}
+          </SimpleGrid>
+        )}
       </div>
 
       <Paper withBorder p="md" radius="md">
@@ -332,24 +381,8 @@ export function HealthStatusPage() {
               label="Recordings writable"
               detail={rec.ingest_log_exists ? '.bib-hook.log present' : 'no ingest log yet'}
             />
-            <ServiceRow
-              ok={fs.fs_cli_configured}
-              label="SIP switch CLI"
-              detail={
-                fs.fs_cli_configured
-                  ? `${fs.active_recording_channels} active recording channel(s)`
-                  : 'not configured'
-              }
-            />
-            <ServiceRow
-              ok={tx.total_calls === 0 || tx.transcribed_calls >= tx.total_calls}
-              label="Transcription"
-              detail={
-                tx.total_calls === 0
-                  ? 'No completed calls yet'
-                  : `${tx.transcribed_calls}/${tx.total_calls} calls transcribed`
-              }
-            />
+            <ServiceRow ok={Boolean(sipOk)} label="SIP Switch" detail={sipDetail} />
+            <ServiceRow ok={Boolean(transcriptionOk)} label="Transcription" detail={transcriptionDetail} />
           </Stack>
         </Paper>
 
@@ -418,7 +451,7 @@ export function HealthStatusPage() {
               value={logSource}
               onChange={setLogSource}
               data={status.log_sources.map((source) => ({
-                label: source.replace('portal-', '').replace('freeswitch', 'SIP switch'),
+                label: containerDisplayName(source.replace('portal-', '')),
                 value: source,
               }))}
             />

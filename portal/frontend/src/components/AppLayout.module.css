@@ -36,17 +36,6 @@
   border-bottom: 1px solid #e9eaed;
 }
 
-.chip {
-  font-family: 'DM Mono', ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: #74777d;
-  border: 1px solid #e9eaed;
-  border-radius: 5px;
-  padding: 2px 7px;
-  background-color: #f7f8fa;
-}
-
 .avatar {
   width: 30px;
   height: 30px;

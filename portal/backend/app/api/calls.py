@@ -44,10 +44,15 @@ async def dashboard_stats(
     group_id = await scoped_call_filter(user)
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
+    not_trashed = Call.trashed_at.is_(None)
     calls_today = (
-        await db.execute(distinct_call_count_stmt(user.tenant_id, group_id, Call.started_at >= today))
+        await db.execute(
+            distinct_call_count_stmt(user.tenant_id, group_id, Call.started_at >= today, not_trashed)
+        )
     ).scalar_one()
-    calls_total = (await db.execute(distinct_call_count_stmt(user.tenant_id, group_id))).scalar_one()
+    calls_total = (
+        await db.execute(distinct_call_count_stmt(user.tenant_id, group_id, not_trashed))
+    ).scalar_one()
     # FreeSWITCH fs_cli is host-local and not tenant-scoped. Only use it for
     # the legacy default tenant (shared lab box); everyone else reads
     # recording_now from their own Call rows.
@@ -60,13 +65,19 @@ async def dashboard_stats(
             if fs_channels
             else (
                 await db.execute(
-                    distinct_call_count_stmt(user.tenant_id, group_id, Call.status == CallStatus.RECORDING)
+                    distinct_call_count_stmt(
+                        user.tenant_id, group_id, Call.status == CallStatus.RECORDING, not_trashed
+                    )
                 )
             ).scalar_one()
         )
     else:
         recording_now = (
-            await db.execute(distinct_call_count_stmt(user.tenant_id, group_id, Call.status == CallStatus.RECORDING))
+            await db.execute(
+                distinct_call_count_stmt(
+                    user.tenant_id, group_id, Call.status == CallStatus.RECORDING, not_trashed
+                )
+            )
         ).scalar_one()
     extensions_enabled = (
         await db.execute(
@@ -89,7 +100,11 @@ async def live_calls(user=Depends(get_current_user), db: AsyncSession = Depends(
     group_id = await scoped_call_filter(user)
     stmt = (
         select(Call)
-        .where(Call.status == CallStatus.RECORDING, Call.tenant_id == user.tenant_id)
+        .where(
+            Call.status == CallStatus.RECORDING,
+            Call.tenant_id == user.tenant_id,
+            Call.trashed_at.is_(None),
+        )
         .order_by(Call.started_at.desc())
     )
     if group_id is not None:
@@ -120,7 +135,11 @@ async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSess
 
     stmt = (
         select(Call)
-        .where(Call.status == CallStatus.RECORDING, Call.tenant_id == user.tenant_id)
+        .where(
+            Call.status == CallStatus.RECORDING,
+            Call.tenant_id == user.tenant_id,
+            Call.trashed_at.is_(None),
+        )
         .order_by(Call.started_at.desc())
     )
     if group_id is not None:
@@ -160,6 +179,7 @@ async def list_calls(
     date_to: datetime | None = None,
     legal_hold: bool | None = None,
     holding: bool | None = None,
+    trashed: bool | None = None,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -196,6 +216,10 @@ async def list_calls(
         filters.append(Call.legal_hold.is_(legal_hold))
     if holding is not None:
         filters.append(Call.holding.is_(holding))
+    if trashed:
+        filters.append(Call.trashed_at.is_not(None))
+    else:
+        filters.append(Call.trashed_at.is_(None))
 
     # One row per refci — duplicate Call rows can exist from concurrent ingest/start.
     id_stmt = select(Call.id)
@@ -418,7 +442,11 @@ async def search_transcripts(
             func.ts_headline("english", Transcript.text, ts_query).label("headline"),
         )
         .join(Call, Transcript.call_id == Call.id)
-        .where(Transcript.search_tsv.op("@@")(ts_query), Call.tenant_id == user.tenant_id)
+        .where(
+            Transcript.search_tsv.op("@@")(ts_query),
+            Call.tenant_id == user.tenant_id,
+            Call.trashed_at.is_(None),
+        )
     )
     if group_id is not None:
         stmt = stmt.where(Call.group_id == group_id)
@@ -496,6 +524,84 @@ async def set_legal_hold(
         resource_type="call",
         resource_id=call.id,
         detail={"refci": call.refci},
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(call, ["transcripts"])
+    return CallOut.model_validate(call, from_attributes=True).model_copy(
+        update={"sentiment": call_sentiment(call)}
+    )
+
+
+@router.post("/calls/{call_id}/trash", response_model=CallOut)
+async def trash_call(
+    call_id: int,
+    request: Request,
+    user=Depends(require_permission(Permission.MANAGE_RETENTION.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a call to trash. Recoverable for 30 days, then permanently purged."""
+    result = await db.execute(
+        select(Call)
+        .options(selectinload(Call.transcripts))
+        .where(Call.id == call_id, Call.tenant_id == user.tenant_id)
+    )
+    call = result.scalar_one_or_none()
+    if not call or not can_view_call(user, call.group_id):
+        raise HTTPException(status_code=404, detail="Call not found")
+    if call.legal_hold:
+        raise HTTPException(
+            status_code=409,
+            detail="Release legal hold before moving this call to trash",
+        )
+    if call.trashed_at is not None:
+        raise HTTPException(status_code=409, detail="Call is already in trash")
+    call.trashed_at = datetime.now(timezone.utc)
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="call.trash",
+        user=user,
+        resource_type="call",
+        resource_id=call.id,
+        detail={"refci": call.refci, "trashed_at": str(call.trashed_at)},
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(call, ["transcripts"])
+    return CallOut.model_validate(call, from_attributes=True).model_copy(
+        update={"sentiment": call_sentiment(call)}
+    )
+
+
+@router.post("/calls/{call_id}/restore", response_model=CallOut)
+async def restore_call(
+    call_id: int,
+    request: Request,
+    user=Depends(require_permission(Permission.MANAGE_RETENTION.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore a trashed call back to the active recordings list."""
+    result = await db.execute(
+        select(Call)
+        .options(selectinload(Call.transcripts))
+        .where(Call.id == call_id, Call.tenant_id == user.tenant_id)
+    )
+    call = result.scalar_one_or_none()
+    if not call or not can_view_call(user, call.group_id):
+        raise HTTPException(status_code=404, detail="Call not found")
+    if call.trashed_at is None:
+        raise HTTPException(status_code=409, detail="Call is not in trash")
+    previous_trashed_at = call.trashed_at
+    call.trashed_at = None
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="call.restore",
+        user=user,
+        resource_type="call",
+        resource_id=call.id,
+        detail={"refci": call.refci, "trashed_at": str(previous_trashed_at)},
         request=request,
     )
     await db.commit()

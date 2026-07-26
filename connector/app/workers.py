@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app import spool
+from app import edge_health, spool
 from app.config import config
 from app.portal import PortalClient
 
@@ -41,6 +41,9 @@ class TranscriptIn(BaseModel):
 def claim_job(job_type: str = Query("transcribe")):
     if job_type != "transcribe":
         raise HTTPException(status_code=400, detail="only job_type=transcribe is supported")
+    # Any authenticated poll proves the whisper sidecar is alive — even when
+    # the queue is empty.
+    edge_health.note_whisper_claim()
     job = spool.claim_due(kinds=("transcribe",))
     if job is None:
         return None

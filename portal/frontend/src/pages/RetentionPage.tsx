@@ -50,8 +50,9 @@ function PolicyCard() {
       <Text size="sm" c="dimmed" mb="md">
         Calls older than the retention window are automatically purged by a periodic sweep, which
         deletes the database record, tags, transcripts, and the recording audio files on disk —
-        every artifact, not just the metadata. Calls under legal hold are always skipped. This does
-        not cover offsite backups or object-store versioning, if configured. Leave disabled to
+        every artifact, not just the metadata. Soft-trashed recordings follow a separate 30-day
+        recovery window before permanent deletion. Calls under legal hold are always skipped. This
+        does not cover offsite backups or object-store versioning, if configured. Leave disabled to
         retain indefinitely.
       </Text>
       <Group align="flex-end" gap="lg">

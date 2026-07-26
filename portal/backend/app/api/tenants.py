@@ -27,7 +27,7 @@ from app.schemas import (
 )
 from app.services import webex_connector as wxc
 from app.services.audit import record_audit
-from app.services.retention import sweep_expired_calls, sweep_holding_calls
+from app.services.retention import sweep_expired_calls, sweep_holding_calls, sweep_trashed_calls
 from app.services.tenancy import seed_tenant_roles
 
 router = APIRouter(prefix="/platform", tags=["platform"])
@@ -239,4 +239,5 @@ async def list_audit_logs(
 async def run_retention_sweep(db: AsyncSession = Depends(get_db)):
     expired = await sweep_expired_calls(db)
     holding = await sweep_holding_calls(db)
-    return {"expired": expired, "holding": holding}
+    trash = await sweep_trashed_calls(db)
+    return {"expired": expired, "holding": holding, "trash": trash}

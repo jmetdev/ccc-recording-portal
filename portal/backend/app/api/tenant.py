@@ -93,7 +93,11 @@ async def license_usage(
         await db.execute(
             select(func.count())
             .select_from(Call)
-            .where(Call.tenant_id == user.tenant_id, Call.holding.is_(True))
+            .where(
+                Call.tenant_id == user.tenant_id,
+                Call.holding.is_(True),
+                Call.trashed_at.is_(None),
+            )
         )
     ).scalar_one()
     allotted = await recording_seats_for_org(tenant.webex_org_id)

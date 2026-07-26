@@ -28,6 +28,19 @@ LOG_SOURCES: dict[str, str | None] = {
     "freeswitch": "freeswitch",
 }
 
+# Container names that live on the on-prem edge (connector host), not the portal.
+_EDGE_DOCKER_NAMES = frozenset({"freeswitch", "sip-switch", "whisper", "portal-whisper"})
+
+_DOCKER_UNAVAILABLE_MARKERS = (
+    "403 forbidden",
+    "request forbidden by administrative rules",
+    "cannot connect to the docker daemon",
+    "permission denied while trying to connect",
+    "got permission denied while trying to connect",
+    "is the docker daemon running",
+    "connection refused",
+)
+
 
 def _container_state(status: str, health: str) -> str:
     status = status.lower()
@@ -39,6 +52,13 @@ def _container_state(status: str, health: str) -> str:
     if health == "starting":
         return "starting"
     return "unhealthy"
+
+
+def _is_docker_daemon_error(detail: str | None) -> bool:
+    if not detail:
+        return False
+    d = detail.lower()
+    return any(marker in d for marker in _DOCKER_UNAVAILABLE_MARKERS)
 
 
 async def _run_docker(*args: str, timeout: float = 8) -> tuple[int, str, str]:
@@ -55,12 +75,18 @@ async def _run_docker(*args: str, timeout: float = 8) -> tuple[int, str, str]:
         return 1, "", str(exc)
 
 
-async def inspect_containers() -> list[dict[str, Any]]:
+async def inspect_containers() -> tuple[list[dict[str, Any]], bool]:
+    """Return (containers, docker_usable).
+
+    ``docker_usable`` is False when the host Docker daemon is missing/forbidden
+    (typical on Fargate / locked-down hosts). Callers should then prefer
+    connector-reported edge health instead of showing 403 HTML blobs.
+    """
     results: list[dict[str, Any]] = []
     if not settings.system_container_list:
-        # Nothing to introspect (e.g. Fargate, where there is no Docker socket);
-        # the system page degrades to DB / connectors / storage only.
-        return results
+        return results, False
+
+    daemon_errors = 0
     for name in settings.system_container_list:
         code, stdout, stderr = await _run_docker(
             "inspect",
@@ -69,6 +95,9 @@ async def inspect_containers() -> list[dict[str, Any]]:
             "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.Config.Image}}|{{.State.StartedAt}}",
         )
         if code != 0:
+            detail = stderr.strip() or "container not found"
+            if _is_docker_daemon_error(detail):
+                daemon_errors += 1
             results.append(
                 {
                     "name": name,
@@ -77,7 +106,8 @@ async def inspect_containers() -> list[dict[str, Any]]:
                     "health": None,
                     "image": None,
                     "started_at": None,
-                    "detail": stderr.strip() or "container not found",
+                    "detail": detail,
+                    "source": "docker",
                 }
             )
             continue
@@ -95,9 +125,137 @@ async def inspect_containers() -> list[dict[str, Any]]:
                 "image": image,
                 "started_at": started_at,
                 "detail": None,
+                "source": "docker",
             }
         )
-    return results
+
+    docker_usable = bool(results) and daemon_errors < len(results)
+    return results, docker_usable
+
+
+def _edge_stats_from_connectors(connectors: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Pick the richest stats blob from a healthy CUCM (or any) connector."""
+    candidates = [
+        c
+        for c in connectors
+        if c.get("enabled") and c.get("status") == "healthy" and isinstance(c.get("stats"), dict)
+    ]
+    if not candidates:
+        # Fall back to any enabled connector with stats (even stale) — better
+        # than showing docker 403 when the edge was recently healthy.
+        candidates = [
+            c for c in connectors if c.get("enabled") and isinstance(c.get("stats"), dict)
+        ]
+    if not candidates:
+        return None
+    # Prefer cucm connectors (they own SIP Switch + whisper).
+    cucm = [c for c in candidates if c.get("kind") == "cucm"]
+    pick = (cucm or candidates)[0]
+    return pick.get("stats") if isinstance(pick.get("stats"), dict) else None
+
+
+def _containers_from_connector_stats(stats: dict[str, Any]) -> list[dict[str, Any]]:
+    components = stats.get("components")
+    if isinstance(components, list) and components:
+        out: list[dict[str, Any]] = []
+        for raw in components:
+            if not isinstance(raw, dict) or not raw.get("name"):
+                continue
+            out.append(
+                {
+                    "name": raw["name"],
+                    "state": raw.get("state") or "unknown",
+                    "status": raw.get("status") or "unknown",
+                    "health": raw.get("health"),
+                    "image": raw.get("image"),
+                    "started_at": raw.get("started_at"),
+                    "detail": raw.get("detail"),
+                    "source": "connector",
+                }
+            )
+        return out
+
+    # Older heartbeats only send sip_switch / whisper keys.
+    out = []
+    sip = stats.get("sip_switch") if isinstance(stats.get("sip_switch"), dict) else None
+    if sip is not None:
+        ok = bool(sip.get("ok"))
+        out.append(
+            {
+                "name": "sip-switch",
+                "state": "healthy" if ok else "down",
+                "status": "running" if ok else "unreachable",
+                "health": "healthy" if ok else "unhealthy",
+                "image": None,
+                "started_at": None,
+                "detail": sip.get("detail"),
+                "source": "connector",
+            }
+        )
+    whisper = stats.get("whisper") if isinstance(stats.get("whisper"), dict) else None
+    if whisper is not None and whisper.get("ok") is not None:
+        ok = bool(whisper.get("ok"))
+        out.append(
+            {
+                "name": "whisper",
+                "state": "healthy" if ok else "down",
+                "status": "running" if ok else "unreachable",
+                "health": "healthy" if ok else "unhealthy",
+                "image": None,
+                "started_at": None,
+                "detail": whisper.get("detail"),
+                "source": "connector",
+            }
+        )
+    return out
+
+
+def _is_edge_container_name(name: str) -> bool:
+    n = name.lower()
+    return n in _EDGE_DOCKER_NAMES or "whisper" in n
+
+
+def _merge_containers(
+    docker_containers: list[dict[str, Any]],
+    docker_usable: bool,
+    connectors: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    edge_stats = _edge_stats_from_connectors(connectors)
+    edge_containers = _containers_from_connector_stats(edge_stats) if edge_stats else []
+
+    if not docker_usable:
+        # Portal host has no usable Docker — show connector edge stack only.
+        return edge_containers
+
+    # Keep portal docker rows; drop edge names docker couldn't resolve when the
+    # connector already reports them (avoids "freeswitch: 403 Forbidden" cards).
+    kept: list[dict[str, Any]] = []
+    for c in docker_containers:
+        name = str(c.get("name") or "")
+        if (
+            _is_edge_container_name(name)
+            and c.get("state") in ("unknown", "down")
+            and edge_containers
+        ):
+            continue
+        kept.append(c)
+
+    kept_names = {str(c.get("name") or "").lower() for c in kept}
+    has_sip = "freeswitch" in kept_names or "sip-switch" in kept_names
+    has_whisper = any("whisper" in n for n in kept_names)
+
+    for edge in edge_containers:
+        name = str(edge.get("name") or "").lower()
+        if name == "connector":
+            continue
+        if name == "sip-switch" and has_sip:
+            continue
+        if name == "whisper" and has_whisper:
+            continue
+        if name not in kept_names:
+            kept.append(edge)
+            kept_names.add(name)
+    return kept
 
 
 async def check_database(db: AsyncSession) -> dict[str, Any]:
@@ -143,14 +301,69 @@ def check_recordings_mount() -> dict[str, Any]:
         return {"ok": False, "backend": "local", "path": path, "error": str(exc)}
 
 
-async def check_freeswitch() -> dict[str, Any]:
+async def check_freeswitch(connectors: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """SIP Switch status via local fs_cli when configured, else connector heartbeat."""
     configured = bool(settings.freeswitch_fs_cli.strip())
     channels: list[dict[str, Any]] = []
     if configured:
         channels = await list_active_recording_channels()
+        return {
+            "ok": True,
+            "fs_cli_configured": True,
+            "active_recording_channels": len(channels),
+            "source": "fs_cli",
+            "detail": f"{len(channels)} active recording channel(s)",
+        }
+
+    edge = _edge_stats_from_connectors(connectors or [])
+    sip = edge.get("sip_switch") if isinstance(edge, dict) else None
+    if isinstance(sip, dict) and sip.get("ok") is not None:
+        ok = bool(sip.get("ok"))
+        return {
+            "ok": ok,
+            "fs_cli_configured": False,
+            "active_recording_channels": 0,
+            "source": "connector",
+            "detail": sip.get("detail") or ("reachable via connector" if ok else "unreachable"),
+        }
+
+    # Older connectors only heartbeat queue_depth. A healthy CUCM connector is
+    # still a strong signal the edge stack (incl. SIP Switch) is up.
+    healthy_cucm = [
+        c
+        for c in (connectors or [])
+        if c.get("enabled") and c.get("status") == "healthy" and c.get("kind") == "cucm"
+    ]
+    if healthy_cucm:
+        return {
+            "ok": True,
+            "fs_cli_configured": False,
+            "active_recording_channels": 0,
+            "source": "connector",
+            "detail": f"via connector '{healthy_cucm[0].get('name')}' (upgrade connector for ESL detail)",
+        }
+
     return {
-        "fs_cli_configured": configured,
-        "active_recording_channels": len(channels),
+        "ok": False,
+        "fs_cli_configured": False,
+        "active_recording_channels": 0,
+        "source": "none",
+        "detail": "not configured",
+    }
+
+
+def _whisper_from_connectors(connectors: list[dict[str, Any]]) -> dict[str, Any]:
+    edge = _edge_stats_from_connectors(connectors)
+    if not edge:
+        return {"ok": None, "source": "none", "detail": None}
+    whisper = edge.get("whisper") if isinstance(edge.get("whisper"), dict) else None
+    if whisper is None:
+        return {"ok": None, "source": "none", "detail": None}
+    return {
+        "ok": whisper.get("ok"),
+        "source": "connector",
+        "detail": whisper.get("detail"),
+        "last_seen_s": whisper.get("last_seen_s"),
     }
 
 
@@ -311,6 +524,14 @@ async def fetch_log_lines(source: str, lines: int = 100) -> dict[str, Any]:
     )
     if code != 0:
         detail = stderr.strip() or stdout.strip() or "failed to read container logs"
+        if _is_docker_daemon_error(detail):
+            return {
+                "source": source,
+                "lines": [
+                    "(Docker unavailable on the portal host — edge logs are on the "
+                    "connector / SIP Switch host, not readable from here.)"
+                ],
+            }
         return {"source": source, "lines": [f"(docker logs error: {detail})"]}
     log_lines = stdout.splitlines()
     return {"source": source, "lines": log_lines if log_lines else ["(empty log)"]}
@@ -334,13 +555,16 @@ def _sanitize_failure(row: dict[str, Any]) -> dict[str, Any]:
 
 
 async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin: bool) -> dict[str, Any]:
-    containers, db_health, fs_health, connectors, coverage = await asyncio.gather(
+    docker_result, db_health, connectors, coverage = await asyncio.gather(
         inspect_containers(),
         check_database(db),
-        check_freeswitch(),
         fetch_connector_health(db, tenant_id),
         fetch_transcription_coverage(db, tenant_id),
     )
+    docker_containers, docker_usable = docker_result
+    containers = _merge_containers(docker_containers, docker_usable, connectors)
+    fs_health = await check_freeswitch(connectors)
+    whisper = _whisper_from_connectors(connectors)
     recordings = check_recordings_mount()
     failures = await fetch_recent_failures(db)
 
@@ -354,7 +578,13 @@ async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin
     overall = "healthy"
     if any(c["state"] == "down" for c in containers) or not db_health.get("ok"):
         overall = "critical"
-    elif any(c["state"] in ("unhealthy", "starting") for c in containers) or failures or connector_issue:
+    elif (
+        any(c["state"] in ("unhealthy", "starting") for c in containers)
+        or failures
+        or connector_issue
+        or (fs_health.get("source") != "none" and not fs_health.get("ok"))
+        or whisper.get("ok") is False
+    ):
         overall = "degraded"
 
     transcription_complete = coverage["total_calls"] == 0 or coverage["transcribed_calls"] >= coverage["total_calls"]
@@ -373,6 +603,7 @@ async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin
             "containers_healthy": healthy_count,
             "containers_total": len(containers),
             "recent_failures": len(failures),
+            "docker_usable": docker_usable,
         },
         "containers": containers,
         "connectors": connectors,
@@ -383,6 +614,7 @@ async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin
             "transcription": {
                 "mode": "connector",
                 "worker_enabled": is_transcription_enabled(),
+                "whisper": whisper,
                 **coverage,
             },
         },
@@ -390,8 +622,10 @@ async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin
         # Raw logs are superadmin-only (see /system/logs); an empty list here
         # is what tells the frontend to hide the Live logs panel. The sources are
         # Docker/host-file based, so they're also hidden wherever no local
-        # containers are configured (e.g. Fargate).
+        # containers are configured (e.g. Fargate) or Docker is unusable.
         "log_sources": (
-            list(LOG_SOURCES.keys()) if is_superadmin and settings.system_container_list else []
+            list(LOG_SOURCES.keys())
+            if is_superadmin and settings.system_container_list and docker_usable
+            else []
         ),
     }

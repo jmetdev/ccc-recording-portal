@@ -50,10 +50,6 @@ function AppLayoutInner() {
         <Group h="100%" px="lg" justify="space-between">
           <Group gap="sm">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            <Group gap={7} visibleFrom="sm">
-              <span className={classes.chip}>BIB</span>
-              <span className={classes.chip}>SIPREC</span>
-            </Group>
           </Group>
           <Group gap="md">
             <Text size="sm" c="dimmed" visibleFrom="sm">

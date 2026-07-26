@@ -26,6 +26,7 @@ export type Call = {
   source: 'cucm' | 'webex' | string;
   legal_hold: boolean;
   holding: boolean;
+  trashed_at: string | null;
   sentiment: string | null;
   group_id: number | null;
 };
@@ -79,6 +80,7 @@ export type ContainerHealth = {
   image: string | null;
   started_at: string | null;
   detail: string | null;
+  source?: 'docker' | 'connector' | string;
 };
 
 export type FailedCallRow = {
@@ -111,6 +113,21 @@ export type TranscriptionCoverage = {
   transcribed_calls: number;
 };
 
+export type SipSwitchHealth = {
+  ok: boolean;
+  fs_cli_configured: boolean;
+  active_recording_channels: number;
+  source?: 'fs_cli' | 'connector' | 'none' | string;
+  detail?: string | null;
+};
+
+export type WhisperHealth = {
+  ok: boolean | null;
+  source?: 'connector' | 'none' | string;
+  detail?: string | null;
+  last_seen_s?: number;
+};
+
 export type SystemStatus = {
   checked_at: string;
   overall: 'healthy' | 'degraded' | 'critical';
@@ -119,6 +136,7 @@ export type SystemStatus = {
     containers_healthy: number;
     containers_total: number;
     recent_failures: number;
+    docker_usable?: boolean;
   };
   containers: ContainerHealth[];
   connectors: ConnectorHealth[];
@@ -133,8 +151,8 @@ export type SystemStatus = {
       ingest_log_exists?: boolean;
       error?: string;
     };
-    freeswitch: { fs_cli_configured: boolean; active_recording_channels: number };
-    transcription: TranscriptionCoverage;
+    freeswitch: SipSwitchHealth;
+    transcription: TranscriptionCoverage & { whisper?: WhisperHealth };
   };
   recent_failures: FailedCallRow[];
   log_sources: string[];
@@ -218,6 +236,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ legal_hold }),
     }),
+  trashCall: (callId: number) =>
+    request<Call>(`/calls/${callId}/trash`, { method: 'POST' }),
+  restoreCall: (callId: number) =>
+    request<Call>(`/calls/${callId}/restore`, { method: 'POST' }),
   listRecordings: (callId: number) => request<Recording[]>(`/calls/${callId}/recordings`),
   getRecordings: (callId: number) => request<Recording[]>(`/calls/${callId}/recordings`),
   getPeaks: (recordingId: number) => request<{ recording_id: number; peaks: unknown }>(`/recordings/${recordingId}/peaks`),

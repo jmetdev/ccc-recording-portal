@@ -140,6 +140,7 @@ class CallOut(BaseModel):
     source: str = "cucm"
     legal_hold: bool = False
     holding: bool = False
+    trashed_at: datetime | None = None
     group_id: int | None
     sentiment: str | None = None
 

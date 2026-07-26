@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     # whisper-worker job queue, which is off unless explicitly enabled.
     transcription_enabled: str = "false"
     whisper_container_name: str = "portal-whisper"
-    system_containers: str = "portal-backend,portal-db,portal-frontend,portal-media-handler,freeswitch"
+    # Portal-host containers only. SIP Switch / whisper run on the connector
+    # host and are reported via connector heartbeats (see system_health).
+    system_containers: str = "portal-backend,portal-db,portal-frontend,portal-media-handler"
     cors_origins: str = "http://localhost:3000"
     admin_email: str = "admin@localhost"
     admin_password: str = "admin123"

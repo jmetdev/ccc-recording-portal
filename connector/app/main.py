@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from app import pipeline, spool
+from app import edge_health, pipeline, spool
 from app.config import config
 from app.portal import PortalClient
 from app.uds import UdsClient
@@ -64,7 +64,7 @@ def _worker() -> None:
 def _heartbeat() -> None:
     while not _stop.is_set():
         try:
-            portal.heartbeat({"queue_depth": spool.queue_depth()})
+            portal.heartbeat(edge_health.collect_heartbeat_stats(spool.queue_depth()))
         except Exception as exc:
             logger.warning("heartbeat failed: %s", exc)
         _stop.wait(config.HEARTBEAT_INTERVAL_S)
@@ -92,7 +92,20 @@ app.include_router(workers_router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "queue_depth": spool.queue_depth(), "version": config.VERSION}
+    stats = edge_health.collect_heartbeat_stats(spool.queue_depth())
+    sip_ok = bool(stats.get("sip_switch", {}).get("ok"))
+    whisper = stats.get("whisper") or {}
+    whisper_ok = whisper.get("ok")
+    # overall ok when the connector is up and SIP Switch is reachable; whisper
+    # is optional (disabled / still starting does not fail the probe).
+    status = "ok" if sip_ok else "degraded"
+    return {
+        "status": status,
+        "queue_depth": stats.get("queue_depth"),
+        "version": config.VERSION,
+        "sip_switch": stats.get("sip_switch"),
+        "whisper": whisper if whisper_ok is not None or config.TRANSCRIBE else {"ok": None, "detail": "disabled"},
+    }
 
 
 class StartIn(BaseModel):

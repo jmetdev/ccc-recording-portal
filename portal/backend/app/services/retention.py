@@ -1,7 +1,8 @@
 """Retention disposition sweep.
 
 Purges calls (and their media) past each tenant's retention window, skipping
-anything under legal hold. Runs as a periodic background task and on demand
+anything under legal hold. Also permanently deletes soft-trashed calls after
+the trash recovery window. Runs as a periodic background task and on demand
 via the admin API. Every disposition is written to the audit log so records
 officers can evidence the retention schedule was applied.
 """
@@ -20,6 +21,9 @@ from app.services.audit import record_audit
 from app.services.storage import Storage, get_storage
 
 logger = logging.getLogger(__name__)
+
+HOLDING_RETENTION_DAYS = 7
+TRASH_RETENTION_DAYS = 30
 
 
 def purge_call_media(storage: Storage, call: Call) -> int:
@@ -61,6 +65,7 @@ async def sweep_expired_calls(db: AsyncSession) -> dict:
                 .where(
                     Call.tenant_id == tenant.id,
                     Call.legal_hold.is_(False),
+                    Call.trashed_at.is_(None),
                     Call.started_at < cutoff,
                 )
             )
@@ -83,9 +88,6 @@ async def sweep_expired_calls(db: AsyncSession) -> dict:
     return {"purged": purged}
 
 
-HOLDING_RETENTION_DAYS = 7
-
-
 async def sweep_holding_calls(db: AsyncSession) -> dict:
     """Purge holding-pool calls older than 7 days (independent of tenant retention)."""
     storage = get_storage()
@@ -98,6 +100,7 @@ async def sweep_holding_calls(db: AsyncSession) -> dict:
             .where(
                 Call.holding.is_(True),
                 Call.legal_hold.is_(False),
+                Call.trashed_at.is_(None),
                 Call.started_at < cutoff,
             )
         )
@@ -123,6 +126,47 @@ async def sweep_holding_calls(db: AsyncSession) -> dict:
     return {"purged": purged_by_tenant}
 
 
+async def sweep_trashed_calls(db: AsyncSession) -> dict:
+    """Permanently delete soft-trashed calls older than the 30-day recovery window."""
+    storage = get_storage()
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=TRASH_RETENTION_DAYS)
+    calls = (
+        await db.execute(
+            select(Call)
+            .options(selectinload(Call.recordings))
+            .where(
+                Call.trashed_at.is_not(None),
+                Call.trashed_at < cutoff,
+                Call.legal_hold.is_(False),
+            )
+        )
+    ).scalars().all()
+    purged_by_tenant: dict[str, int] = {}
+    for call in calls:
+        purge_call_media(storage, call)
+        tenant = (
+            await db.execute(select(Tenant).where(Tenant.id == call.tenant_id))
+        ).scalar_one()
+        await record_audit(
+            db,
+            tenant_id=call.tenant_id,
+            action="retention.trash_purge",
+            resource_type="call",
+            resource_id=call.id,
+            detail={
+                "refci": call.refci,
+                "started_at": str(call.started_at),
+                "trashed_at": str(call.trashed_at),
+            },
+        )
+        await db.delete(call)
+        purged_by_tenant[tenant.slug] = purged_by_tenant.get(tenant.slug, 0) + 1
+
+    await db.commit()
+    return {"purged": purged_by_tenant}
+
+
 async def retention_sweep_loop() -> None:
     from app.core.database import async_session
 
@@ -135,9 +179,12 @@ async def retention_sweep_loop() -> None:
             async with async_session() as db:
                 result = await sweep_expired_calls(db)
                 holding_result = await sweep_holding_calls(db)
+                trash_result = await sweep_trashed_calls(db)
                 if result["purged"]:
                     logger.info("retention sweep purged: %s", result["purged"])
                 if holding_result["purged"]:
                     logger.info("holding sweep purged: %s", holding_result["purged"])
+                if trash_result["purged"]:
+                    logger.info("trash sweep purged: %s", trash_result["purged"])
         except Exception:  # noqa: BLE001 - the loop must survive transient errors
             logger.exception("retention sweep failed")

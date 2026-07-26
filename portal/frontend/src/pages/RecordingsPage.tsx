@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMediaQuery } from '@mantine/hooks';
 import {
   ActionIcon,
+  Alert,
   Badge,
   Box,
   Button,
@@ -27,10 +28,13 @@ import {
 import {
   IconAdjustments,
   IconArrowLeft,
+  IconInfoCircle,
   IconLock,
   IconPlayerPause,
   IconPlayerPlay,
+  IconRestore,
   IconTag,
+  IconTrash,
 } from '@tabler/icons-react';
 import { api, hasPermission, recordingHasMedia } from '../api/client';
 import { CallStatusBadge } from '../components/CallStatusBadge';
@@ -39,6 +43,13 @@ import { useAuth } from '../auth/AuthContext';
 import { DualChannelWaveform } from '../components/DualChannelWaveform';
 import { ConversationTranscript } from '../components/ConversationTranscript';
 import classes from './RecordingsPage.module.css';
+
+const TRASH_RETENTION_DAYS = 30;
+
+function daysUntilTrashPurge(trashedAt: string): number {
+  const purgeAt = new Date(trashedAt).getTime() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  return Math.max(0, Math.ceil((purgeAt - Date.now()) / (24 * 60 * 60 * 1000)));
+}
 
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -58,14 +69,23 @@ const SENTIMENT_COLORS: Record<string, string> = {
 
 const PAGE_SIZE = 50;
 
-function CallList({ selectedId, holdingOnly }: { selectedId: number | null; holdingOnly: boolean }) {
+function CallList({
+  selectedId,
+  holdingOnly,
+  trashOnly,
+}: {
+  selectedId: number | null;
+  holdingOnly: boolean;
+  trashOnly: boolean;
+}) {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
-  const [showFilters, setShowFilters] = useState(holdingOnly);
+  const [showFilters, setShowFilters] = useState(holdingOnly || trashOnly);
   const [direction, setDirection] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [sentiment, setSentiment] = useState<string | null>(null);
   const [holding, setHolding] = useState(holdingOnly);
+  const [trashed, setTrashed] = useState(trashOnly);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -74,8 +94,13 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
   }, [holdingOnly]);
 
   useEffect(() => {
+    setTrashed(trashOnly);
+    if (trashOnly) setShowFilters(true);
+  }, [trashOnly]);
+
+  useEffect(() => {
     setPage(1);
-  }, [q, direction, source, sentiment, holding]);
+  }, [q, direction, source, sentiment, holding, trashed]);
 
   const params: Record<string, string> = { page: String(page), page_size: String(PAGE_SIZE) };
   if (q) params.q = q;
@@ -83,6 +108,7 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
   if (source) params.source = source;
   if (sentiment) params.sentiment = sentiment;
   if (holding) params.holding = 'true';
+  if (trashed) params.trashed = 'true';
 
   const { data, isLoading } = useQuery({
     queryKey: ['calls', params],
@@ -100,7 +126,7 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
         <Group gap="xs" wrap="nowrap">
           <TextInput
             size="sm"
-            placeholder="Search calls…"
+            placeholder={trashed ? 'Search trash…' : 'Search calls…'}
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
             style={{ flex: 1 }}
@@ -151,8 +177,26 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
               checked={holding}
               onChange={(e) => setHolding(e.currentTarget.checked)}
             />
+            <Switch
+              size="xs"
+              label="Trash"
+              checked={trashed}
+              onChange={(e) => {
+                const next = e.currentTarget.checked;
+                setTrashed(next);
+                navigate(next ? '/recordings?trashed=true' : '/recordings');
+              }}
+            />
           </Stack>
         </Collapse>
+        {trashed && (
+          <Alert variant="light" color="gray" icon={<IconInfoCircle size={14} />} mt="xs" p="xs">
+            <Text size="xs">
+              Trashed recordings can be recovered for {TRASH_RETENTION_DAYS} days, then are permanently
+              deleted.
+            </Text>
+          </Alert>
+        )}
       </Box>
       <div className={classes.listScroll}>
         {isLoading ? (
@@ -161,7 +205,7 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
           </Box>
         ) : items.length === 0 ? (
           <Text p="md" c="dimmed" size="sm">
-            No calls match.
+            {trashed ? 'Trash is empty.' : 'No calls match.'}
           </Text>
         ) : (
           <ul className={classes.list}>
@@ -174,7 +218,9 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
                     type="button"
                     className={active ? `${classes.row} ${classes.rowActive}` : classes.row}
                     aria-current={active ? 'true' : undefined}
-                    onClick={() => navigate(`/recordings/${c.id}`)}
+                    onClick={() =>
+                      navigate(trashed ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`)
+                    }
                   >
                     <div className={classes.playGlyph} aria-hidden="true">
                       <IconPlayerPlay size={15} />
@@ -186,12 +232,18 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
                       <div className={classes.rowMeta}>
                         {(c.source || '').toUpperCase()} · {shortDate(c.started_at)} ·{' '}
                         {c.duration_s != null ? formatTime(c.duration_s) : '—'}
+                        {c.trashed_at ? ` · ${daysUntilTrashPurge(c.trashed_at)}d left` : ''}
                       </div>
                     </Box>
                     <Group gap={4}>
                       {c.holding && (
                         <Badge size="xs" variant="light" color="orange">
                           Unconfigured
+                        </Badge>
+                      )}
+                      {c.trashed_at && (
+                        <Badge size="xs" variant="light" color="gray">
+                          Trash
                         </Badge>
                       )}
                       <SourceBadge source={c.source} />
@@ -206,6 +258,7 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
       <div className={classes.listFooter}>
         <Text size="xs" c="dimmed">
           {total.toLocaleString()} call{total === 1 ? '' : 's'}
+          {trashed ? ' in trash' : ''}
         </Text>
         {totalPages > 1 && (
           <Pagination size="xs" total={totalPages} value={page} onChange={setPage} siblings={1} boundaries={1} />
@@ -217,10 +270,13 @@ function CallList({ selectedId, holdingOnly }: { selectedId: number | null; hold
 
 function CallDetail({ callId }: { callId: number }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [regionModal, setRegionModal] = useState<{ start: number; end: number } | null>(null);
+  const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [tagNote, setTagNote] = useState('');
   const [seekTo, setSeekTo] = useState<number | null>(null);
   const [playSignal, setPlaySignal] = useState<number | undefined>();
@@ -263,6 +319,25 @@ function CallDetail({ callId }: { callId: number }) {
   const legalHold = useMutation({
     mutationFn: (value: boolean) => api.setLegalHold(callId, value),
     onSuccess: () => call.refetch(),
+  });
+
+  const trashCall = useMutation({
+    mutationFn: () => api.trashCall(callId),
+    onSuccess: async () => {
+      setTrashConfirmOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ['calls'] });
+      await queryClient.invalidateQueries({ queryKey: ['call', callId] });
+      navigate('/recordings?trashed=true');
+    },
+  });
+
+  const restoreCall = useMutation({
+    mutationFn: () => api.restoreCall(callId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['calls'] });
+      await queryClient.invalidateQueries({ queryKey: ['call', callId] });
+      navigate(`/recordings/${callId}`);
+    },
   });
 
   const items = recordings.data ?? [];
@@ -336,12 +411,23 @@ function CallDetail({ callId }: { callId: number }) {
                     Unconfigured
                   </Badge>
                 )}
+                {c?.trashed_at && (
+                  <Badge color="gray" variant="light" leftSection={<IconTrash size={11} />}>
+                    Trash
+                  </Badge>
+                )}
               </Group>
               <Text size="sm" c="dimmed" mt={4}>
                 Near: {nearLabel} · Far: {farLabel}
                 {c?.duration_s != null ? ` · ${formatTime(c.duration_s)}` : ''}
                 {c?.started_at ? ` · ${new Date(c.started_at).toLocaleString()}` : ''}
               </Text>
+              {c?.trashed_at && (
+                <Alert variant="light" color="orange" icon={<IconInfoCircle size={16} />} mt="sm">
+                  In trash — recoverable for about {daysUntilTrashPurge(c.trashed_at)} more day
+                  {daysUntilTrashPurge(c.trashed_at) === 1 ? '' : 's'}, then permanently deleted.
+                </Alert>
+              )}
             </Box>
           </Group>
 
@@ -476,6 +562,55 @@ function CallDetail({ callId }: { callId: number }) {
             </Card>
           )}
 
+          {canManageRetention && c && (
+            <Card padding="md" radius="md">
+              <Text fw={600} size="sm" mb={4}>
+                Trash
+              </Text>
+              {c.trashed_at ? (
+                <>
+                  <Text size="xs" c="dimmed" mb="sm">
+                    Restore to return this recording to the active list.
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    leftSection={<IconRestore size={14} />}
+                    loading={restoreCall.isPending}
+                    onClick={() => restoreCall.mutate()}
+                  >
+                    Restore
+                  </Button>
+                  {restoreCall.isError && (
+                    <Text size="xs" c="red" mt="xs">
+                      {(restoreCall.error as Error).message}
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Text size="xs" c="dimmed" mb="sm">
+                    Move to trash. Recoverable for {TRASH_RETENTION_DAYS} days.
+                  </Text>
+                  <Tooltip label="Release legal hold before trashing" disabled={!c.legal_hold}>
+                    <span>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="red"
+                        leftSection={<IconTrash size={14} />}
+                        disabled={!!c.legal_hold}
+                        onClick={() => setTrashConfirmOpen(true)}
+                      >
+                        Move to trash
+                      </Button>
+                    </span>
+                  </Tooltip>
+                </>
+              )}
+            </Card>
+          )}
+
           <Card padding="md" radius="md">
             <Text fw={600} size="sm" mb="xs">
               Tags
@@ -518,6 +653,30 @@ function CallDetail({ callId }: { callId: number }) {
         <Textarea label="Note" value={tagNote} onChange={(e) => setTagNote(e.currentTarget.value)} mb="md" autosize minRows={2} />
         <Button onClick={saveTag}>Save tag</Button>
       </Modal>
+
+      <Modal
+        opened={trashConfirmOpen}
+        onClose={() => setTrashConfirmOpen(false)}
+        title="Move to trash?"
+      >
+        <Text size="sm" mb="md">
+          This recording will leave the active list and can be recovered for {TRASH_RETENTION_DAYS}{' '}
+          days. After that it is permanently deleted (audio, tags, and transcripts).
+        </Text>
+        {trashCall.isError && (
+          <Text size="sm" c="red" mb="sm">
+            {(trashCall.error as Error).message}
+          </Text>
+        )}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setTrashConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button color="red" loading={trashCall.isPending} onClick={() => trashCall.mutate()}>
+            Move to trash
+          </Button>
+        </Group>
+      </Modal>
     </>
   );
 }
@@ -539,6 +698,7 @@ export function RecordingsPage() {
   const navigate = useNavigate();
   const callId = id ? Number(id) : null;
   const holdingOnly = searchParams.get('holding') === 'true';
+  const trashOnly = searchParams.get('trashed') === 'true';
   const stats = useQuery({ queryKey: ['dashboard-stats'], queryFn: api.dashboardStats });
   // Below this width the list and detail panes take turns instead of sharing
   // the row — a shrunk three-pane layout reads as cramped, not responsive.
@@ -549,32 +709,58 @@ export function RecordingsPage() {
   return (
     <Stack gap="md">
       <Group justify="space-between">
-        <Title order={2}>Recordings</Title>
-        {isNarrow && callId != null && (
-          <Button
-            variant="subtle"
-            size="xs"
-            leftSection={<IconArrowLeft size={14} />}
-            onClick={() => navigate('/recordings')}
-          >
-            Back to list
-          </Button>
-        )}
+        <Title order={2}>{trashOnly ? 'Trash' : 'Recordings'}</Title>
+        <Group gap="xs">
+          {!trashOnly && (
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={<IconTrash size={14} />}
+              onClick={() => navigate('/recordings?trashed=true')}
+            >
+              View trash
+            </Button>
+          )}
+          {trashOnly && (
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={<IconArrowLeft size={14} />}
+              onClick={() => navigate('/recordings')}
+            >
+              Back to recordings
+            </Button>
+          )}
+          {isNarrow && callId != null && (
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={<IconArrowLeft size={14} />}
+              onClick={() => navigate(trashOnly ? '/recordings?trashed=true' : '/recordings')}
+            >
+              Back to list
+            </Button>
+          )}
+        </Group>
       </Group>
       <div className={classes.layout}>
-        {showList && <CallList selectedId={callId} holdingOnly={holdingOnly} />}
+        {showList && <CallList selectedId={callId} holdingOnly={holdingOnly} trashOnly={trashOnly} />}
         {showDetail &&
           (callId != null ? (
             <CallDetail key={callId} callId={callId} />
           ) : (
             <Card padding="md" radius="md">
               <div className={classes.empty}>
-                <Text fw={600}>Select a call to play its recording</Text>
+                <Text fw={600}>
+                  {trashOnly ? 'Select a trashed call to recover it' : 'Select a call to play its recording'}
+                </Text>
                 <Text size="sm" c="dimmed" mt={4}>
-                  {stats.data
-                    ? `${stats.data.calls_total.toLocaleString()} call${stats.data.calls_total === 1 ? '' : 's'} in this tenant.`
-                    : ' '}{' '}
-                  Use the search box or filters on the left, or click any row.
+                  {trashOnly
+                    ? `Trashed recordings remain recoverable for ${TRASH_RETENTION_DAYS} days.`
+                    : stats.data
+                      ? `${stats.data.calls_total.toLocaleString()} call${stats.data.calls_total === 1 ? '' : 's'} in this tenant.`
+                      : ' '}{' '}
+                  {!trashOnly && 'Use the search box or filters on the left, or click any row.'}
                 </Text>
               </div>
             </Card>

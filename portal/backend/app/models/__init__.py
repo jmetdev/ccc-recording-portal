@@ -355,6 +355,8 @@ class Call(Base):
     legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # True when near-end DN is not an enabled recorded extension (7-day holding pool).
     holding: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # Soft-delete timestamp; permanently purged 30 days after being trashed.
+    trashed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), index=True)
 
     group: Mapped["Group | None"] = relationship(back_populates="calls")

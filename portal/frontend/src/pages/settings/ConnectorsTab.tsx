@@ -182,7 +182,7 @@ export function ConnectorsTab() {
             <>
               <TextInput
                 label="CUCM node IPs"
-                description="Required — comma-separated cluster node addresses written into FreeSWITCH ACL + BIB dialplan"
+                description="Required — comma-separated cluster node addresses written into the SIP Switch ACL + BIB dialplan"
                 placeholder="10.0.0.10, 10.0.0.11"
                 value={cucmNodes}
                 onChange={(e) => setCucmNodes(e.currentTarget.value)}
@@ -275,11 +275,11 @@ export function ConnectorsTab() {
                   .
                 </List.Item>
                 <List.Item>
-                  Pulls the shared FreeSWITCH image and builds the connector.
+                  Pulls the shared SIP Switch image and builds the connector.
                 </List.Item>
                 <List.Item>
-                  Renders FreeSWITCH ACL + BIB dialplan from your CUCM node IPs, vendors hook
-                  scripts, then starts FreeSWITCH, the connector, and the whisper transcription
+                  Renders SIP Switch ACL + BIB dialplan from your CUCM node IPs, vendors hook
+                  scripts, then starts the SIP Switch, the connector, and the whisper transcription
                   sidecar (ESL healthcheck + SYS_NICE).
                 </List.Item>
                 {udsUrl.trim() && (
