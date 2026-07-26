@@ -58,6 +58,10 @@ services:
       TRANSCRIBE: ${TRANSCRIBE:-true}
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
       LISTEN_PORT: "9000"
+      UDS_BASE_URL: ${UDS_BASE_URL:-}
+      UDS_USER: ${UDS_USER:-}
+      UDS_PASSWORD: ${UDS_PASSWORD:-}
+      UDS_VERIFY_TLS: ${UDS_VERIFY_TLS:-false}
     volumes:
       # Same host dir as FreeSWITCH's recordings, so the connector reads the WAVs.
       - ${DATA_DIR:-/opt/ccc-connector}/recordings:/recordings

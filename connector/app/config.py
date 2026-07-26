@@ -32,5 +32,11 @@ class Config:
     # Keep local WAV/M4A this many days after a confirmed upload (0 = keep forever)
     LOCAL_RETENTION_DAYS = int(os.environ.get("LOCAL_RETENTION_DAYS", "7"))
 
+    # Optional Cisco UDS (near-end display name enrichment)
+    UDS_BASE_URL = os.environ.get("UDS_BASE_URL", "").rstrip("/")
+    UDS_USER = os.environ.get("UDS_USER", "")
+    UDS_PASSWORD = os.environ.get("UDS_PASSWORD", "")
+    UDS_VERIFY_TLS = os.environ.get("UDS_VERIFY_TLS", "false").lower() == "true"
+
 
 config = Config()

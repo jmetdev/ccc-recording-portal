@@ -25,6 +25,7 @@ export type Call = {
   status_message?: string | null;
   source: 'cucm' | 'webex' | string;
   legal_hold: boolean;
+  holding: boolean;
   sentiment: string | null;
   group_id: number | null;
 };
@@ -253,6 +254,7 @@ export const api = {
     deleteConnector: (id: number) =>
       request<{ status: string }>(`/tenant/connectors/${id}`, { method: 'DELETE' }),
     storageStats: () => request<StorageStats>('/tenant/storage-stats'),
+    licenseUsage: () => request<LicenseUsage>('/tenant/license-usage'),
   },
   webex: {
     status: () =>
@@ -363,6 +365,11 @@ export type TranscriptSearchResult = {
   headline: string;
   sentiment: string | null;
   rank: number;
+  near_name: string | null;
+  far_name: string | null;
+  near_addr: string | null;
+  far_addr: string | null;
+  started_at: string | null;
 };
 
 export type Transcript = {
@@ -386,6 +393,12 @@ export type TenantSettings = {
   name: string;
   slug: string;
   retention_days: number | null;
+};
+
+export type LicenseUsage = {
+  allotted: number | null;
+  used: number;
+  holding_calls: number;
 };
 
 export type ConnectorCredential = {

@@ -42,6 +42,7 @@ from app.schemas import (
 )
 from app.services.live_hub import live_hub
 from app.services.media_jobs import enqueue_job
+from app.services.recorded_extensions import group_id_for_extension, match_recorded_extension
 from app.services.storage import connector_media_key, get_storage
 from app.services.transcription import is_transcription_enabled
 
@@ -122,6 +123,14 @@ async def v2_call_start(
         # upstream id so a re-poll never creates a second call.
         return {"status": "duplicate", "call_id": existing.id}
 
+    matched = await match_recorded_extension(db, payload.near_addr, tenant_id=cred.tenant_id)
+    if matched:
+        group_id = group_id_for_extension(matched)
+        holding = False
+    else:
+        group_id = None
+        holding = True
+
     call = Call(
         tenant_id=cred.tenant_id,
         refci=payload.refci,
@@ -135,6 +144,8 @@ async def v2_call_start(
         far_name=payload.far_name,
         direction=payload.direction,
         status=CallStatus.RECORDING,
+        group_id=group_id,
+        holding=holding,
     )
     if payload.started_at:
         call.started_at = payload.started_at

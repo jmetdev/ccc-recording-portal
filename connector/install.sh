@@ -4,7 +4,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/jmetdev/ccc-recording-portal/main/connector/install.sh \
 #     | sudo bash -s -- --token ccck_XXXX --portal https://recorddev.cloudcorecollab.com \
-#       --cucm-nodes 172.25.100.10,172.25.100.11,172.25.100.30
+#       --cucm-nodes 172.25.100.10,172.25.100.11,172.25.100.30 \
+#       --uds-url https://172.25.100.11:8443 --uds-user svc --uds-password secret
 #
 # Installs Docker-CE, lays out the mount dirs, downloads the connector bundle,
 # renders FreeSWITCH ACL + BIB dialplan from --cucm-nodes, writes .env
@@ -21,6 +22,9 @@ set -euo pipefail
 TOKEN=""
 PORTAL="https://dev.cloudcorecollab.com"
 CUCM_NODES=""
+UDS_URL=""
+UDS_USER=""
+UDS_PASSWORD=""
 DATA_DIR="/opt/ccc-connector"
 WHISPER_MODEL="base"
 TRANSCRIBE="true"
@@ -31,6 +35,9 @@ while [ $# -gt 0 ]; do
     --token) TOKEN="$2"; shift 2;;
     --portal) PORTAL="$2"; shift 2;;
     --cucm-nodes) CUCM_NODES="$2"; shift 2;;
+    --uds-url) UDS_URL="$2"; shift 2;;
+    --uds-user) UDS_USER="$2"; shift 2;;
+    --uds-password) UDS_PASSWORD="$2"; shift 2;;
     --data-dir) DATA_DIR="$2"; shift 2;;
     --whisper-model) WHISPER_MODEL="$2"; shift 2;;
     --no-transcribe) TRANSCRIBE="false"; shift;;
@@ -190,6 +197,14 @@ WHISPER_MODEL=$WHISPER_MODEL
 TRANSCRIBE=$TRANSCRIBE
 CUCM_NODES=$CUCM_NODES
 EOF
+if [ -n "$UDS_URL" ]; then
+  cat >> "$DATA_DIR/src/.env" <<EOF
+UDS_BASE_URL=$UDS_URL
+UDS_USER=$UDS_USER
+UDS_PASSWORD=$UDS_PASSWORD
+UDS_VERIFY_TLS=false
+EOF
+fi
 chmod 600 "$DATA_DIR/src/.env"
 
 # 6) Build + start -----------------------------------------------------------

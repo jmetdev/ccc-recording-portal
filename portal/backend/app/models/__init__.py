@@ -353,6 +353,8 @@ class Call(Base):
     status_message: Mapped[str | None] = mapped_column(Text)
     # Excluded from retention sweeps while true (litigation/public-records hold).
     legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # True when near-end DN is not an enabled recorded extension (7-day holding pool).
+    holding: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), index=True)
 
     group: Mapped["Group | None"] = relationship(back_populates="calls")

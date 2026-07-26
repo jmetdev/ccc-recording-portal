@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMediaQuery } from '@mantine/hooks';
 import {
@@ -58,24 +58,31 @@ const SENTIMENT_COLORS: Record<string, string> = {
 
 const PAGE_SIZE = 50;
 
-function CallList({ selectedId }: { selectedId: number | null }) {
+function CallList({ selectedId, holdingOnly }: { selectedId: number | null; holdingOnly: boolean }) {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(holdingOnly);
   const [direction, setDirection] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [sentiment, setSentiment] = useState<string | null>(null);
+  const [holding, setHolding] = useState(holdingOnly);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
+    setHolding(holdingOnly);
+    if (holdingOnly) setShowFilters(true);
+  }, [holdingOnly]);
+
+  useEffect(() => {
     setPage(1);
-  }, [q, direction, source, sentiment]);
+  }, [q, direction, source, sentiment, holding]);
 
   const params: Record<string, string> = { page: String(page), page_size: String(PAGE_SIZE) };
   if (q) params.q = q;
   if (direction) params.direction = direction;
   if (source) params.source = source;
   if (sentiment) params.sentiment = sentiment;
+  if (holding) params.holding = 'true';
 
   const { data, isLoading } = useQuery({
     queryKey: ['calls', params],
@@ -138,6 +145,12 @@ function CallList({ selectedId }: { selectedId: number | null }) {
               value={sentiment}
               onChange={setSentiment}
             />
+            <Switch
+              size="xs"
+              label="Unconfigured only"
+              checked={holding}
+              onChange={(e) => setHolding(e.currentTarget.checked)}
+            />
           </Stack>
         </Collapse>
       </Box>
@@ -175,7 +188,14 @@ function CallList({ selectedId }: { selectedId: number | null }) {
                         {c.duration_s != null ? formatTime(c.duration_s) : '—'}
                       </div>
                     </Box>
-                    <SourceBadge source={c.source} />
+                    <Group gap={4}>
+                      {c.holding && (
+                        <Badge size="xs" variant="light" color="orange">
+                          Unconfigured
+                        </Badge>
+                      )}
+                      <SourceBadge source={c.source} />
+                    </Group>
                   </button>
                 </li>
               );
@@ -309,6 +329,11 @@ function CallDetail({ callId }: { callId: number }) {
                 {c?.legal_hold && (
                   <Badge color="orange" variant="light" leftSection={<IconLock size={11} />}>
                     Legal hold
+                  </Badge>
+                )}
+                {c?.holding && (
+                  <Badge color="gray" variant="light">
+                    Unconfigured
                   </Badge>
                 )}
               </Group>
@@ -510,8 +535,10 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
 
 export function RecordingsPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const callId = id ? Number(id) : null;
+  const holdingOnly = searchParams.get('holding') === 'true';
   const stats = useQuery({ queryKey: ['dashboard-stats'], queryFn: api.dashboardStats });
   // Below this width the list and detail panes take turns instead of sharing
   // the row — a shrunk three-pane layout reads as cramped, not responsive.
@@ -535,7 +562,7 @@ export function RecordingsPage() {
         )}
       </Group>
       <div className={classes.layout}>
-        {showList && <CallList selectedId={callId} />}
+        {showList && <CallList selectedId={callId} holdingOnly={holdingOnly} />}
         {showDetail &&
           (callId != null ? (
             <CallDetail key={callId} callId={callId} />

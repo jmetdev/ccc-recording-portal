@@ -28,6 +28,7 @@ from app.schemas import (
     ConnectorCredentialCreate,
     ConnectorCredentialCreated,
     ConnectorCredentialOut,
+    LicenseUsageOut,
     StorageStats,
     TenantSettingsOut,
     TenantSettingsUpdate,
@@ -35,6 +36,8 @@ from app.schemas import (
 from app.services import webex_connector as wxc
 from app.services.audit import record_audit
 from app.services.call_stats import distinct_call_count_stmt
+from app.services.recorded_extensions import count_enabled_extensions
+from app.services.suite_entitlements import recording_seats_for_org
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
@@ -75,6 +78,26 @@ async def update_tenant_settings(
     return TenantSettingsOut(
         name=tenant.name, slug=tenant.slug, retention_days=tenant.retention_days
     )
+
+
+@router.get("/license-usage", response_model=LicenseUsageOut)
+async def license_usage(
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
+    used = await count_enabled_extensions(db, user.tenant_id)
+    holding_calls = (
+        await db.execute(
+            select(func.count())
+            .select_from(Call)
+            .where(Call.tenant_id == user.tenant_id, Call.holding.is_(True))
+        )
+    ).scalar_one()
+    allotted = await recording_seats_for_org(tenant.webex_org_id)
+    return LicenseUsageOut(allotted=allotted, used=used, holding_calls=holding_calls)
 
 
 @router.get("/connectors", response_model=list[ConnectorCredentialOut])

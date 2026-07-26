@@ -86,17 +86,9 @@ def _claim_roles(claims: dict) -> list[str]:
 
 
 async def _suite_tenant_by_org(org_id: str) -> dict | None:
-    if not settings.suite_api_url or not settings.suite_internal_token:
-        return None
-    url = f"{settings.suite_api_url.rstrip('/')}/api/internal/tenants/by-org/{org_id}"
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(url, headers={"x-internal-token": settings.suite_internal_token})
-    except httpx.HTTPError:
-        return None
-    if resp.status_code != 200:
-        return None
-    return resp.json()
+    from app.services.suite_entitlements import fetch_suite_tenant_by_org
+
+    return await fetch_suite_tenant_by_org(org_id)
 
 
 async def _assign_role_if_missing(db: AsyncSession, user_id: int, role_id: int) -> bool:

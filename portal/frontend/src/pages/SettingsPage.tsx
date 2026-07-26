@@ -186,12 +186,14 @@ function ExtensionsTab() {
   const qc = useQueryClient();
   const groups = useQuery({ queryKey: ['admin-groups'], queryFn: api.admin.groups });
   const extensions = useQuery({ queryKey: ['admin-extensions'], queryFn: api.admin.extensions });
+  const licenseUsage = useQuery({ queryKey: ['license-usage'], queryFn: api.tenant.licenseUsage });
 
   const [extForm, setExtForm] = useState({ extension: '', label: '', enabled: true, group_ids: [] as number[] });
   const createExt = useMutation({
     mutationFn: () => api.admin.createExtension(extForm),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-extensions'] });
+      qc.invalidateQueries({ queryKey: ['license-usage'] });
       setExtForm({ extension: '', label: '', enabled: true, group_ids: [] });
     },
   });
@@ -209,6 +211,7 @@ function ExtensionsTab() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-extensions'] });
+      qc.invalidateQueries({ queryKey: ['license-usage'] });
       setEditExt(null);
     },
   });
@@ -220,6 +223,23 @@ function ExtensionsTab() {
 
   return (
     <Stack gap="md">
+      {licenseUsage.data && (
+        <Card padding="md" radius="md" withBorder>
+          <Title order={4} mb="xs">
+            Licenses
+          </Title>
+          <Text size="sm">
+            Recording licenses:{' '}
+            <strong>
+              {licenseUsage.data.used} used
+              {licenseUsage.data.allotted != null ? ` of ${licenseUsage.data.allotted} allotted` : ''}
+            </strong>
+            {licenseUsage.data.holding_calls > 0
+              ? ` · ${licenseUsage.data.holding_calls} call${licenseUsage.data.holding_calls === 1 ? '' : 's'} from unconfigured extensions`
+              : ''}
+          </Text>
+        </Card>
+      )}
       <Group align="flex-end">
         <TextInput label="Extension" value={extForm.extension} onChange={(e) => setExtForm({ ...extForm, extension: e.target.value })} />
         <TextInput label="Label" value={extForm.label} onChange={(e) => setExtForm({ ...extForm, label: e.target.value })} />
