@@ -194,6 +194,7 @@ function ExtensionsTab() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-extensions'] });
       qc.invalidateQueries({ queryKey: ['license-usage'] });
+      qc.invalidateQueries({ queryKey: ['calls'] });
       setExtForm({ extension: '', label: '', enabled: true, group_ids: [] });
     },
   });
@@ -212,6 +213,7 @@ function ExtensionsTab() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-extensions'] });
       qc.invalidateQueries({ queryKey: ['license-usage'] });
+      qc.invalidateQueries({ queryKey: ['calls'] });
       setEditExt(null);
     },
   });

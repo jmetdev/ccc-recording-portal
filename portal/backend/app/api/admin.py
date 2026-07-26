@@ -32,7 +32,11 @@ from app.schemas import (
     UserUpdate,
 )
 from app.services.audit import record_audit
-from app.services.recorded_extensions import count_enabled_extensions
+from app.services.recorded_extensions import (
+    count_enabled_extensions,
+    group_id_for_extension,
+    release_holding_calls_for_extension,
+)
 from app.services.retention import purge_call_media
 from app.services.storage import get_storage
 from app.services.suite_entitlements import recording_seats_for_org
@@ -344,10 +348,16 @@ async def create_extension(
     db.add(ext)
     await db.flush()
     await set_extension_groups(db, ext, body.group_ids)
+    released = 0
+    if ext.enabled:
+        group_id = body.group_ids[0] if body.group_ids else None
+        released = await release_holding_calls_for_extension(
+            db, tenant_id=admin.tenant_id, extension=ext.extension, group_id=group_id
+        )
     await record_audit(
         db, tenant_id=admin.tenant_id, user=admin, action="admin.extension_create",
         resource_type="recorded_extension", resource_id=ext.id,
-        detail={"extension": ext.extension}, request=request,
+        detail={"extension": ext.extension, "released_holding": released}, request=request,
     )
     await db.commit()
     result = await db.execute(
@@ -384,10 +394,20 @@ async def update_extension(
     if body.group_ids is not None:
         await set_extension_groups(db, ext, body.group_ids)
         changed.append("group_ids")
+    released = 0
+    if ext.enabled:
+        if body.group_ids is not None:
+            group_id = body.group_ids[0] if body.group_ids else None
+        else:
+            group_id = group_id_for_extension(ext)
+        released = await release_holding_calls_for_extension(
+            db, tenant_id=admin.tenant_id, extension=ext.extension, group_id=group_id
+        )
     await record_audit(
         db, tenant_id=admin.tenant_id, user=admin, action="admin.extension_update",
         resource_type="recorded_extension", resource_id=ext.id,
-        detail={"extension": ext.extension, "changed": changed}, request=request,
+        detail={"extension": ext.extension, "changed": changed, "released_holding": released},
+        request=request,
     )
     await db.commit()
     result = await db.execute(
