@@ -19,6 +19,7 @@ export function SuiteHomePage() {
     retry: false,
   });
   const licensedByApp = new Map((entitlements ?? []).map((e) => [e.app, e]));
+  const recordingSeats = licensedByApp.get('recording')?.limits_json?.recording_seats;
   const apps = suiteApps().map((app) => {
     const entitlement = licensedByApp.get(app.id);
     return entitlement ? { ...app, licensed: entitlement.licensed } : app;
@@ -84,8 +85,10 @@ export function SuiteHomePage() {
           <Text className={classes.licenseTitle}>What you can access</Text>
           <Text className={classes.licenseBody}>
             This organization can open {licensedCount} of {apps.length} suite products in this
-            environment. Plan, seats, and usage will land here as entitlements move into the suite
-            portal.
+            environment.
+            {recordingSeats != null
+              ? ` Cloud Core Record is licensed for ${recordingSeats} recorded extension seat${recordingSeats === 1 ? '' : 's'}.`
+              : ''}
           </Text>
           <Group gap={8} mt="md">
             {apps

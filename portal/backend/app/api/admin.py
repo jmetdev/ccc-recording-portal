@@ -14,6 +14,7 @@ from app.models import (
     RecordedExtension,
     Role,
     RolePermission,
+    Tenant,
     User,
     recorded_extension_groups,
     user_roles,
@@ -31,8 +32,10 @@ from app.schemas import (
     UserUpdate,
 )
 from app.services.audit import record_audit
+from app.services.recorded_extensions import count_enabled_extensions
 from app.services.retention import purge_call_media
 from app.services.storage import get_storage
+from app.services.suite_entitlements import recording_seats_for_org
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -73,6 +76,23 @@ async def set_extension_groups(db: AsyncSession, ext: RecordedExtension, group_i
     for group_id in group_ids:
         await db.execute(
             recorded_extension_groups.insert().values(extension_id=ext.id, group_id=group_id)
+        )
+
+
+async def _enforce_recording_seat_cap(
+    db: AsyncSession, tenant_id: int, *, enabling: bool, currently_enabled: bool
+) -> None:
+    if not enabling or currently_enabled:
+        return
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
+    allotted = await recording_seats_for_org(tenant.webex_org_id)
+    if allotted is None:
+        return
+    used = await count_enabled_extensions(db, tenant_id)
+    if used >= allotted:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Recording seat limit reached ({used} of {allotted} allotted). Disable another extension or request more seats.",
         )
 
 
@@ -318,6 +338,7 @@ async def create_extension(
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
+    await _enforce_recording_seat_cap(db, admin.tenant_id, enabling=body.enabled, currently_enabled=False)
     data = body.model_dump(exclude={"group_ids"})
     ext = RecordedExtension(**data, tenant_id=admin.tenant_id)
     db.add(ext)
@@ -353,6 +374,10 @@ async def update_extension(
     ext = result.scalar_one_or_none()
     if not ext:
         raise HTTPException(status_code=404, detail="Extension not found")
+    enabling = body.enabled is True and not ext.enabled
+    await _enforce_recording_seat_cap(
+        db, admin.tenant_id, enabling=enabling, currently_enabled=ext.enabled
+    )
     changed = list(body.model_dump(exclude_unset=True, exclude={"group_ids"}).keys())
     for k, v in body.model_dump(exclude_unset=True, exclude={"group_ids"}).items():
         setattr(ext, k, v)

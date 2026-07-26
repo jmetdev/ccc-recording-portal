@@ -18,12 +18,14 @@ from pydantic import BaseModel
 from app import pipeline, spool
 from app.config import config
 from app.portal import PortalClient
+from app.uds import UdsClient
 from app.workers import router as workers_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("connector")
 
 portal = PortalClient()
+uds = UdsClient()
 _stop = threading.Event()
 
 _META_FIELDS = (
@@ -114,6 +116,10 @@ class FailIn(BaseModel):
 def ingest_start(body: StartIn):
     data = body.model_dump()
     meta = {k: data[k] for k in _META_FIELDS if data.get(k) is not None}
+    if meta.get("near_addr") and not meta.get("near_name"):
+        name = uds.lookup_display_name(meta["near_addr"])
+        if name:
+            meta["near_name"] = name
     spool.record_start(body.refci, meta)
     # Best-effort: register the call now so it shows live in the portal. If the
     # portal is unreachable, the pipeline will (re)start it at complete time.

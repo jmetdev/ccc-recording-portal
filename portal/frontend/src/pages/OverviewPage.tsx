@@ -103,6 +103,12 @@ export function OverviewPage() {
     enabled: canManage,
     retry: false,
   });
+  const { data: licenseUsage } = useQuery({
+    queryKey: ['license-usage'],
+    queryFn: api.tenant.licenseUsage,
+    enabled: canManage,
+    retry: false,
+  });
   const connectors = systemStatus?.connectors ?? [];
   const connectorMissing = canManage && systemStatus != null && connectors.length === 0;
 
@@ -151,6 +157,21 @@ export function OverviewPage() {
         <Alert color="red" title="Could not load dashboard">
           Your account is missing call-viewing permissions for this tenant. Sign out and back in if
           you were just made the tenant admin, or ask a platform operator to assign the admin role.
+        </Alert>
+      )}
+
+      {canManage && (licenseUsage?.holding_calls ?? 0) > 0 && (
+        <Alert color="orange" title="Unconfigured extensions are being recorded">
+          {licenseUsage!.holding_calls} call{licenseUsage!.holding_calls === 1 ? '' : 's'} arrived from
+          extensions that are not enabled for recording. Review them in{' '}
+          <Anchor component={Link} to="/recordings?holding=true" fw={600}>
+            Recordings
+          </Anchor>{' '}
+          or add the extensions under{' '}
+          <Anchor component={Link} to="/settings?tab=extensions" fw={600}>
+            Settings → Extensions
+          </Anchor>
+          . Holding calls are automatically deleted after 7 days.
         </Alert>
       )}
 

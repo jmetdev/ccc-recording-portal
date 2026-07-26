@@ -1,2 +1,5 @@
 httpx==0.28.1
 faster-whisper==1.1.0
+# faster-whisper imports requests at module load (utils.download_model); without
+# it the sidecar crash-loops with ModuleNotFoundError and never claims jobs.
+requests>=2.32.0

@@ -32,11 +32,22 @@ export function ConnectorsTab() {
   const [name, setName] = useState('');
   const [kind, setKind] = useState<string | null>('cucm');
   const [cucmNodes, setCucmNodes] = useState('');
+  const [udsUrl, setUdsUrl] = useState('');
+  const [udsUser, setUdsUser] = useState('');
+  const [udsPassword, setUdsPassword] = useState('');
   const [created, setCreated] = useState<ConnectorCredentialCreated | null>(null);
 
   const installCmd =
     created && created.kind === 'cucm'
-      ? `curl -fsSL https://raw.githubusercontent.com/jmetdev/ccc-recording-portal/main/connector/install.sh \\\n  | sudo bash -s -- --token ${created.token} --portal ${window.location.origin} --cucm-nodes ${cucmNodes.replace(/\s+/g, '')}`
+      ? [
+          `curl -fsSL https://raw.githubusercontent.com/jmetdev/ccc-recording-portal/main/connector/install.sh \\`,
+          `  | sudo bash -s -- --token ${created.token} --portal ${window.location.origin} --cucm-nodes ${cucmNodes.replace(/\s+/g, '')}`,
+          udsUrl.trim() ? `  --uds-url ${udsUrl.trim()}` : '',
+          udsUrl.trim() && udsUser.trim() ? `  --uds-user ${udsUser.trim()}` : '',
+          udsUrl.trim() && udsPassword.trim() ? `  --uds-password ${udsPassword.trim()}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
       : '';
 
   const create = useMutation({
@@ -168,14 +179,39 @@ export function ConnectorsTab() {
           <TextInput label="Name" placeholder="hq-cucm-edge" value={name} onChange={(e) => setName(e.currentTarget.value)} />
           <Select label="Kind" data={['cucm', 'webex']} value={kind} onChange={setKind} />
           {kind === 'cucm' && (
-            <TextInput
-              label="CUCM node IPs"
-              description="Required — comma-separated cluster node addresses written into FreeSWITCH ACL + BIB dialplan"
-              placeholder="10.0.0.10, 10.0.0.11"
-              value={cucmNodes}
-              onChange={(e) => setCucmNodes(e.currentTarget.value)}
-              required
-            />
+            <>
+              <TextInput
+                label="CUCM node IPs"
+                description="Required — comma-separated cluster node addresses written into FreeSWITCH ACL + BIB dialplan"
+                placeholder="10.0.0.10, 10.0.0.11"
+                value={cucmNodes}
+                onChange={(e) => setCucmNodes(e.currentTarget.value)}
+                required
+              />
+              <TextInput
+                label="Cisco UDS URL (optional)"
+                description="Enriches near-end display names via on-prem UDS, e.g. https://172.25.100.11:8443"
+                placeholder="https://172.25.100.11:8443"
+                value={udsUrl}
+                onChange={(e) => setUdsUrl(e.currentTarget.value)}
+              />
+              {udsUrl.trim() && (
+                <>
+                  <TextInput
+                    label="UDS username (optional)"
+                    description="HTTP Basic auth — only needed if UDS rejects unauthenticated requests"
+                    value={udsUser}
+                    onChange={(e) => setUdsUser(e.currentTarget.value)}
+                  />
+                  <TextInput
+                    label="UDS password (optional)"
+                    type="password"
+                    value={udsPassword}
+                    onChange={(e) => setUdsPassword(e.currentTarget.value)}
+                  />
+                </>
+              )}
+            </>
           )}
           <Button
             onClick={() => create.mutate()}
@@ -246,6 +282,19 @@ export function ConnectorsTab() {
                   scripts, then starts FreeSWITCH, the connector, and the whisper transcription
                   sidecar (ESL healthcheck + SYS_NICE).
                 </List.Item>
+                {udsUrl.trim() && (
+                  <List.Item>
+                    Configures Cisco UDS at{' '}
+                    <Text span ff="monospace" fz="xs">
+                      {udsUrl.trim()}
+                    </Text>{' '}
+                    to enrich near-end display names when BIB does not supply{' '}
+                    <Text span ff="monospace" fz="xs">
+                      near_name
+                    </Text>
+                    .
+                  </List.Item>
+                )}
                 <List.Item>
                   Point CUCM Built-In-Bridge recording at this host SIP{' '}
                   <Text span ff="monospace" fz="xs">

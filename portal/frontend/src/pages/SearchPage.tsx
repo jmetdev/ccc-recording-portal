@@ -35,6 +35,10 @@ function Headline({ text }: { text: string }) {
   return <>{nodes}</>;
 }
 
+function shortDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export function SearchPage() {
   const { openCall } = useCallPlayer();
   const [q, setQ] = useState('');
@@ -116,12 +120,16 @@ export function SearchPage() {
           .
         </Text>
       )}
-      {results.map((r) => (
+      {results.map((r) => {
+        const title = r.far_name || r.far_addr || 'Unknown';
+        const nearLabel = r.near_name || r.near_addr || '—';
+        const dateLabel = r.started_at ? shortDate(r.started_at) : null;
+        return (
         <Card key={r.transcript_id} padding="md" radius="md">
           <Group justify="space-between" mb="xs">
             <Group gap={6}>
-              <Text size="sm" c="dimmed" ff="monospace">
-                Call #{r.call_id}
+              <Text size="sm" fw={600}>
+                {title}
               </Text>
               <Badge
                 size="xs"
@@ -141,11 +149,16 @@ export function SearchPage() {
               Open recording
             </Button>
           </Group>
+          <Text size="xs" c="dimmed" mb={6}>
+            Near: {nearLabel}
+            {dateLabel ? ` · ${dateLabel}` : ''}
+          </Text>
           <Text>
             <Headline text={r.headline} />
           </Text>
         </Card>
-      ))}
+        );
+      })}
       {!loading && searched && results.length === 0 && (
         <Text c="dimmed">
           No results{total === 0 ? ' — no transcripts are indexed yet' : ''}. Try different keywords or clear

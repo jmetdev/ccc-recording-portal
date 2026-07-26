@@ -3,15 +3,15 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.models import Call, CallStatus, JobType, RecordedExtension, Recording, RecordingLeg
+from app.models import Call, CallStatus, JobType, Recording, RecordingLeg
 from app.schemas import IngestCompletePayload, IngestFailPayload, IngestStartPayload
 from app.services.audio_meta import duration_from_recording_files
 from app.services.live_hub import live_hub
 from app.services.media_jobs import enqueue_job
+from app.services.recorded_extensions import group_id_for_extension, match_recorded_extension
 from app.services.tenancy import get_default_tenant_id
 from app.services.transcription import is_transcription_enabled
 
@@ -21,22 +21,6 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 def verify_ingest_token(x_ingest_token: str | None = Header(default=None)):
     if x_ingest_token != settings.ingest_token:
         raise HTTPException(status_code=401, detail="Invalid ingest token")
-
-
-async def resolve_group_id(db: AsyncSession, near_addr: str | None, far_addr: str | None) -> int | None:
-    for addr in (near_addr, far_addr):
-        if not addr:
-            continue
-        ext = addr.split("@")[0] if "@" in addr else addr
-        result = await db.execute(
-            select(RecordedExtension)
-            .options(selectinload(RecordedExtension.groups))
-            .where(RecordedExtension.extension == ext, RecordedExtension.enabled.is_(True))
-        )
-        row = result.scalar_one_or_none()
-        if row and row.groups:
-            return row.groups[0].id
-    return None
 
 
 @router.post("/start", dependencies=[Depends(verify_ingest_token)])
@@ -61,7 +45,14 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
             if latest.status not in (CallStatus.COMPLETED, CallStatus.FAILED):
                 return {"status": "ok", "call_id": latest.id, "refci": payload.refci}
 
-    group_id = await resolve_group_id(db, payload.near_addr, payload.far_addr)
+    matched = await match_recorded_extension(db, payload.near_addr, tenant_id=tenant_id)
+    if matched:
+        group_id = group_id_for_extension(matched)
+        holding = False
+    else:
+        group_id = None
+        holding = True
+
     call = Call(
         tenant_id=tenant_id,
         refci=payload.refci,
@@ -74,6 +65,7 @@ async def ingest_start(payload: IngestStartPayload, db: AsyncSession = Depends(g
         direction=payload.direction,
         status=CallStatus.RECORDING,
         group_id=group_id,
+        holding=holding,
     )
     db.add(call)
     await db.commit()

@@ -139,6 +139,7 @@ class CallOut(BaseModel):
     status_message: str | None = None
     source: str = "cucm"
     legal_hold: bool = False
+    holding: bool = False
     group_id: int | None
     sentiment: str | None = None
 
@@ -216,6 +217,11 @@ class TranscriptSearchResult(BaseModel):
     headline: str
     sentiment: str | None
     rank: float
+    near_name: str | None = None
+    far_name: str | None = None
+    near_addr: str | None = None
+    far_addr: str | None = None
+    started_at: datetime | None = None
 
 
 class DashboardStats(BaseModel):
@@ -406,6 +412,12 @@ class TenantSettingsOut(BaseModel):
 class TenantSettingsUpdate(BaseModel):
     # Explicit null clears the policy (retain forever); omitted = unchanged.
     retention_days: int | None = Field(default=None, ge=1, le=36500)
+
+
+class LicenseUsageOut(BaseModel):
+    allotted: int | None
+    used: int
+    holding_calls: int
 
 
 class StorageSourceStat(BaseModel):

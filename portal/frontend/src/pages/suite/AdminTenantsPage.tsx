@@ -17,7 +17,7 @@ import {
 } from '@mantine/core';
 import { useAuth } from '../../auth/AuthContext';
 import { CloudCoreLogo } from '../../components/CloudCoreLogo';
-import { suiteApi, SuiteApp, SuiteTenant, SuiteTenantStatus } from '../../suite/api';
+import { suiteApi, SuiteApp, SuiteTenant, SuiteTenantStatus, EntitlementInput } from '../../suite/api';
 
 const APPS: { id: SuiteApp; label: string }[] = [
   { id: 'recording', label: 'Cloud Core Record' },
@@ -32,6 +32,7 @@ const STATUS_COLOR: Record<SuiteTenantStatus, string> = {
 };
 
 type EntitlementForm = Record<SuiteApp, boolean>;
+type SeatsForm = Partial<Record<SuiteApp, number | ''>>;
 
 function emptyEntitlements(): EntitlementForm {
   return { recording: false, fax: false, spam: false };
@@ -41,6 +42,29 @@ function entitlementsFromTenant(tenant: SuiteTenant): EntitlementForm {
   const form = emptyEntitlements();
   for (const e of tenant.entitlements) form[e.app] = e.licensed;
   return form;
+}
+
+function seatsFromTenant(tenant: SuiteTenant): SeatsForm {
+  const seats: SeatsForm = {};
+  for (const e of tenant.entitlements) {
+    if (e.app === 'recording' && e.limits_json?.recording_seats != null) {
+      seats.recording = Number(e.limits_json.recording_seats);
+    }
+  }
+  return seats;
+}
+
+function entitlementsPayload(
+  licensed: EntitlementForm,
+  seats: SeatsForm,
+): EntitlementInput[] {
+  return APPS.map((a) => {
+    const item: EntitlementInput = { app: a.id, licensed: licensed[a.id] };
+    if (a.id === 'recording' && licensed.recording && seats.recording !== '' && seats.recording != null) {
+      item.limits_json = { recording_seats: Number(seats.recording) };
+    }
+    return item;
+  });
 }
 
 export function AdminTenantsPage() {
@@ -71,12 +95,14 @@ export function AdminTenantsPage() {
   const [name, setName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [entitlements, setEntitlements] = useState<EntitlementForm>(emptyEntitlements());
+  const [recordingSeats, setRecordingSeats] = useState<number | ''>('');
 
   const resetCreateForm = () => {
     setSlug('');
     setName('');
     setAdminEmail('');
     setEntitlements(emptyEntitlements());
+    setRecordingSeats('');
     setError('');
   };
 
@@ -86,7 +112,7 @@ export function AdminTenantsPage() {
         slug,
         name,
         admin_email: adminEmail,
-        entitlements: APPS.map((a) => ({ app: a.id, licensed: entitlements[a.id] })),
+        entitlements: entitlementsPayload(entitlements, { recording: recordingSeats }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suite-tenants'] });
@@ -97,9 +123,9 @@ export function AdminTenantsPage() {
   });
 
   const updateEntitlementsMutation = useMutation({
-    mutationFn: (vars: { id: number; entitlements: EntitlementForm }) =>
+    mutationFn: (vars: { id: number; entitlements: EntitlementForm; seats: SeatsForm }) =>
       suiteApi.platform.updateTenant(vars.id, {
-        entitlements: APPS.map((a) => ({ app: a.id, licensed: vars.entitlements[a.id] })),
+        entitlements: entitlementsPayload(vars.entitlements, vars.seats),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suite-tenants'] });
@@ -190,7 +216,14 @@ export function AdminTenantsPage() {
               <Table.Td>
                 {t.entitlements
                   .filter((e) => e.licensed)
-                  .map((e) => APPS.find((a) => a.id === e.app)?.label ?? e.app)
+                  .map((e) => {
+                    const label = APPS.find((a) => a.id === e.app)?.label ?? e.app;
+                    const seats =
+                      e.app === 'recording' && e.limits_json?.recording_seats != null
+                        ? ` (${e.limits_json.recording_seats} seats)`
+                        : '';
+                    return `${label}${seats}`;
+                  })
                   .join(', ') || '—'}
               </Table.Td>
               <Table.Td>
@@ -201,6 +234,7 @@ export function AdminTenantsPage() {
                     onClick={() => {
                       setEditTenant(t);
                       setEntitlements(entitlementsFromTenant(t));
+                      setRecordingSeats(seatsFromTenant(t).recording ?? '');
                       setError('');
                     }}
                   >
@@ -295,6 +329,19 @@ export function AdminTenantsPage() {
                 />
               ))}
             </Stack>
+            {entitlements.recording && (
+              <TextInput
+                label="Recording seats"
+                description="Maximum enabled recorded extensions for this tenant"
+                type="number"
+                min={1}
+                value={recordingSeats}
+                onChange={(e) => {
+                  const raw = e.currentTarget.value;
+                  setRecordingSeats(raw === '' ? '' : Math.max(1, Number(raw)));
+                }}
+              />
+            )}
           </Box>
           <Button
             fullWidth
@@ -323,10 +370,30 @@ export function AdminTenantsPage() {
               />
             ))}
           </Stack>
+          {entitlements.recording && (
+            <TextInput
+              label="Recording seats"
+              description="Maximum enabled recorded extensions for this tenant"
+              type="number"
+              min={1}
+              value={recordingSeats}
+              onChange={(e) => {
+                const raw = e.currentTarget.value;
+                setRecordingSeats(raw === '' ? '' : Math.max(1, Number(raw)));
+              }}
+            />
+          )}
           <Button
             fullWidth
             loading={updateEntitlementsMutation.isPending}
-            onClick={() => editTenant && updateEntitlementsMutation.mutate({ id: editTenant.id, entitlements })}
+            onClick={() =>
+              editTenant &&
+              updateEntitlementsMutation.mutate({
+                id: editTenant.id,
+                entitlements,
+                seats: { recording: recordingSeats },
+              })
+            }
           >
             Save
           </Button>

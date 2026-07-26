@@ -159,6 +159,7 @@ async def list_calls(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     legal_hold: bool | None = None,
+    holding: bool | None = None,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -193,6 +194,8 @@ async def list_calls(
         filters.append(Call.started_at <= date_to)
     if legal_hold is not None:
         filters.append(Call.legal_hold.is_(legal_hold))
+    if holding is not None:
+        filters.append(Call.holding.is_(holding))
 
     # One row per refci — duplicate Call rows can exist from concurrent ingest/start.
     id_stmt = select(Call.id)
@@ -406,6 +409,11 @@ async def search_transcripts(
             Transcript.call_id,
             Transcript.leg,
             Transcript.sentiment,
+            Call.near_name,
+            Call.far_name,
+            Call.near_addr,
+            Call.far_addr,
+            Call.started_at,
             func.ts_rank(Transcript.search_tsv, ts_query).label("rank"),
             func.ts_headline("english", Transcript.text, ts_query).label("headline"),
         )
@@ -427,6 +435,11 @@ async def search_transcripts(
             headline=r.headline,
             sentiment=r.sentiment,
             rank=float(r.rank),
+            near_name=r.near_name,
+            far_name=r.far_name,
+            near_addr=r.near_addr,
+            far_addr=r.far_addr,
+            started_at=r.started_at,
         )
         for r in result.all()
     ]
