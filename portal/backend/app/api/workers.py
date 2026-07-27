@@ -10,6 +10,8 @@ from app.core.database import get_db
 from app.models import Job, JobStatus, JobType
 from app.schemas import JobClaim, JobComplete, RecordingUpdate, TranscriptCreate
 from app.services.call_status import sync_call_status_from_jobs
+from app.services.media_cleanup import purge_near_far_mono_media
+from app.services.transcription import is_transcription_enabled
 
 router = APIRouter(prefix="/workers", tags=["workers"])
 
@@ -70,6 +72,13 @@ async def complete_job(job_id: int, body: JobComplete, db: AsyncSession = Depend
     call_id = job.payload.get("call_id")
     if call_id is not None:
         await sync_call_status_from_jobs(db, int(call_id))
+        # Stereo/mix is enough for playback once transcription finishes (or when
+        # transcription is off and media convert is done). Drop near/far monos.
+        if job.status == JobStatus.COMPLETED:
+            if job.job_type == JobType.TRANSCRIBE or (
+                job.job_type == JobType.MEDIA_CONVERT and not is_transcription_enabled()
+            ):
+                await purge_near_far_mono_media(db, int(call_id))
 
     await db.commit()
     return {"status": "ok"}

@@ -303,8 +303,13 @@ function CallDetail({ callId }: { callId: number }) {
     queryFn: () => api.getRecordings(callId),
     refetchInterval: (query) => {
       const items = query.state.data ?? [];
-      const pending = items.length === 0 || items.some((r) => !recordingHasMedia(r));
-      return pending ? 3000 : false;
+      // Near/far monos may be purged after transcription; stereo/mix alone is enough.
+      const hasPlayable = items.some(
+        (r) =>
+          recordingHasMedia(r) &&
+          (r.leg === 'stereo' || r.leg === 'mix' || r.leg === 'near' || r.leg === 'far'),
+      );
+      return hasPlayable ? false : 3000;
     },
   });
 

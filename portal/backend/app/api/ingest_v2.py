@@ -41,6 +41,7 @@ from app.schemas import (
     V2TranscriptCreate,
 )
 from app.services.live_hub import live_hub
+from app.services.media_cleanup import purge_near_far_mono_media
 from app.services.media_jobs import enqueue_job
 from app.services.recorded_extensions import group_id_for_extension, match_recorded_extension
 from app.services.storage import connector_media_key, get_storage
@@ -312,8 +313,30 @@ async def v2_create_transcript(
         .where(Transcript.id == transcript.id)
         .values(search_tsv=func.to_tsvector("english", payload.text))
     )
+    # Near/far monos are only needed for Whisper; drop them once a transcript lands
+    # and stereo/mix playback media is already on the call.
+    await purge_near_far_mono_media(db, call.id)
     await db.commit()
     return {"status": "ok", "transcript_id": transcript.id}
+
+
+@router.post("/ingest/calls/{call_id}/purge-mono")
+async def v2_purge_mono_media(
+    call_id: int,
+    cred: ConnectorCredential = Depends(get_connector),
+    db: AsyncSession = Depends(get_db),
+):
+    """Drop near/far mono media after on-prem transcription (or when disabled)."""
+    call = (
+        await db.execute(
+            select(Call).where(Call.id == call_id, Call.tenant_id == cred.tenant_id)
+        )
+    ).scalar_one_or_none()
+    if call is None:
+        raise HTTPException(status_code=404, detail="Call not found")
+    removed = await purge_near_far_mono_media(db, call.id)
+    await db.commit()
+    return {"status": "ok", "removed": removed}
 
 
 @router.get("/ingest/calls/untranscribed")

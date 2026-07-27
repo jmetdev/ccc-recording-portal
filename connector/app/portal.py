@@ -73,6 +73,11 @@ class PortalClient:
         r = self._client.post(f"{self._base}/ingest/calls/{call_id}/transcript", json=body)
         r.raise_for_status()
 
+    def purge_mono(self, call_id: int) -> None:
+        """Ask the portal to delete near/far mono recordings (keep stereo/mix)."""
+        r = self._client.post(f"{self._base}/ingest/calls/{call_id}/purge-mono")
+        r.raise_for_status()
+
     def complete(self, refci: str, duration_s: float | None) -> None:
         body = {"refci": refci, "processed": True}
         if duration_s is not None:

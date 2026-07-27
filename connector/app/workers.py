@@ -67,6 +67,21 @@ def complete_job(job_id: int, body: JobCompleteIn):
             return {"status": "abandoned"}
         spool.mark_retry(job_id, attempts)
         return {"status": "retry"}
+
+    # Whisper is done with near/far WAVs — keep stereo only.
+    row = spool.get_job(job_id)
+    if row is not None:
+        try:
+            from app.pipeline import finish_mono_cleanup
+
+            payload = json.loads(row["payload_json"] or "{}")
+            call_id = payload.get("call_id")
+            paths = payload.get("paths") or {}
+            if call_id is not None and paths:
+                finish_mono_cleanup(PortalClient(), int(call_id), paths)
+        except Exception as exc:  # noqa: BLE001 - never block job completion
+            logger.warning("mono cleanup after transcribe job %s failed: %s", job_id, exc)
+
     spool.mark_done(job_id)
     return {"status": "ok", "result": body.result}
 

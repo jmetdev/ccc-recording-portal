@@ -26,6 +26,32 @@ def _ensure_call_id(portal: PortalClient, refci: str) -> int:
     return call_id
 
 
+def delete_local_mono_legs(paths: dict) -> None:
+    """Remove local near/far WAV/M4A after transcription; keep stereo."""
+    for leg in ("near", "far"):
+        rel = paths.get(leg)
+        if not rel:
+            continue
+        wav = _abs(rel)
+        m4a = os.path.splitext(wav)[0] + ".m4a"
+        for path in (wav, m4a):
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+                    logger.info("deleted local mono media %s", path)
+            except OSError as exc:
+                logger.warning("failed to delete local mono media %s: %s", path, exc)
+
+
+def finish_mono_cleanup(portal: PortalClient, call_id: int, paths: dict) -> None:
+    """Drop near/far on portal + local disk once stereo is enough."""
+    delete_local_mono_legs(paths)
+    try:
+        portal.purge_mono(call_id)
+    except Exception as exc:  # noqa: BLE001 - local delete already done
+        logger.warning("portal purge-mono failed for call %s: %s", call_id, exc)
+
+
 def process_complete(portal: PortalClient, refci: str, files: dict, duration_s: float | None) -> None:
     call_id = _ensure_call_id(portal, refci)
 
@@ -58,6 +84,9 @@ def process_complete(portal: PortalClient, refci: str, files: dict, duration_s: 
             {"call_id": call_id, "paths": uploaded_rels},
         )
         logger.info("call %s queued for whisper transcription", refci)
+    elif uploaded_rels:
+        # No Whisper: stereo alone is enough for playback.
+        finish_mono_cleanup(portal, call_id, uploaded_rels)
 
 
 def process_fail(portal: PortalClient, refci: str, reason: str | None, duration_s: float | None) -> None:
