@@ -554,6 +554,27 @@ def _sanitize_failure(row: dict[str, Any]) -> dict[str, Any]:
     return {**row, "near_addr": None, "far_addr": None}
 
 
+def _webex_serviceapp_health() -> dict[str, Any]:
+    """Deployment-level Webex Service App readiness (not per-tenant authorize)."""
+    from app.services import webex_serviceapp as wx
+
+    deployment = wx.serviceapp_deployment_status()
+    configured = bool(deployment.get("configured"))
+    missing = deployment.get("missing_keys") or []
+    if configured:
+        detail = "Service App credentials configured"
+    elif missing:
+        detail = f"missing {', '.join(missing)}"
+    else:
+        detail = "not configured"
+    return {
+        "ok": configured,
+        "configured": configured,
+        "missing_keys": missing,
+        "detail": detail,
+    }
+
+
 async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin: bool) -> dict[str, Any]:
     docker_result, db_health, connectors, coverage = await asyncio.gather(
         inspect_containers(),
@@ -617,6 +638,7 @@ async def build_system_status(db: AsyncSession, tenant_id: int, *, is_superadmin
                 "whisper": whisper,
                 **coverage,
             },
+            "webex_serviceapp": _webex_serviceapp_health(),
         },
         "recent_failures": failures,
         # Raw logs are superadmin-only (see /system/logs); an empty list here

@@ -184,33 +184,42 @@ export function LoginPage() {
             )}
 
             {!webexPrimary && (
-              <form onSubmit={submit}>
-                <Stack>
-                  <TextInput
-                    label="Username or email"
-                    value={username}
-                    onChange={(e) => setUsername(e.currentTarget.value)}
-                    required
-                  />
-                  <PasswordInput
-                    label="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.currentTarget.value)}
-                    required
-                  />
-                  <Button type="submit" loading={loading} fullWidth>
-                    Sign in
-                  </Button>
-                  {sso?.enabled && (
+              <Stack>
+                {sso?.enabled ? (
+                  <>
+                    <Text size="sm" c="dimmed">
+                      Local accounts sign in through Keycloak (username/password in the Keycloak
+                      directory). Webex SSO users should use Continue with Webex.
+                    </Text>
+                    <Button fullWidth loading={ssoLoading} onClick={localKeycloakSignIn}>
+                      Sign in with a local account
+                    </Button>
                     <Button variant="subtle" fullWidth onClick={() => setShowPasswordForm(false)}>
                       Back to Webex sign-in
                     </Button>
-                  )}
-                  <Text size="xs" c="dimmed">
-                    Use your organization account if SSO is enabled.
-                  </Text>
-                </Stack>
-              </form>
+                  </>
+                ) : (
+                  <form onSubmit={submit}>
+                    <Stack>
+                      <TextInput
+                        label="Username or email"
+                        value={username}
+                        onChange={(e) => setUsername(e.currentTarget.value)}
+                        required
+                      />
+                      <PasswordInput
+                        label="Password"
+                        value={password}
+                        onChange={(e) => setPassword(e.currentTarget.value)}
+                        required
+                      />
+                      <Button type="submit" loading={loading} fullWidth>
+                        Sign in
+                      </Button>
+                    </Stack>
+                  </form>
+                )}
+              </Stack>
             )}
           </Stack>
         </Card>

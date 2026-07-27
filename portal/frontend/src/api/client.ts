@@ -153,6 +153,12 @@ export type SystemStatus = {
     };
     freeswitch: SipSwitchHealth;
     transcription: TranscriptionCoverage & { whisper?: WhisperHealth };
+    webex_serviceapp?: {
+      ok: boolean;
+      configured: boolean;
+      missing_keys?: string[];
+      detail?: string;
+    };
   };
   recent_failures: FailedCallRow[];
   log_sources: string[];
@@ -301,10 +307,18 @@ export const api = {
     status: () =>
       request<{
         serviceapp_configured: boolean;
+        missing_keys?: string[];
         authorized: boolean;
         status: string;
         org_id: string | null;
         org_name: string | null;
+        deployment?: { configured: boolean; missing_keys: string[] };
+        tenant?: {
+          authorized: boolean;
+          status: string;
+          org_id: string | null;
+          org_name: string | null;
+        };
       }>('/tenant/webex/status'),
     connectorStatus: () =>
       request<{ enabled: boolean; status: string | null; webhook_url: string | null }>(

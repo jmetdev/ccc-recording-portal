@@ -1,35 +1,46 @@
 # Setting up CCC Recording Portal with your Webex org
 
-Two quick steps for your Webex Control Hub administrator — everything else is
-automated.
+Two tracks — pick what applies. CUCM-only customers can skip the Service App.
 
-## 1. Authorize the Service App
+## Track A — Webex org APIs (groups, admins, Webex Calling)
+
+### 1. Authorize the Service App
 
 In [Control Hub](https://admin.webex.com) → **Management → Apps → Service
 Apps**, find **CCC Recording Portal**, review the requested permissions, and
 click **Authorize**. You must be a **Full Administrator**.
 
-The moment you authorize, your organization is automatically set up in the
-portal — no ticket, no waiting. If you're recognized as a Webex org admin,
-you'll land as an administrator the first time you log in; everyone else in
-your org lands as a regular user.
+After authorize:
 
-## 2. Log in with Webex
+- Your Webex org is linked for org-level APIs (admin detection, group sync).
+- In the recording portal, **Settings → Webex setup** shows **Authorized**.
+- **Settings → Group sync** can map Control Hub groups to portal roles.
 
-Go to the portal and choose **Continue with Webex**. That's it — one login
-gets you into the recording portal (and, if your organization also uses
-CloudCoreFax, that product too).
+This does **not** replace onboarding through CloudCoreCollab suite (pending
+workspace → confirm org). Suite handles licensing; the Service App unlocks
+Webex org APIs.
 
-## Optional, as you need them
+### 2. Log in with Webex
 
-- **Group-based access control**: if you want specific Webex Control Hub
-  groups to map to specific view permissions in the recording portal, an
-  admin can set that mapping under Settings once you're logged in.
-- **A cloud-hosted Webex recording connector**: if your organization records
-  calls through Webex Calling (rather than an on-prem CUCM), your dedicated
-  connector instance is provisioned automatically as part of onboarding — no
-  separate installation needed.
+Go to the portal and choose **Continue with Webex**. Org admins are elevated
+when Service App admin detection is available; everyone else lands with the
+default role until group mappings apply.
 
-If you *do* record through an on-prem CUCM deployment instead, that still
-uses the existing one-line installer under Settings → Connectors — nothing
-about that changes.
+### 3. Optional: hosted Webex Calling connector
+
+If you record through **Webex Calling** (not on-prem CUCM), open
+**Settings → Webex setup** and enable the hosted connector after authorize.
+Recording retrieval may require additional Webex compliance approvals — your
+CloudCoreCollab contact will confirm when that path is fully live.
+
+## Track B — On-prem CUCM only
+
+Use **Settings → Connectors** and the one-line edge installer. You do **not**
+need to authorize the Service App for CUCM recording, playback, or Whisper
+transcription.
+
+## Optional
+
+- **Group-based access**: Settings → Group sync (requires Track A authorize).
+- **CUCM + Webex**: you can run both — Service App for directory/groups, CUCM
+  connector for call recordings.

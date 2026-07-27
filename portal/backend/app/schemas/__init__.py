@@ -35,19 +35,22 @@ class UserOut(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     username: str
-    password: str = Field(min_length=6)
+    # Required unless enable_webex_sso — then optional (Webex login; password is Keycloak fallback).
+    password: str | None = Field(default=None, min_length=6)
     group_id: int | None = None
     role_ids: list[int] = []
     is_active: bool = True
+    enable_webex_sso: bool = False
 
 
 class UserUpdate(BaseModel):
     email: EmailStr | None = None
     username: str | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, min_length=6)
     group_id: int | None = None
     role_ids: list[int] | None = None
     is_active: bool | None = None
+    enable_webex_sso: bool | None = None
 
 
 class GroupOut(BaseModel):

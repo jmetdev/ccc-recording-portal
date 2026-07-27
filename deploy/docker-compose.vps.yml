@@ -59,6 +59,10 @@ services:
       SUITE_API_URL: http://suite-backend:8000
       SUITE_INTERNAL_TOKEN: ${SUITE_INTERNAL_TOKEN:-}
       WEBEX_CONNECTOR_BACKEND: ${WEBEX_CONNECTOR_BACKEND:-}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-ccc}
     volumes:
       - ${RECORDINGS_HOST_PATH:-./runtime/recordings}:/recordings:rw
     networks:

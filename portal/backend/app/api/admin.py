@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+import secrets
+
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +35,7 @@ from app.schemas import (
     UserUpdate,
 )
 from app.services.audit import record_audit
+from app.services import keycloak_admin as kc
 from app.services.recorded_extensions import (
     count_enabled_extensions,
     group_id_for_extension,
@@ -227,24 +231,71 @@ async def create_user(
     admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
+    if not body.enable_webex_sso and not body.password:
+        raise HTTPException(
+            status_code=422,
+            detail="Password is required when Webex SSO is not enabled",
+        )
+    plain_password = body.password
+    portal_password = plain_password or secrets.token_urlsafe(32)
+
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == admin.tenant_id))
+    ).scalar_one()
+    attrs: dict[str, list[str]] = {}
+    if tenant.webex_org_id:
+        attrs["webex_org_id"] = [tenant.webex_org_id]
+
+    # Prefer Keycloak first when configured so a failed KC create does not leave
+    # an orphan portal row. Portal DB remains source of app roles/permissions.
+    if kc.keycloak_admin_configured():
+        try:
+            await kc.upsert_user(
+                username=body.username,
+                email=str(body.email),
+                password=plain_password,  # None => Webex-only until password set
+                enabled=body.is_active,
+                attributes=attrs or None,
+            )
+        except kc.KeycloakAdminError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     user = User(
         tenant_id=admin.tenant_id,
-        email=body.email,
+        email=str(body.email),
         username=body.username,
-        password_hash=hash_password(body.password),
+        password_hash=hash_password(portal_password),
         group_id=body.group_id,
         is_active=body.is_active,
     )
     db.add(user)
-    await db.flush()
-    for role_id in body.role_ids:
-        await db.execute(user_roles.insert().values(user_id=user.id, role_id=role_id))
-    await record_audit(
-        db, tenant_id=admin.tenant_id, user=admin, action="admin.user_create",
-        resource_type="user", resource_id=user.id,
-        detail={"email": user.email, "username": user.username}, request=request,
-    )
-    await db.commit()
+    try:
+        await db.flush()
+        for role_id in body.role_ids:
+            await db.execute(user_roles.insert().values(user_id=user.id, role_id=role_id))
+        await record_audit(
+            db,
+            tenant_id=admin.tenant_id,
+            user=admin,
+            action="admin.user_create",
+            resource_type="user",
+            resource_id=user.id,
+            detail={
+                "email": user.email,
+                "username": user.username,
+                "enable_webex_sso": body.enable_webex_sso,
+                "keycloak_synced": kc.keycloak_admin_configured(),
+            },
+            request=request,
+        )
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A user with that email or username already exists",
+        ) from exc
+
     result = await db.execute(
         select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == user.id)
     )
@@ -269,7 +320,7 @@ async def update_user(
         raise HTTPException(status_code=404, detail="User not found")
     changed: list[str] = []
     if body.email is not None:
-        user.email = body.email
+        user.email = str(body.email)
         changed.append("email")
     if body.username is not None:
         user.username = body.username
@@ -288,11 +339,32 @@ async def update_user(
         for role_id in body.role_ids:
             await db.execute(user_roles.insert().values(user_id=user.id, role_id=role_id))
         changed.append("role_ids")
+
+    if kc.keycloak_admin_configured() and (
+        "email" in changed or "username" in changed or "password" in changed or "is_active" in changed
+    ):
+        try:
+            await kc.upsert_user(
+                username=user.username,
+                email=user.email,
+                password=body.password,
+                enabled=user.is_active,
+            )
+        except kc.KeycloakAdminError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     await record_audit(
         db, tenant_id=admin.tenant_id, user=admin, action="admin.user_update",
         resource_type="user", resource_id=user.id, detail={"changed": changed}, request=request,
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A user with that email or username already exists",
+        ) from exc
     result = await db.execute(
         select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == user_id)
     )
@@ -311,6 +383,7 @@ async def delete_user(
     ).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    username = user.username
     await record_audit(
         db, tenant_id=admin.tenant_id, user=admin, action="admin.user_delete",
         resource_type="user", resource_id=user.id,
@@ -318,6 +391,10 @@ async def delete_user(
     )
     await db.delete(user)
     await db.commit()
+    try:
+        await kc.delete_user(username=username)
+    except Exception:  # noqa: BLE001 - portal delete already committed
+        pass
     return {"status": "ok"}
 
 

@@ -62,7 +62,9 @@ the corresponding spike concludes, not before.
    CloudCoreFax's implementation).
 3. Mint an org token with the `spark:application` scope, used to call
    `POST /v1/applications/{appId}/token` for each authorizing org's token pair.
-4. Store the five values in SSM (SecureString, prefix `/ccc/dev/`):
+4. **VPS:** run `deploy/vps/enable-webex-serviceapp.sh` with the five env vars
+   (generates `CRYPTO_KEY` if missing). **AWS:** store the same values in SSM
+   (SecureString, prefix `/ccc/dev/`):
 
    ```
    aws ssm put-parameter --type SecureString --name /ccc/dev/webex_serviceapp_id            --value <APP_ID>
@@ -75,7 +77,8 @@ the corresponding spike concludes, not before.
    Also add a crypto key for at-rest token encryption:
    `aws ssm put-parameter --type SecureString --name /ccc/dev/crypto_key --value <FERNET_KEY>`.
 
-   Redeploy (`git push`) so the API task picks them up.
+   Redeploy / restart backend so `serviceapp_configured` becomes true. Health →
+   Core services shows **Webex Service App**.
 
 **Recommend one independent Service App registration per product** —
 ccc-recording-portal and CloudCoreFax each register their own; the Webex

@@ -92,10 +92,19 @@ async def wizard_status(
     db: AsyncSession = Depends(get_db),
 ):
     auth = await wx.get_auth(db, user.tenant_id)
+    deployment = wx.serviceapp_deployment_status()
     return {
-        "serviceapp_configured": wx.serviceapp_enabled(),
+        "serviceapp_configured": deployment["configured"],
+        "missing_keys": deployment["missing_keys"],
         "authorized": auth is not None and auth.status == "authorized",
         "status": auth.status if auth else "unauthorized",
         "org_id": auth.org_id if auth else None,
         "org_name": auth.org_name if auth else None,
+        "deployment": deployment,
+        "tenant": {
+            "authorized": auth is not None and auth.status == "authorized",
+            "status": auth.status if auth else "unauthorized",
+            "org_id": auth.org_id if auth else None,
+            "org_name": auth.org_name if auth else None,
+        },
     }

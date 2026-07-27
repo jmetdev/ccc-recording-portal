@@ -96,23 +96,38 @@ export function SetupWizardPage() {
                 </Stack>
               )}
               {recordingApp?.licensed && recordingApp.href && (
-                <Alert color="blue" title="Next: provision your recording connector">
-                  Open Cloud Core Record, then go to{' '}
-                  <Text span fw={600}>
-                    Settings → Connectors
-                  </Text>{' '}
-                  to create an on-prem CUCM credential (or finish Webex setup). Live recordings and
-                  connector status appear there once the edge stack is installed.
-                  <Button
-                    component="a"
-                    href={`${recordingApp.href}/settings?tab=connectors`}
-                    fullWidth
-                    radius="xl"
-                    mt="md"
-                    className={suiteLoginClasses.primaryBtn}
-                  >
-                    Open connector setup
-                  </Button>
+                <Alert color="blue" title="Recommended next steps">
+                  <Stack gap="xs">
+                    <Text size="sm">
+                      <strong>1. Authorize the Webex Service App</strong> (Full Admin in Control Hub →
+                      Management → Apps → Service Apps → CCC Recording Portal). Needed for org-admin
+                      detection, group sync, and Webex Calling recording pull — not required for
+                      on-prem CUCM.
+                    </Text>
+                    <Text size="sm">
+                      <strong>2. Provision a recording connector</strong> under Settings → Connectors
+                      (CUCM) or finish Settings → Webex setup (hosted Webex Calling).
+                    </Text>
+                    <Button
+                      component="a"
+                      href={`${recordingApp.href}/settings?tab=webex`}
+                      fullWidth
+                      radius="xl"
+                      mt="sm"
+                      className={suiteLoginClasses.primaryBtn}
+                    >
+                      Open Webex setup
+                    </Button>
+                    <Button
+                      component="a"
+                      href={`${recordingApp.href}/settings?tab=connectors`}
+                      fullWidth
+                      radius="xl"
+                      variant="default"
+                    >
+                      Open connector setup
+                    </Button>
+                  </Stack>
                 </Alert>
               )}
               {!recordingApp?.licensed && (

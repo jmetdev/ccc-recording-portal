@@ -211,6 +211,9 @@ export function HealthStatusPage() {
     (fs.fs_cli_configured
       ? `${fs.active_recording_channels} active recording channel(s)`
       : 'not configured');
+  const webexSa = status.services.webex_serviceapp;
+  const webexSaOk = webexSa?.ok ?? false;
+  const webexSaDetail = webexSa?.detail || 'not reported';
 
   return (
     <Stack gap="lg">
@@ -383,6 +386,15 @@ export function HealthStatusPage() {
             />
             <ServiceRow ok={Boolean(sipOk)} label="SIP Switch" detail={sipDetail} />
             <ServiceRow ok={Boolean(transcriptionOk)} label="Transcription" detail={transcriptionDetail} />
+            <ServiceRow
+              ok={webexSaOk}
+              label="Webex Service App"
+              detail={
+                webexSaOk
+                  ? webexSaDetail
+                  : `${webexSaDetail} · Settings → Webex setup`
+              }
+            />
           </Stack>
         </Paper>
 

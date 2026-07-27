@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ActionIcon, Button, Group, Modal, Select, Stack, Table, Text, Title } from '@mantine/core';
+import { ActionIcon, Alert, Button, Group, Modal, Select, Stack, Table, Text, Title } from '@mantine/core';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { api } from '../../api/client';
 
@@ -11,7 +12,15 @@ function formatTime(value: string | null): string {
 
 export function GroupSyncTab() {
   const qc = useQueryClient();
-  const groups = useQuery({ queryKey: ['webex-groups'], queryFn: api.webex.groups });
+  const status = useQuery({ queryKey: ['webex-status'], queryFn: api.webex.status });
+  const ready = !!status.data?.serviceapp_configured && !!status.data?.authorized;
+
+  const groups = useQuery({
+    queryKey: ['webex-groups'],
+    queryFn: api.webex.groups,
+    enabled: ready,
+    retry: false,
+  });
   const mappings = useQuery({ queryKey: ['webex-group-mappings'], queryFn: api.webex.groupMappings });
   const roles = useQuery({ queryKey: ['admin-roles'], queryFn: api.admin.roles });
   const adminGroups = useQuery({ queryKey: ['admin-groups'], queryFn: api.admin.groups });
@@ -61,11 +70,16 @@ export function GroupSyncTab() {
           <Button
             variant="light"
             loading={syncNow.isPending}
+            disabled={!ready}
             onClick={() => syncNow.mutate()}
           >
             Sync now
           </Button>
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setModalOpen(true)}>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            disabled={!ready}
+            onClick={() => setModalOpen(true)}
+          >
             Map a group
           </Button>
         </Group>
@@ -81,6 +95,26 @@ export function GroupSyncTab() {
           </Text>
         )}
       </Text>
+
+      {status.isSuccess && !status.data.serviceapp_configured && (
+        <Alert color="yellow" title="Service App not configured on this deployment">
+          Group sync needs the Webex Service App. Contact support or finish platform setup.
+        </Alert>
+      )}
+      {status.isSuccess && status.data.serviceapp_configured && !status.data.authorized && (
+        <Alert color="blue" title="Authorize the Service App first">
+          Open{' '}
+          <Text span fw={600} component={Link} to="/settings?tab=webex">
+            Settings → Webex setup
+          </Text>{' '}
+          and complete Control Hub authorization before mapping groups.
+        </Alert>
+      )}
+      {ready && groups.isError && (
+        <Alert color="red" title="Could not list Control Hub groups">
+          {groups.error instanceof Error ? groups.error.message : 'Webex Groups API error'}
+        </Alert>
+      )}
 
       <Table highlightOnHover>
         <Table.Thead>
@@ -104,6 +138,15 @@ export function GroupSyncTab() {
               </Table.Td>
             </Table.Tr>
           ))}
+          {rows.length === 0 && (
+            <Table.Tr>
+              <Table.Td colSpan={4}>
+                <Text size="sm" c="dimmed">
+                  No group mappings yet.
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          )}
         </Table.Tbody>
       </Table>
 

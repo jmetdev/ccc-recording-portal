@@ -50,14 +50,30 @@ function UsersTab() {
     password: '',
     group_id: null as number | null,
     role_ids: [] as number[],
+    enable_webex_sso: false,
   });
 
   const createUser = useMutation({
-    mutationFn: () => api.admin.createUser(form),
+    mutationFn: () =>
+      api.admin.createUser({
+        email: form.email,
+        username: form.username,
+        password: form.password || undefined,
+        group_id: form.group_id,
+        role_ids: form.role_ids,
+        enable_webex_sso: form.enable_webex_sso,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-users'] });
       setUserModal(false);
-      setForm({ email: '', username: '', password: '', group_id: null, role_ids: [] });
+      setForm({
+        email: '',
+        username: '',
+        password: '',
+        group_id: null,
+        role_ids: [],
+        enable_webex_sso: false,
+      });
     },
   });
 
@@ -65,6 +81,8 @@ function UsersTab() {
     mutationFn: (id: number) => api.admin.deleteUser(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
   });
+
+  const passwordRequired = !form.enable_webex_sso;
 
   return (
     <Stack gap="md">
@@ -100,11 +118,42 @@ function UsersTab() {
 
       <Modal opened={userModal} onClose={() => setUserModal(false)} title="New user">
         <Stack gap="sm">
-          <TextInput label="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <TextInput label="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-          <TextInput label="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          {createUser.isError && (
+            <Alert color="red" title="Could not create user">
+              {createUser.error instanceof Error ? createUser.error.message : 'Unknown error'}
+            </Alert>
+          )}
+          <TextInput
+            label="Email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+          <TextInput
+            label="Username"
+            value={form.username}
+            onChange={(e) => setForm({ ...form, username: e.target.value })}
+          />
+          <Checkbox
+            label="Enable Webex single sign-on"
+            description="User signs in with Continue with Webex (Keycloak Webex IdP). Optional password below is a Keycloak local fallback."
+            checked={form.enable_webex_sso}
+            onChange={(e) => setForm({ ...form, enable_webex_sso: e.currentTarget.checked })}
+          />
+          <TextInput
+            label={passwordRequired ? 'Password' : 'Password (optional Keycloak fallback)'}
+            type="password"
+            required={passwordRequired}
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            description={
+              passwordRequired
+                ? 'Stored in Keycloak for local username/password sign-in (and portal password login).'
+                : 'Leave blank for Webex-only. If set, user can also sign in with Keycloak username/password.'
+            }
+          />
           <Select
             label="Group"
+            clearable
             data={groups.data?.map((g) => ({ value: String(g.id), label: g.name })) ?? []}
             value={form.group_id ? String(form.group_id) : null}
             onChange={(v) => setForm({ ...form, group_id: v ? Number(v) : null })}
@@ -115,7 +164,11 @@ function UsersTab() {
             value={form.role_ids[0] ? String(form.role_ids[0]) : null}
             onChange={(v) => setForm({ ...form, role_ids: v ? [Number(v)] : [] })}
           />
-          <Button onClick={() => createUser.mutate()} loading={createUser.isPending}>
+          <Button
+            onClick={() => createUser.mutate()}
+            loading={createUser.isPending}
+            disabled={!form.email || !form.username || (passwordRequired && form.password.length < 6)}
+          >
             Create
           </Button>
         </Stack>

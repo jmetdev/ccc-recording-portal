@@ -33,13 +33,32 @@ PLACEHOLDER = "REPLACE_ME"
 PLACEHOLDER_VALUES = {PLACEHOLDER, "PLACEHOLDER_SET_ME", "REPLACE_ME_WEBEX_CLIENT_ID"}
 
 
-def serviceapp_enabled() -> bool:
-    vals = [
-        settings.webex_serviceapp_id,
-        settings.webex_serviceapp_client_id,
-        settings.webex_serviceapp_client_secret,
+def serviceapp_missing_keys() -> list[str]:
+    """Env keys that must be set (and non-placeholder) for Service App to work."""
+    checks = [
+        ("WEBEX_SERVICEAPP_ID", settings.webex_serviceapp_id),
+        ("WEBEX_SERVICEAPP_CLIENT_ID", settings.webex_serviceapp_client_id),
+        ("WEBEX_SERVICEAPP_CLIENT_SECRET", settings.webex_serviceapp_client_secret),
+        ("WEBEX_SERVICEAPP_WEBHOOK_SECRET", settings.webex_serviceapp_webhook_secret),
+        ("WEBEX_SERVICEAPP_ORG_TOKEN", settings.webex_serviceapp_org_token),
     ]
-    return all(v and not any(p in v for p in PLACEHOLDER_VALUES) for v in vals)
+    missing: list[str] = []
+    for key, value in checks:
+        if not value or any(p in value for p in PLACEHOLDER_VALUES):
+            missing.append(key)
+    return missing
+
+
+def serviceapp_enabled() -> bool:
+    return not serviceapp_missing_keys()
+
+
+def serviceapp_deployment_status() -> dict:
+    missing = serviceapp_missing_keys()
+    return {
+        "configured": not missing,
+        "missing_keys": missing,
+    }
 
 
 # ---- webhook signature -------------------------------------------------------

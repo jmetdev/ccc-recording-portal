@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     suite_api_url: str = ""
     suite_internal_token: str = ""
 
+    # Keycloak Admin API (provision Settings → Users into the shared realm).
+    # Empty keycloak_url disables sync (portal DB-only create still works).
+    keycloak_url: str = ""  # e.g. http://keycloak:8080 on the VPS compose network
+    keycloak_admin: str = "admin"
+    keycloak_admin_password: str = ""
+    keycloak_realm: str = "ccc"
+
     # ---- OAuth login providers (Webex / Zoom) ----
     # Users authenticate through the same platform that runs their calling
     # (Webex Control Hub / Zoom). Server-side authorization-code flow: exchange
