@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.me import _email_domain, _normalize_domains
 from app.core.auth import require_superadmin
 from app.core.database import get_db
 from app.models import Entitlement, SuiteTenant
@@ -52,12 +53,27 @@ async def list_tenants(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
+def _resolve_email_domains(admin_email: str, domains: list[str] | None) -> list[str]:
+    normalized = _normalize_domains(domains or [])
+    if not normalized:
+        domain = _email_domain(admin_email.lower())
+        if domain:
+            normalized = [domain]
+    return normalized
+
+
 @router.post("/tenants", response_model=TenantOut)
 async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
     exists = (await db.execute(select(SuiteTenant).where(SuiteTenant.slug == body.slug))).scalar_one_or_none()
     if exists:
         raise HTTPException(status_code=409, detail="Tenant slug already exists")
-    tenant = SuiteTenant(slug=body.slug, name=body.name, admin_email=body.admin_email.lower())
+    admin_email = body.admin_email.lower()
+    tenant = SuiteTenant(
+        slug=body.slug,
+        name=body.name,
+        admin_email=admin_email,
+        email_domains=_resolve_email_domains(admin_email, body.email_domains),
+    )
     db.add(tenant)
     await db.flush()
     await _apply_entitlements(db, tenant.id, body.entitlements)
@@ -76,6 +92,8 @@ async def update_tenant(tenant_id: int, body: TenantUpdate, db: AsyncSession = D
     changes = body.model_dump(exclude_unset=True, exclude={"entitlements"})
     if "admin_email" in changes and changes["admin_email"]:
         changes["admin_email"] = changes["admin_email"].lower()
+    if "email_domains" in changes and changes["email_domains"] is not None:
+        changes["email_domains"] = _normalize_domains(changes["email_domains"])
     for k, v in changes.items():
         setattr(tenant, k, v)
     if body.entitlements is not None:

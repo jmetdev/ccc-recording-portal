@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -37,6 +37,7 @@ class SuiteTenant(Base):
     # The customer admin Jeff registers at create time; the first Webex login
     # whose token email matches this (case-insensitively) may claim the tenant.
     admin_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    email_domains: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, server_default="{}")
     linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

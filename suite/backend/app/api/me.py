@@ -4,7 +4,7 @@ tenant on first login, read entitlements.
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,23 @@ from app.models import SuiteTenant, TenantStatus
 from app.schemas import EntitlementOut, LinkResult, MeTenantOut, TenantOut
 
 router = APIRouter(prefix="/me", tags=["me"])
+
+
+def _email_domain(email: str) -> str | None:
+    if "@" not in email:
+        return None
+    return email.rsplit("@", 1)[1].lower()
+
+
+def _normalize_domains(domains: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw in domains:
+        domain = raw.strip().lower()
+        if domain and domain not in seen:
+            seen.add(domain)
+            normalized.append(domain)
+    return normalized
 
 
 def _is_superadmin(claims: dict) -> bool:
@@ -44,24 +61,66 @@ async def _pending_tenant_by_email(db: AsyncSession, email: str) -> SuiteTenant 
     ).scalar_one_or_none()
 
 
+async def _active_tenants_by_domain(db: AsyncSession, domain: str) -> list[SuiteTenant]:
+    result = await db.execute(
+        select(SuiteTenant)
+        .where(
+            SuiteTenant.status == TenantStatus.ACTIVE,
+            SuiteTenant.email_domains.contains([domain]),
+        )
+        .options(selectinload(SuiteTenant.entitlements))
+        .order_by(SuiteTenant.slug)
+    )
+    return list(result.scalars().all())
+
+
+def _me_out(
+    *,
+    status: str,
+    claims: dict,
+    tenant: SuiteTenant | None = None,
+    tenants: list[SuiteTenant] | None = None,
+) -> MeTenantOut:
+    return MeTenantOut(
+        status=status,
+        is_superadmin=_is_superadmin(claims),
+        tenant=TenantOut.model_validate(tenant) if tenant is not None else None,
+        tenants=[TenantOut.model_validate(t) for t in (tenants or [])],
+    )
+
+
 @router.get("/tenant", response_model=MeTenantOut)
-async def get_my_tenant(claims: dict = Depends(get_claims), db: AsyncSession = Depends(get_db)):
+async def get_my_tenant(
+    tenant_id: int | None = Query(None),
+    claims: dict = Depends(get_claims),
+    db: AsyncSession = Depends(get_db),
+):
     org_id = claims.get(settings.oidc_org_claim)
     email = (claims.get("email") or "").lower()
 
     if org_id:
         tenant = await _tenant_by_org(db, org_id)
         if tenant is not None:
-            return MeTenantOut(status="active", is_superadmin=_is_superadmin(claims), tenant=TenantOut.model_validate(tenant))
+            return _me_out(status="active", claims=claims, tenant=tenant)
 
     if email:
         pending = await _pending_tenant_by_email(db, email)
         if pending is not None:
-            return MeTenantOut(
-                status="pending_match", is_superadmin=_is_superadmin(claims), tenant=TenantOut.model_validate(pending)
-            )
+            return _me_out(status="pending_match", claims=claims, tenant=pending)
 
-    return MeTenantOut(status="unlinked", is_superadmin=_is_superadmin(claims), tenant=None)
+        domain = _email_domain(email)
+        if domain:
+            matches = await _active_tenants_by_domain(db, domain)
+            if tenant_id is not None:
+                chosen = next((t for t in matches if t.id == tenant_id), None)
+                if chosen is not None:
+                    return _me_out(status="active", claims=claims, tenant=chosen)
+            if len(matches) == 1:
+                return _me_out(status="active", claims=claims, tenant=matches[0])
+            if len(matches) > 1:
+                return _me_out(status="ambiguous_match", claims=claims, tenants=matches)
+
+    return _me_out(status="unlinked", claims=claims)
 
 
 @router.post("/link", response_model=LinkResult)

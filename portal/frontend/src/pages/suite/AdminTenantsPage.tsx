@@ -54,6 +54,22 @@ function seatsFromTenant(tenant: SuiteTenant): SeatsForm {
   return seats;
 }
 
+function domainsToInput(domains: string[]): string {
+  return domains.join(', ');
+}
+
+function parseDomainsInput(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function defaultDomainsFromEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  return at >= 0 ? email.slice(at + 1).toLowerCase() : '';
+}
+
 function entitlementsPayload(
   licensed: EntitlementForm,
   seats: SeatsForm,
@@ -74,7 +90,7 @@ export function AdminTenantsPage() {
     data: me,
     isLoading: meLoading,
     error: meError,
-  } = useQuery({ queryKey: ['suite-me'], queryFn: suiteApi.me, retry: false });
+  } = useQuery({ queryKey: ['suite-me'], queryFn: () => suiteApi.me(), retry: false });
 
   const {
     data: tenants,
@@ -89,11 +105,15 @@ export function AdminTenantsPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTenant, setEditTenant] = useState<SuiteTenant | null>(null);
+  const [editDetailsTenant, setEditDetailsTenant] = useState<SuiteTenant | null>(null);
   const [error, setError] = useState('');
 
   const [slug, setSlug] = useState('');
   const [name, setName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
+  const [emailDomainsInput, setEmailDomainsInput] = useState('');
+  const [editAdminEmail, setEditAdminEmail] = useState('');
+  const [editEmailDomainsInput, setEditEmailDomainsInput] = useState('');
   const [entitlements, setEntitlements] = useState<EntitlementForm>(emptyEntitlements());
   const [recordingSeats, setRecordingSeats] = useState<number | ''>('');
 
@@ -101,9 +121,17 @@ export function AdminTenantsPage() {
     setSlug('');
     setName('');
     setAdminEmail('');
+    setEmailDomainsInput('');
     setEntitlements(emptyEntitlements());
     setRecordingSeats('');
     setError('');
+  };
+
+  const createEmailDomains = (): string[] | undefined => {
+    const parsed = parseDomainsInput(emailDomainsInput);
+    if (parsed.length > 0) return parsed;
+    const fallback = defaultDomainsFromEmail(adminEmail);
+    return fallback ? [fallback] : undefined;
   };
 
   const createMutation = useMutation({
@@ -112,6 +140,7 @@ export function AdminTenantsPage() {
         slug,
         name,
         admin_email: adminEmail,
+        email_domains: createEmailDomains(),
         entitlements: entitlementsPayload(entitlements, { recording: recordingSeats }),
       }),
     onSuccess: () => {
@@ -138,6 +167,19 @@ export function AdminTenantsPage() {
     mutationFn: (vars: { id: number; status: SuiteTenantStatus }) =>
       suiteApi.platform.updateTenant(vars.id, { status: vars.status }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['suite-tenants'] }),
+  });
+
+  const updateDetailsMutation = useMutation({
+    mutationFn: (vars: { id: number; admin_email: string; email_domains: string[] }) =>
+      suiteApi.platform.updateTenant(vars.id, {
+        admin_email: vars.admin_email,
+        email_domains: vars.email_domains,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['suite-tenants'] });
+      setEditDetailsTenant(null);
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : 'Could not update tenant'),
   });
 
   if (meLoading) return null;
@@ -192,6 +234,7 @@ export function AdminTenantsPage() {
             <Table.Th>Name</Table.Th>
             <Table.Th>Status</Table.Th>
             <Table.Th>Admin email</Table.Th>
+            <Table.Th>Email domains</Table.Th>
             <Table.Th>Webex org</Table.Th>
             <Table.Th>Licensed</Table.Th>
             <Table.Th />
@@ -212,6 +255,7 @@ export function AdminTenantsPage() {
                 </Badge>
               </Table.Td>
               <Table.Td>{t.admin_email}</Table.Td>
+              <Table.Td>{t.email_domains?.length ? t.email_domains.join(', ') : '—'}</Table.Td>
               <Table.Td>{t.webex_org_id ?? '—'}</Table.Td>
               <Table.Td>
                 {t.entitlements
@@ -228,6 +272,18 @@ export function AdminTenantsPage() {
               </Table.Td>
               <Table.Td>
                 <Group gap="xs" justify="flex-end">
+                  <Button
+                    size="compact-sm"
+                    variant="default"
+                    onClick={() => {
+                      setEditDetailsTenant(t);
+                      setEditAdminEmail(t.admin_email);
+                      setEditEmailDomainsInput(domainsToInput(t.email_domains ?? []));
+                      setError('');
+                    }}
+                  >
+                    Edit
+                  </Button>
                   <Button
                     size="compact-sm"
                     variant="default"
@@ -265,7 +321,7 @@ export function AdminTenantsPage() {
           ))}
           {!tenantsLoading && tenantsError && (
             <Table.Tr>
-              <Table.Td colSpan={6}>
+              <Table.Td colSpan={7}>
                 <Text c="red" ta="center" py="md">
                   {tenantsError instanceof Error ? tenantsError.message : 'Could not load tenants.'}
                 </Text>
@@ -274,7 +330,7 @@ export function AdminTenantsPage() {
           )}
           {!tenantsLoading && !tenantsError && (tenants ?? []).length === 0 && (
             <Table.Tr>
-              <Table.Td colSpan={6}>
+              <Table.Td colSpan={7}>
                 <Text c="dimmed" ta="center" py="md">
                   No tenants yet.
                 </Text>
@@ -307,8 +363,22 @@ export function AdminTenantsPage() {
             description="Customer's initial tenant admin — their first Webex sign-in links this org and grants them the full admin role in licensed products"
             type="email"
             value={adminEmail}
-            onChange={(e) => setAdminEmail(e.currentTarget.value)}
+            onChange={(e) => {
+              const next = e.currentTarget.value;
+              setAdminEmail(next);
+              if (!emailDomainsInput.trim()) {
+                const domain = defaultDomainsFromEmail(next);
+                if (domain) setEmailDomainsInput(domain);
+              }
+            }}
             required
+          />
+          <TextInput
+            label="Email domains"
+            description="Comma-separated domains allowed to sign into this workspace once active. Defaults to the admin email domain when left empty."
+            placeholder="example.com, example.org"
+            value={emailDomainsInput}
+            onChange={(e) => setEmailDomainsInput(e.currentTarget.value)}
           />
           <Box>
             <Text size="sm" fw={500} mb={4}>
@@ -350,6 +420,44 @@ export function AdminTenantsPage() {
             onClick={() => createMutation.mutate()}
           >
             Create tenant
+          </Button>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={!!editDetailsTenant}
+        onClose={() => setEditDetailsTenant(null)}
+        title={`Edit tenant — ${editDetailsTenant?.name ?? ''}`}
+      >
+        <Stack>
+          {error && <Alert color="red">{error}</Alert>}
+          <TextInput
+            label="Admin email"
+            type="email"
+            value={editAdminEmail}
+            onChange={(e) => setEditAdminEmail(e.currentTarget.value)}
+            required
+          />
+          <TextInput
+            label="Email domains"
+            description="Comma-separated domains allowed to sign into this workspace once active."
+            value={editEmailDomainsInput}
+            onChange={(e) => setEditEmailDomainsInput(e.currentTarget.value)}
+          />
+          <Button
+            fullWidth
+            loading={updateDetailsMutation.isPending}
+            disabled={!editAdminEmail}
+            onClick={() =>
+              editDetailsTenant &&
+              updateDetailsMutation.mutate({
+                id: editDetailsTenant.id,
+                admin_email: editAdminEmail,
+                email_domains: parseDomainsInput(editEmailDomainsInput),
+              })
+            }
+          >
+            Save
           </Button>
         </Stack>
       </Modal>

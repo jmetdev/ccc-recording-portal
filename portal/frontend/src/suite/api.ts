@@ -65,15 +65,17 @@ export type SuiteTenant = {
   webex_org_id: string | null;
   status: SuiteTenantStatus;
   admin_email: string;
+  email_domains: string[];
   linked_at: string | null;
   created_at: string;
   entitlements: SuiteEntitlement[];
 };
 
 export type MeTenant = {
-  status: 'active' | 'pending_match' | 'unlinked';
+  status: 'active' | 'pending_match' | 'ambiguous_match' | 'unlinked';
   is_superadmin: boolean;
   tenant: SuiteTenant | null;
+  tenants: SuiteTenant[];
 };
 
 export type EntitlementInput = {
@@ -87,18 +89,21 @@ export type TenantCreateInput = {
   slug: string;
   name: string;
   admin_email: string;
+  email_domains?: string[];
   entitlements: EntitlementInput[];
 };
 
 export type TenantUpdateInput = Partial<{
   name: string;
   admin_email: string;
+  email_domains: string[];
   status: SuiteTenantStatus;
   entitlements: EntitlementInput[];
 }>;
 
 export const suiteApi = {
-  me: () => request<MeTenant>('/me/tenant'),
+  me: (tenantId?: number) =>
+    request<MeTenant>(tenantId != null ? `/me/tenant?tenant_id=${tenantId}` : '/me/tenant'),
   link: () => request<{ tenant: SuiteTenant }>('/me/link', { method: 'POST' }),
   entitlements: () => request<SuiteEntitlement[]>('/me/entitlements'),
   platform: {

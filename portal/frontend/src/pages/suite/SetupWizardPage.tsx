@@ -1,23 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Anchor, Button, Card, Center, Loader, Stack, Text, Title } from '@mantine/core';
 import { useAuth } from '../../auth/AuthContext';
-import { suiteApi } from '../../suite/api';
+import { suiteApi, SuiteTenant } from '../../suite/api';
 import { suiteApps } from '../../suite/hosts';
 import suiteLoginClasses from '../SuiteLogin.module.css';
+
+const STICKY_TENANT_KEY = 'suite_sticky_tenant_id';
+
+function readStickyTenantId(): number | null {
+  const raw = sessionStorage.getItem(STICKY_TENANT_KEY);
+  if (!raw) return null;
+  const id = Number(raw);
+  return Number.isFinite(id) ? id : null;
+}
+
+function writeStickyTenantId(id: number): void {
+  sessionStorage.setItem(STICKY_TENANT_KEY, String(id));
+}
 
 export function SetupWizardPage() {
   const queryClient = useQueryClient();
   const { user, logout } = useAuth();
   const [linkError, setLinkError] = useState('');
   const [linking, setLinking] = useState(false);
+  const [stickyTenantId, setStickyTenantId] = useState<number | null>(() => readStickyTenantId());
+
+  useEffect(() => {
+    if (stickyTenantId != null) {
+      writeStickyTenantId(stickyTenantId);
+    }
+  }, [stickyTenantId]);
 
   const {
     data: me,
     isLoading,
     error: meError,
-  } = useQuery({ queryKey: ['suite-me'], queryFn: suiteApi.me, retry: false });
+  } = useQuery({
+    queryKey: ['suite-me', stickyTenantId],
+    queryFn: () => suiteApi.me(stickyTenantId ?? undefined),
+    retry: false,
+  });
 
   const confirmLink = async () => {
     setLinkError('');
@@ -30,6 +54,11 @@ export function SetupWizardPage() {
     } finally {
       setLinking(false);
     }
+  };
+
+  const chooseWorkspace = (tenant: SuiteTenant) => {
+    setStickyTenantId(tenant.id);
+    queryClient.invalidateQueries({ queryKey: ['suite-me'] });
   };
 
   const apps = suiteApps();
@@ -142,6 +171,30 @@ export function SetupWizardPage() {
             </Stack>
           )}
 
+          {!isLoading && !meError && me?.status === 'ambiguous_match' && me.tenants.length > 0 && (
+            <Stack>
+              <Title order={3}>Choose your workspace</Title>
+              <Text c="dimmed">
+                Your email domain matches more than one active workspace. Select the one you want to use.
+              </Text>
+              {me.tenants.map((tenant) => (
+                <Button
+                  key={tenant.id}
+                  fullWidth
+                  radius="xl"
+                  variant="default"
+                  onClick={() => chooseWorkspace(tenant)}
+                  className={suiteLoginClasses.primaryBtn}
+                >
+                  {tenant.name}
+                </Button>
+              ))}
+              <Button variant="subtle" fullWidth radius="xl" onClick={logout}>
+                Sign out
+              </Button>
+            </Stack>
+          )}
+
           {!isLoading && me?.status === 'pending_match' && me.tenant && (
             <Stack>
               <Title order={3}>Confirm your organization</Title>
@@ -167,8 +220,8 @@ export function SetupWizardPage() {
               <Title order={3}>No workspace found</Title>
               <Text c="dimmed">
                 {user?.email
-                  ? `We couldn't find a pending CloudCoreCollab workspace for ${user.email}.`
-                  : "We couldn't find a pending CloudCoreCollab workspace for your account."}{' '}
+                  ? `We couldn't find a CloudCoreCollab workspace for ${user.email}.`
+                  : "We couldn't find a CloudCoreCollab workspace for your account."}{' '}
                 Contact CloudCoreCollab to get set up.
               </Text>
               {me.is_superadmin && (
