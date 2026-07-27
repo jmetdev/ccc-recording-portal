@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app import edge_health, spool
+from app import edge_config, edge_health, spool
 from app.config import config
 from app.portal import PortalClient
 
@@ -47,10 +47,12 @@ def claim_job(job_type: str = Query("transcribe")):
     job = spool.claim_due(kinds=("transcribe",))
     if job is None:
         return None
+    payload = json.loads(job["payload_json"])
+    payload["whisper"] = edge_config.whisper_options()
     return {
         "id": job["id"],
         "job_type": job["kind"],
-        "payload": json.loads(job["payload_json"]),
+        "payload": payload,
     }
 
 

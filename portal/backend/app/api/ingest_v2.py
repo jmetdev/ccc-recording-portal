@@ -45,6 +45,7 @@ from app.services.media_jobs import enqueue_job
 from app.services.recorded_extensions import group_id_for_extension, match_recorded_extension
 from app.services.storage import connector_media_key, get_storage
 from app.services.transcription import is_transcription_enabled
+from app.services.whisper_config import get_transcription_settings, whisper_runtime_options
 
 router = APIRouter(prefix="/v2", tags=["ingest-v2"])
 logger = logging.getLogger(__name__)
@@ -385,5 +386,20 @@ async def v2_heartbeat(
         cred.version = payload.version
     if payload.stats is not None:
         cred.stats_json = payload.stats
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == cred.tenant_id))
+    ).scalar_one()
     await db.commit()
-    return {"status": "ok"}
+    settings = get_transcription_settings(tenant)
+    runtime = whisper_runtime_options(tenant)
+    return {
+        "status": "ok",
+        "config": {
+            "whisper": {
+                "organization_name": settings["organization_name"],
+                "hotwords_list": settings["hotwords"],
+                "initial_prompt": runtime["initial_prompt"],
+                "hotwords": runtime["hotwords"],
+            }
+        },
+    }

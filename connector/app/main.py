@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from app import edge_health, pipeline, spool
+from app import edge_config, edge_health, pipeline, spool
 from app.config import config
 from app.portal import PortalClient
 from app.uds import UdsClient
@@ -64,7 +64,8 @@ def _worker() -> None:
 def _heartbeat() -> None:
     while not _stop.is_set():
         try:
-            portal.heartbeat(edge_health.collect_heartbeat_stats(spool.queue_depth()))
+            body = portal.heartbeat(edge_health.collect_heartbeat_stats(spool.queue_depth()))
+            edge_config.update_from_heartbeat(body)
         except Exception as exc:
             logger.warning("heartbeat failed: %s", exc)
         _stop.wait(config.HEARTBEAT_INTERVAL_S)

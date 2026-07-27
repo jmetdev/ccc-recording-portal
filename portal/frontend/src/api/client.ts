@@ -264,6 +264,13 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }),
+    getTranscription: () => request<TranscriptionSettings>('/tenant/transcription'),
+    updateTranscription: (body: { organization_name?: string; hotwords?: string[] }) =>
+      request<TranscriptionSettings>('/tenant/transcription', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
     connectors: () => request<ConnectorCredential[]>('/tenant/connectors'),
     createConnector: (body: { name: string; kind: string }) =>
       request<ConnectorCredentialCreated>('/tenant/connectors', {
@@ -415,6 +422,11 @@ export type TenantSettings = {
   name: string;
   slug: string;
   retention_days: number | null;
+};
+
+export type TranscriptionSettings = {
+  organization_name: string;
+  hotwords: string[];
 };
 
 export type LicenseUsage = {

@@ -89,7 +89,11 @@ class PortalClient:
         r = self._client.post(f"{self._base}/ingest/calls/fail", json=body)
         r.raise_for_status()
 
-    def heartbeat(self, stats: dict) -> None:
+    def heartbeat(self, stats: dict) -> dict:
         body = {"version": config.VERSION, "stats": stats}
         r = self._client.post(f"{self._base}/connector/heartbeat", json=body)
         r.raise_for_status()
+        try:
+            return r.json()
+        except Exception:
+            return {"status": "ok"}

@@ -37,8 +37,14 @@ def simple_sentiment(text: str) -> tuple[str, float]:
     return "neutral", 0.0
 
 
-def transcribe_file(model, path: str) -> tuple[str, list, str | None]:
-    segments, info = model.transcribe(path, beam_size=1)
+def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple[str, list, str | None]:
+    opts = whisper_opts or {}
+    kwargs: dict = {"beam_size": 1}
+    if opts.get("initial_prompt"):
+        kwargs["initial_prompt"] = opts["initial_prompt"]
+    if opts.get("hotwords"):
+        kwargs["hotwords"] = opts["hotwords"]
+    segments, info = model.transcribe(path, **kwargs)
     seg_list = []
     texts = []
     for seg in segments:
@@ -52,6 +58,7 @@ def process_job(client: httpx.Client, model, payload: dict) -> dict:
     call_id = payload["call_id"]
     recording_ids = payload.get("recording_ids", {})
     paths = payload.get("paths", {})
+    whisper_opts = payload.get("whisper") if isinstance(payload.get("whisper"), dict) else {}
     results = {}
 
     available: dict[str, str] = {}
@@ -71,7 +78,7 @@ def process_job(client: httpx.Client, model, payload: dict) -> dict:
 
     for leg in selected:
         path = available[leg]
-        text, segments, language = transcribe_file(model, path)
+        text, segments, language = transcribe_file(model, path, whisper_opts)
         if not text:
             continue
         sentiment, score = simple_sentiment(text)

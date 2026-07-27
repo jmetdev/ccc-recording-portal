@@ -36,8 +36,24 @@ async def claim_job(
         return None
     job.status = JobStatus.RUNNING
     job.updated_at = datetime.now(timezone.utc)
+    payload = dict(job.payload or {})
+    if job_type == JobType.TRANSCRIBE:
+        call_id = payload.get("call_id")
+        if call_id is not None:
+            from app.models import Call, Tenant
+            from app.services.whisper_config import whisper_runtime_options
+
+            call = (
+                await db.execute(select(Call).where(Call.id == int(call_id)))
+            ).scalar_one_or_none()
+            if call is not None:
+                tenant = (
+                    await db.execute(select(Tenant).where(Tenant.id == call.tenant_id))
+                ).scalar_one_or_none()
+                if tenant is not None:
+                    payload["whisper"] = whisper_runtime_options(tenant)
     await db.commit()
-    return JobClaim(id=job.id, job_type=job.job_type.value, payload=job.payload)
+    return JobClaim(id=job.id, job_type=job.job_type.value, payload=payload)
 
 
 @router.post("/jobs/{job_id}/complete", dependencies=[Depends(verify_worker_token)])

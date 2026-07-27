@@ -415,6 +415,21 @@ class TenantSettingsUpdate(BaseModel):
     retention_days: int | None = Field(default=None, ge=1, le=36500)
 
 
+class TranscriptionSettingsOut(BaseModel):
+    organization_name: str = ""
+    hotwords: list[str] = []
+
+
+class TranscriptionSettingsUpdate(BaseModel):
+    organization_name: str | None = Field(default=None, max_length=256)
+    hotwords: list[str] | None = None
+
+
+class ConnectorHeartbeatOut(BaseModel):
+    status: str = "ok"
+    config: dict | None = None
+
+
 class LicenseUsageOut(BaseModel):
     allotted: int | None
     used: int

@@ -32,6 +32,8 @@ from app.schemas import (
     StorageStats,
     TenantSettingsOut,
     TenantSettingsUpdate,
+    TranscriptionSettingsOut,
+    TranscriptionSettingsUpdate,
 )
 from app.services import webex_connector as wxc
 from app.services.audit import record_audit
@@ -39,6 +41,7 @@ from app.services.call_stats import distinct_call_count_stmt
 from app.services.party_label import format_party
 from app.services.recorded_extensions import count_enabled_extensions
 from app.services.suite_entitlements import recording_seats_for_org
+from app.services.whisper_config import get_transcription_settings, set_transcription_settings
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
@@ -78,6 +81,63 @@ async def update_tenant_settings(
     await db.refresh(tenant)
     return TenantSettingsOut(
         name=tenant.name, slug=tenant.slug, retention_days=tenant.retention_days
+    )
+
+
+@router.get("/transcription", response_model=TranscriptionSettingsOut)
+async def get_transcription_settings_endpoint(
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
+    cfg = get_transcription_settings(tenant)
+    return TranscriptionSettingsOut(
+        organization_name=cfg["organization_name"],
+        hotwords=cfg["hotwords"],
+    )
+
+
+@router.patch("/transcription", response_model=TranscriptionSettingsOut)
+async def update_transcription_settings(
+    body: TranscriptionSettingsUpdate,
+    request: Request,
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
+    fields = body.model_fields_set
+    if not fields:
+        cfg = get_transcription_settings(tenant)
+        return TranscriptionSettingsOut(
+            organization_name=cfg["organization_name"],
+            hotwords=cfg["hotwords"],
+        )
+    cfg = set_transcription_settings(
+        tenant,
+        organization_name=body.organization_name if "organization_name" in fields else None,
+        hotwords=body.hotwords if "hotwords" in fields else None,
+    )
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="tenant.transcription_updated",
+        user=user,
+        resource_type="tenant",
+        resource_id=tenant.id,
+        detail={
+            "organization_name": cfg["organization_name"],
+            "hotwords": cfg["hotwords"],
+        },
+        request=request,
+    )
+    await db.commit()
+    return TranscriptionSettingsOut(
+        organization_name=cfg["organization_name"],
+        hotwords=cfg["hotwords"],
     )
 
 
