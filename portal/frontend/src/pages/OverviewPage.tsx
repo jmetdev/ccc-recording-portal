@@ -8,6 +8,7 @@ import { SourceBadge } from '../components/SourceBadge';
 import { StatTile } from '../components/StatTile';
 import { useCallPlayer } from '../components/CallPlayerContext';
 import { useAuth } from '../auth/AuthContext';
+import { formatParty } from '../utils/partyLabel';
 
 function isForbiddenError(err: unknown): boolean {
   return err instanceof Error && /\b403\b|Forbidden|No call viewing permission/i.test(err.message);
@@ -222,8 +223,8 @@ export function OverviewPage() {
                     <Table.Td>
                       <SourceBadge source={c.source} />
                     </Table.Td>
-                    <Table.Td>{c.near_name || c.near_addr || '—'}</Table.Td>
-                    <Table.Td>{c.far_name || c.far_addr || '—'}</Table.Td>
+                    <Table.Td>{formatParty(c.near_name, c.near_addr)}</Table.Td>
+                    <Table.Td>{formatParty(c.far_name, c.far_addr)}</Table.Td>
                     <Table.Td>{formatDuration(c.duration_s)}</Table.Td>
                     <Table.Td>
                       <CallStatusBadge status={c.status} />

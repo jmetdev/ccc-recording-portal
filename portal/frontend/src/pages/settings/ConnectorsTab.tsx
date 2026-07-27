@@ -190,7 +190,7 @@ export function ConnectorsTab() {
               />
               <TextInput
                 label="Cisco UDS URL (optional)"
-                description="Enriches near-end display names via on-prem UDS, e.g. https://172.25.100.11:8443"
+                description="Enriches near-end labels via on-prem UDS as (Description) Extension, e.g. https://172.25.100.11:8443"
                 placeholder="https://172.25.100.11:8443"
                 value={udsUrl}
                 onChange={(e) => setUdsUrl(e.currentTarget.value)}
@@ -288,7 +288,7 @@ export function ConnectorsTab() {
                     <Text span ff="monospace" fz="xs">
                       {udsUrl.trim()}
                     </Text>{' '}
-                    to enrich near-end display names when BIB does not supply{' '}
+                    to enrich near-end labels as (Description) Extension when BIB does not supply{' '}
                     <Text span ff="monospace" fz="xs">
                       near_name
                     </Text>

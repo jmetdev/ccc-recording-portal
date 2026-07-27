@@ -17,6 +17,7 @@ import { IconInfoCircle, IconLock } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { SourceBadge } from '../components/SourceBadge';
+import { formatParty } from '../utils/partyLabel';
 
 function formatTime(seconds: number | null): string {
   if (seconds == null) return '—';
@@ -133,7 +134,7 @@ function LegalHoldsCard() {
                 <Table.Td>
                   <SourceBadge source={c.source} />
                 </Table.Td>
-                <Table.Td>{c.far_name || c.far_addr || '—'}</Table.Td>
+                <Table.Td>{formatParty(c.far_name, c.far_addr)}</Table.Td>
                 <Table.Td>{formatTime(c.duration_s)}</Table.Td>
                 <Table.Td style={{ textAlign: 'right' }}>
                   <Button

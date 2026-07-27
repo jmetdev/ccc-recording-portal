@@ -1,0 +1,124 @@
+.scroll {
+  padding-right: 4px;
+}
+
+.mono {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.monoRow {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: default;
+}
+
+.monoRowClickable {
+  cursor: pointer;
+}
+
+.monoRowActive {
+  background: var(--mantine-color-blue-light);
+}
+
+.monoTime {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--mantine-color-dimmed);
+  padding-top: 2px;
+}
+
+.monoText {
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.45;
+}
+
+.dual {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dualHeader,
+.dualRow {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.dualHeader {
+  padding: 0 8px 6px;
+  position: sticky;
+  top: 0;
+  background: var(--mantine-color-body);
+  z-index: 1;
+}
+
+.dualHeaderLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dualHeaderNear {
+  color: var(--near-color, #1997e4);
+}
+
+.dualHeaderFar {
+  color: var(--far-color, #7450d5);
+  text-align: right;
+}
+
+.dualRow {
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+
+.dualRowActive {
+  background: var(--mantine-color-blue-light);
+}
+
+.dualTime {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--mantine-color-dimmed);
+  padding-top: 8px;
+}
+
+.bubble {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.45;
+  background: var(--mantine-color-body);
+}
+
+.bubbleClickable {
+  cursor: pointer;
+}
+
+.bubbleNear {
+  border-left: 3px solid var(--near-color, #1997e4);
+}
+
+.bubbleFar {
+  border-right: 3px solid var(--far-color, #7450d5);
+  text-align: right;
+  margin-left: auto;
+}
+
+.emptyCell {
+  min-height: 1px;
+}

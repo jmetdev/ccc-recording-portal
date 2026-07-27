@@ -36,6 +36,7 @@ from app.schemas import (
 from app.services import webex_connector as wxc
 from app.services.audit import record_audit
 from app.services.call_stats import distinct_call_count_stmt
+from app.services.party_label import format_party
 from app.services.recorded_extensions import count_enabled_extensions
 from app.services.suite_entitlements import recording_seats_for_org
 
@@ -328,8 +329,8 @@ async def storage_stats(
                 "leg": rec.leg.value,
                 "bytes": int(rec.bytes or 0),
                 "started_at": call.started_at,
-                "near_name": call.near_name or call.near_addr,
-                "far_name": call.far_name or call.far_addr,
+                "near_name": format_party(call.near_name, call.near_addr),
+                "far_name": format_party(call.far_name, call.far_addr),
                 "source": call.source.value,
             }
             for rec, call in largest_rows

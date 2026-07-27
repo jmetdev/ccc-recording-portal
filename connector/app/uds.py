@@ -27,6 +27,12 @@ def _number_last(digits: str) -> str:
     return digits if len(digits) <= 4 else digits[-4:]
 
 
+def _phone_digits(value: str | None) -> str:
+    if not value:
+        return ""
+    return "".join(c for c in value if c.isdigit())
+
+
 def _find_text(parent: ET.Element, name: str) -> str | None:
     for child in parent.iter():
         if _local_tag(child.tag) == name:
@@ -36,10 +42,12 @@ def _find_text(parent: ET.Element, name: str) -> str | None:
     return None
 
 
-def _parse_user_name(user_el: ET.Element) -> str | None:
-    display = _find_text(user_el, "displayName")
-    if display:
-        return display
+def _parse_user_description(user_el: ET.Element) -> str | None:
+    """Prefer CUCM Description when present; otherwise directory display name."""
+    for key in ("description", "displayName"):
+        value = _find_text(user_el, key)
+        if value:
+            return value
     last = _find_text(user_el, "lastName")
     first = _find_text(user_el, "firstName")
     if last and first:
@@ -47,7 +55,34 @@ def _parse_user_name(user_el: ET.Element) -> str | None:
     return last or first or None
 
 
-def _parse_users(xml_text: str) -> str | None:
+def format_uds_label(description: str, extension: str) -> str:
+    """Render UDS hits as ``(Description) Extension``."""
+    desc = description.strip()
+    if desc.startswith("(") and desc.endswith(")") and desc.count("(") == 1:
+        desc = desc[1:-1].strip()
+    ext = extension.strip()
+    if not desc:
+        return ext
+    if not ext:
+        return f"({desc})"
+    return f"({desc}) {ext}"
+
+
+def _score_user(user_el: ET.Element, digits: str) -> int:
+    """Higher is better. Prefer an exact/suffix match on phoneNumber."""
+    phone = _phone_digits(_find_text(user_el, "phoneNumber"))
+    if not phone:
+        return 0
+    if phone == digits:
+        return 100
+    if phone.endswith(digits):
+        return 80 + min(len(digits), 19)
+    if digits.endswith(phone):
+        return 40
+    return 1
+
+
+def _parse_users(xml_text: str, digits: str) -> str | None:
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
@@ -61,13 +96,25 @@ def _parse_users(xml_text: str) -> str | None:
     if count_text == "0":
         return None
 
+    best_el: ET.Element | None = None
+    best_score = -1
     for el in root.iter():
         if _local_tag(el.tag) != "user":
             continue
-        name = _parse_user_name(el)
-        if name:
-            return name
-    return None
+        description = _parse_user_description(el)
+        if not description:
+            continue
+        score = _score_user(el, digits)
+        if score > best_score:
+            best_score = score
+            best_el = el
+
+    if best_el is None:
+        return None
+    description = _parse_user_description(best_el)
+    if not description:
+        return None
+    return format_uds_label(description, digits)
 
 
 class UdsClient:
@@ -89,16 +136,16 @@ class UdsClient:
         url = f"{self._base}/cucm-uds/users"
         params = {"numberlast": numberlast}
         try:
-            return self._fetch_name(url, params)
+            return self._fetch_name(url, params, digits)
         except Exception as exc:
             logger.warning("UDS lookup failed for %s: %s", near_addr, exc)
             return None
 
-    def _fetch_name(self, url: str, params: dict[str, str]) -> str | None:
+    def _fetch_name(self, url: str, params: dict[str, str], digits: str) -> str | None:
         r = self._client.get(url, params=params)
         if r.status_code in (401, 403) and self._auth:
             r = self._client.get(url, params=params, auth=self._auth)
         if r.status_code >= 400:
             logger.warning("UDS HTTP %s for %s", r.status_code, params)
             return None
-        return _parse_users(r.text)
+        return _parse_users(r.text, digits)

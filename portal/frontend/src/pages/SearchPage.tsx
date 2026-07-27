@@ -5,6 +5,7 @@ import { IconInfoCircle } from '@tabler/icons-react';
 import { api, TranscriptSearchResult } from '../api/client';
 import { useCallPlayer } from '../components/CallPlayerContext';
 import { FAR_COLOR, NEAR_COLOR } from '../components/DualChannelWaveform';
+import { formatParty } from '../utils/partyLabel';
 
 const SENTIMENT_COLORS: Record<string, string> = {
   positive: 'green',
@@ -121,8 +122,8 @@ export function SearchPage() {
         </Text>
       )}
       {results.map((r) => {
-        const title = r.far_name || r.far_addr || 'Unknown';
-        const nearLabel = r.near_name || r.near_addr || '—';
+        const title = formatParty(r.far_name, r.far_addr);
+        const nearLabel = formatParty(r.near_name, r.near_addr);
         const dateLabel = r.started_at ? shortDate(r.started_at) : null;
         return (
         <Card key={r.transcript_id} padding="md" radius="md">

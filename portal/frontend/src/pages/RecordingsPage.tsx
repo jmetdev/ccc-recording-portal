@@ -42,6 +42,7 @@ import { SourceBadge } from '../components/SourceBadge';
 import { useAuth } from '../auth/AuthContext';
 import { DualChannelWaveform } from '../components/DualChannelWaveform';
 import { ConversationTranscript } from '../components/ConversationTranscript';
+import { formatParty } from '../utils/partyLabel';
 import classes from './RecordingsPage.module.css';
 
 const TRASH_RETENTION_DAYS = 30;
@@ -210,7 +211,7 @@ function CallList({
         ) : (
           <ul className={classes.list}>
             {items.map((c) => {
-              const title = c.far_name || c.far_addr || 'Unknown';
+              const title = formatParty(c.far_name, c.far_addr);
               const active = c.id === selectedId;
               return (
                 <li key={c.id}>
@@ -387,8 +388,8 @@ function CallDetail({ callId }: { callId: number }) {
   const selectedTag = tagList.find((t) => t.id === selectedTagId) ?? null;
   const transcriptList = transcripts.data ?? [];
   const c = call.data;
-  const nearLabel = c?.near_name || c?.near_addr || 'near';
-  const farLabel = c?.far_name || c?.far_addr || 'far';
+  const nearLabel = formatParty(c?.near_name, c?.near_addr);
+  const farLabel = formatParty(c?.far_name, c?.far_addr);
   const status = c?.status;
 
   return (
