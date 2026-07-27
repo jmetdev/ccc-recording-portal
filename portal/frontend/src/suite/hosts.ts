@@ -25,6 +25,15 @@ export type SuiteApp = {
   meta?: string;
 };
 
+/** Cross-origin product entry that resumes the Keycloak SSO session. Product
+ * origins do not share localStorage with the suite host. */
+export function productSsoEntryUrl(productOrigin: string, nextPath?: string): string {
+  const url = new URL('/login', productOrigin);
+  url.searchParams.set('sso', '1');
+  if (nextPath) url.searchParams.set('next', nextPath);
+  return url.toString();
+}
+
 /** Product entry URLs + static marketing copy for the current environment.
  * Licensing itself is not known here — callers should merge in real
  * entitlements from suiteApi.entitlements(). */

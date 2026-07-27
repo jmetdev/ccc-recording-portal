@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthContext';
 import { CloudCoreLogo } from '../components/CloudCoreLogo';
 import { SuiteAppCard } from '../components/SuiteAppCard';
-import { suiteApps } from '../suite/hosts';
+import { suiteApps, productSsoEntryUrl } from '../suite/hosts';
 import { suiteApi } from '../suite/api';
 import classes from './SuiteHomePage.module.css';
 
@@ -72,7 +72,7 @@ export function SuiteHomePage() {
               index={app.index}
               title={app.name}
               description={app.description}
-              href={app.href}
+              href={app.href ? productSsoEntryUrl(app.href) : undefined}
               licensed={app.licensed}
               meta={app.meta}
               radius={14}

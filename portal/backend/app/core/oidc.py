@@ -121,8 +121,13 @@ async def _ensure_suite_admin_role(
     """
     email = ((claims or {}).get("email") or user.email or "").lower()
     resolved_org = org_id or (claims or {}).get(settings.oidc_org_claim)
-    if not resolved_org and user.tenant is not None:
-        resolved_org = user.tenant.webex_org_id
+    # Never touch user.tenant here — lazy-loading under AsyncSession raises
+    # MissingGreenlet (and can trip autoflush) and 500s /auth/sso/exchange.
+    if not resolved_org and user.tenant_id is not None:
+        tenant = (
+            await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+        ).scalar_one_or_none()
+        resolved_org = tenant.webex_org_id if tenant is not None else None
     if not email or not resolved_org or user.tenant_id is None:
         return False
 

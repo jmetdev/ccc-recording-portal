@@ -1,7 +1,8 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasPermission } from '../api/client';
 import { getOidcToken } from '../suite/api';
+import { isSuiteHost } from '../suite/hosts';
 import { Center, Loader } from '@mantine/core';
 
 /** Gates suite routes (setup wizard, admin console) that only need a raw
@@ -14,6 +15,7 @@ export function RequireOidcToken() {
 
 export function RequireAuth() {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) {
     return (
       <Center h="100vh">
@@ -21,7 +23,17 @@ export function RequireAuth() {
       </Center>
     );
   }
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) {
+    // Product hosts: resume Keycloak SSO automatically (suite ↔ record do not
+    // share localStorage). Preserve the intended path via ?next=.
+    if (!isSuiteHost()) {
+      const next = `${location.pathname}${location.search}`;
+      const params = new URLSearchParams({ sso: '1' });
+      if (next && next !== '/') params.set('next', next);
+      return <Navigate to={`/login?${params}`} replace />;
+    }
+    return <Navigate to="/login" replace />;
+  }
   return <Outlet />;
 }
 

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Anchor, Button, Card, Center, Loader, Stack, Text, Title } from '@mantine/core';
 import { useAuth } from '../../auth/AuthContext';
 import { suiteApi, SuiteTenant } from '../../suite/api';
-import { suiteApps } from '../../suite/hosts';
+import { suiteApps, productSsoEntryUrl } from '../../suite/hosts';
 import suiteLoginClasses from '../SuiteLogin.module.css';
 
 const STICKY_TENANT_KEY = 'suite_sticky_tenant_id';
@@ -139,7 +139,11 @@ export function SetupWizardPage() {
                     </Text>
                     <Button
                       component="a"
-                      href={`${recordingApp.href}/settings?tab=webex`}
+                      href={
+                        recordingApp.href
+                          ? productSsoEntryUrl(recordingApp.href, '/settings?tab=webex')
+                          : undefined
+                      }
                       fullWidth
                       radius="xl"
                       mt="sm"
@@ -149,7 +153,11 @@ export function SetupWizardPage() {
                     </Button>
                     <Button
                       component="a"
-                      href={`${recordingApp.href}/settings?tab=connectors`}
+                      href={
+                        recordingApp.href
+                          ? productSsoEntryUrl(recordingApp.href, '/settings?tab=connectors')
+                          : undefined
+                      }
                       fullWidth
                       radius="xl"
                       variant="default"

@@ -38,7 +38,17 @@ export function SsoCallbackPage() {
           // or any other failure, is a real sign-in failure.
           if (!suite) throw portalErr;
         }
-        navigate(suite ? '/setup' : '/', { replace: true });
+        if (suite) {
+          navigate('/setup', { replace: true });
+        } else {
+          // Prefer a safe in-app next path stashed before beginSsoLogin (product
+          // deep links from suite / RequireAuth).
+          const next = sessionStorage.getItem('sso_next');
+          sessionStorage.removeItem('sso_next');
+          const target =
+            next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
+          navigate(target, { replace: true });
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'SSO sign-in failed');
       }
