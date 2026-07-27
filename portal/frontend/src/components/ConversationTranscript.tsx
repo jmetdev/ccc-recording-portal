@@ -23,7 +23,7 @@ type Props = {
   maxHeight?: number;
 };
 
-const MERGE_GAP_S = 1.0;
+const MERGE_GAP_S = 0.35;
 
 function formatTime(seconds: number) {
   const total = Math.max(0, Math.round(seconds * 10) / 10);
@@ -34,22 +34,41 @@ function formatTime(seconds: number) {
   return `${m}:${whole.toString().padStart(2, '0')}.${tenth}`;
 }
 
+/** True when another speaker has speech overlapping the gap between two turns. */
+function otherLegSpokeInGap(turns: Turn[], leg: string, gapStart: number, gapEnd: number): boolean {
+  if (gapEnd <= gapStart) return false;
+  return turns.some(
+    (t) =>
+      t.leg !== leg &&
+      t.start != null &&
+      t.end != null &&
+      t.start < gapEnd &&
+      t.end > gapStart,
+  );
+}
+
+/**
+ * Only merge tiny same-leg splits (Whisper chopping mid-sentence).
+ * Do not merge across listening gaps — silence on one leg is usually the
+ * other party talking, and combining those bubbles wrecks the timeline.
+ */
 function mergeTurns(turns: Turn[]): Turn[] {
   if (turns.length === 0) return turns;
-  const sorted = [...turns].sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+  const sorted = [...turns].sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || a.leg.localeCompare(b.leg));
   const out: Turn[] = [];
   for (const turn of sorted) {
     const prev = out[out.length - 1];
-    if (
-      prev &&
+    const canMerge =
+      !!prev &&
       prev.leg === turn.leg &&
       prev.start != null &&
       prev.end != null &&
       turn.start != null &&
-      turn.start - prev.end <= MERGE_GAP_S
-    ) {
-      prev.end = turn.end ?? prev.end;
-      prev.text = `${prev.text} ${turn.text}`.replace(/\s+/g, ' ').trim();
+      turn.start - prev.end <= MERGE_GAP_S &&
+      !otherLegSpokeInGap(sorted, turn.leg, prev.end, turn.start);
+    if (canMerge) {
+      prev!.end = turn.end ?? prev!.end;
+      prev!.text = `${prev!.text} ${turn.text}`.replace(/\s+/g, ' ').trim();
       continue;
     }
     out.push({ ...turn });

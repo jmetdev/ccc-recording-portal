@@ -44,7 +44,15 @@ def simple_sentiment(text: str) -> tuple[str, float]:
 
 def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple[str, list, str | None]:
     opts = whisper_opts or {}
-    kwargs: dict = {"beam_size": 1}
+    # Dual-channel BIB legs: silence on one side is usually the other party
+    # talking (this side listening). Do NOT enable VAD — it strips that
+    # "silence" and shifts timestamps. Also avoid conditioning on prior text
+    # so Whisper does not stitch utterances across listening gaps.
+    kwargs: dict = {
+        "beam_size": 1,
+        "vad_filter": False,
+        "condition_on_previous_text": False,
+    }
     if opts.get("initial_prompt"):
         kwargs["initial_prompt"] = opts["initial_prompt"]
     if opts.get("hotwords"):
