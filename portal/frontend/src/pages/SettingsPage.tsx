@@ -23,6 +23,7 @@ import {
   IconCloud,
   IconEdit,
   IconHeartbeat,
+  IconMicrophone,
   IconPhone,
   IconPlugConnected,
   IconPlus,
@@ -31,6 +32,7 @@ import {
 } from '@tabler/icons-react';
 import { api } from '../api/client';
 import { ConnectorsTab } from './settings/ConnectorsTab';
+import { TranscriptionTab } from './settings/TranscriptionTab';
 import { WebexSetupTab } from './settings/WebexSetupTab';
 import { GroupSyncTab } from './settings/GroupSyncTab';
 import { HealthStatusPage } from './HealthStatusPage';
@@ -424,6 +426,9 @@ export function SettingsPage() {
           <Tabs.Tab value="connectors" leftSection={<IconPlugConnected size={16} />}>
             Connectors
           </Tabs.Tab>
+          <Tabs.Tab value="transcription" leftSection={<IconMicrophone size={16} />}>
+            Transcription
+          </Tabs.Tab>
           <Tabs.Tab value="webex" leftSection={<IconCloud size={16} />}>
             Webex setup
           </Tabs.Tab>
@@ -452,6 +457,9 @@ export function SettingsPage() {
         </Tabs.Panel>
         <Tabs.Panel value="connectors" pt="lg">
           <ConnectorsTab />
+        </Tabs.Panel>
+        <Tabs.Panel value="transcription" pt="lg">
+          <TranscriptionTab />
         </Tabs.Panel>
         <Tabs.Panel value="webex" pt="lg">
           <Card padding="lg" radius="md">

@@ -249,10 +249,22 @@ export const api = {
   listTranscripts: (callId: number) => request<Transcript[]>(`/calls/${callId}/transcripts`),
   createTag: (body: TagCreate) =>
     request<Tag>('/tags', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  searchTranscripts: (q: string, sentiment?: string) => {
-    const params = new URLSearchParams({ q });
-    if (sentiment) params.set('sentiment', sentiment);
-    return request<TranscriptSearchResult[]>(`/transcripts/search?${params}`);
+  searchTranscripts: (params: {
+    q?: string;
+    sentiment?: string;
+    near?: string;
+    far?: string;
+    date_from?: string;
+    date_to?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params.q?.trim()) qs.set('q', params.q.trim());
+    if (params.sentiment) qs.set('sentiment', params.sentiment);
+    if (params.near?.trim()) qs.set('near', params.near.trim());
+    if (params.far?.trim()) qs.set('far', params.far.trim());
+    if (params.date_from) qs.set('date_from', params.date_from);
+    if (params.date_to) qs.set('date_to', params.date_to);
+    return request<TranscriptSearchResult[]>(`/transcripts/search?${qs}`);
   },
   transcriptCoverage: () => request<TranscriptionCoverage>('/transcripts/coverage'),
   systemStatus: () => request<SystemStatus>('/system/status'),

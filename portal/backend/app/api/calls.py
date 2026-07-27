@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -419,13 +419,55 @@ async def delete_tag(tag_id: int, user=Depends(get_current_user), db: AsyncSessi
 
 @router.get("/transcripts/search", response_model=list[TranscriptSearchResult])
 async def search_transcripts(
-    q: str = Query(..., min_length=2),
+    q: str = Query("", max_length=200),
     sentiment: str | None = None,
+    near: str | None = Query(None, max_length=128, description="Filter by near/calling party"),
+    far: str | None = Query(None, max_length=128, description="Filter by far/called party"),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     user=Depends(require_permission(Permission.VIEW_TRANSCRIPTS.value)),
     db: AsyncSession = Depends(get_db),
 ):
+    q_clean = (q or "").strip()
+    near_clean = (near or "").strip() or None
+    far_clean = (far or "").strip() or None
+    if len(q_clean) < 2 and not near_clean and not far_clean and date_from is None and date_to is None and not sentiment:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide keywords (2+ chars) and/or near, far, sentiment, or a time range",
+        )
+
     group_id = await scoped_call_filter(user)
-    ts_query = func.plainto_tsquery("english", q)
+    filters = [
+        Call.tenant_id == user.tenant_id,
+        Call.trashed_at.is_(None),
+    ]
+    if group_id is not None:
+        filters.append(Call.group_id == group_id)
+    if sentiment:
+        filters.append(Transcript.sentiment == sentiment)
+    if near_clean:
+        like = f"%{near_clean}%"
+        filters.append(or_(Call.near_name.ilike(like), Call.near_addr.ilike(like)))
+    if far_clean:
+        like = f"%{far_clean}%"
+        filters.append(or_(Call.far_name.ilike(like), Call.far_addr.ilike(like)))
+    if date_from is not None:
+        filters.append(Call.started_at >= date_from)
+    if date_to is not None:
+        filters.append(Call.started_at <= date_to)
+
+    use_fts = len(q_clean) >= 2
+    if use_fts:
+        ts_query = func.plainto_tsquery("english", q_clean)
+        filters.append(Transcript.search_tsv.op("@@")(ts_query))
+        rank_expr = func.ts_rank(Transcript.search_tsv, ts_query)
+        headline_expr = func.ts_headline("english", Transcript.text, ts_query)
+        order_by = rank_expr.desc()
+    else:
+        rank_expr = literal(0.0)
+        headline_expr = func.left(Transcript.text, 240)
+        order_by = Call.started_at.desc()
 
     stmt = (
         select(
@@ -438,31 +480,23 @@ async def search_transcripts(
             Call.near_addr,
             Call.far_addr,
             Call.started_at,
-            func.ts_rank(Transcript.search_tsv, ts_query).label("rank"),
-            func.ts_headline("english", Transcript.text, ts_query).label("headline"),
+            rank_expr.label("rank"),
+            headline_expr.label("headline"),
         )
         .join(Call, Transcript.call_id == Call.id)
-        .where(
-            Transcript.search_tsv.op("@@")(ts_query),
-            Call.tenant_id == user.tenant_id,
-            Call.trashed_at.is_(None),
-        )
+        .where(*filters)
+        .order_by(order_by)
+        .limit(50)
     )
-    if group_id is not None:
-        stmt = stmt.where(Call.group_id == group_id)
-    if sentiment:
-        stmt = stmt.where(Transcript.sentiment == sentiment)
-
-    stmt = stmt.order_by(func.ts_rank(Transcript.search_tsv, ts_query).desc()).limit(50)
     result = await db.execute(stmt)
     return [
         TranscriptSearchResult(
             transcript_id=r.id,
             call_id=r.call_id,
             leg=r.leg.value if hasattr(r.leg, "value") else str(r.leg),
-            headline=r.headline,
+            headline=r.headline or "",
             sentiment=r.sentiment,
-            rank=float(r.rank),
+            rank=float(r.rank or 0),
             near_name=r.near_name,
             far_name=r.far_name,
             near_addr=r.near_addr,
