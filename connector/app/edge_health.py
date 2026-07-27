@@ -94,6 +94,8 @@ def _component(
 
 
 def collect_heartbeat_stats(queue_depth: int) -> dict:
+    from app.esl import list_active_recording_channels
+
     sip = check_sip_switch()
     whisper = check_whisper()
     components = [
@@ -104,9 +106,13 @@ def collect_heartbeat_stats(queue_depth: int) -> dict:
         components.append(
             _component("whisper", ok=whisper.get("ok"), detail=whisper.get("detail"))
         )
+    # FreeSWITCH exposes read_codec/write_codec on channels; the cloud portal
+    # cannot reach on-prem ESL, so we ship active BIB channels in the heartbeat.
+    live_channels = list_active_recording_channels() if sip.get("ok") else []
     return {
         "queue_depth": queue_depth,
         "sip_switch": sip,
         "whisper": whisper,
         "components": components,
+        "live_channels": live_channels,
     }

@@ -62,6 +62,9 @@ services:
       UDS_USER: ${UDS_USER:-}
       UDS_PASSWORD: ${UDS_PASSWORD:-}
       UDS_VERIFY_TLS: ${UDS_VERIFY_TLS:-false}
+      FS_ESL_HOST: ${FS_ESL_HOST:-127.0.0.1}
+      FS_ESL_PORT: ${FS_ESL_PORT:-8021}
+      FS_ESL_PASSWORD: ${FS_ESL_PASSWORD:-ChangeMe-ESL-Password}
     volumes:
       # Same host dir as FreeSWITCH's recordings, so the connector reads the WAVs.
       - ${DATA_DIR:-/opt/ccc-connector}/recordings:/recordings

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
@@ -124,14 +125,41 @@ async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSess
     group_id = await scoped_call_filter(user)
 
     # Host-local fs_cli is only meaningful for the legacy default tenant on a
-    # shared lab box. Multi-tenant cloud tenants get live state from their own
-    # Call rows (fed by their on-prem / Webex connectors).
+    # shared lab box. Multi-tenant cloud tenants get live state from their
+    # connector heartbeat (includes FreeSWITCH codecs) or Call rows.
+    from app.models import ConnectorCredential
     from app.services.tenancy import get_default_tenant_id
 
     if user.tenant_id == await get_default_tenant_id(db):
         channels = await list_active_recording_channels()
         if channels:
-            return [LiveChannelOut.model_validate(c) for c in channels]
+            return [_live_channel_with_fresh_duration(c) for c in channels]
+
+    # Prefer on-prem connector heartbeat snapshots (have read_codec/write_codec).
+    connectors = (
+        await db.execute(
+            select(ConnectorCredential).where(
+                ConnectorCredential.tenant_id == user.tenant_id,
+                ConnectorCredential.enabled.is_(True),
+            )
+        )
+    ).scalars().all()
+    now = datetime.now(timezone.utc)
+    connector_channels: list[LiveChannelOut] = []
+    for cred in connectors:
+        stats = cred.stats_json if isinstance(cred.stats_json, dict) else {}
+        raw_channels = stats.get("live_channels")
+        if not isinstance(raw_channels, list):
+            continue
+        # Ignore stale heartbeats so we don't show ghost calls.
+        if cred.last_seen_at is None or (now - cred.last_seen_at).total_seconds() > 180:
+            continue
+        for row in raw_channels:
+            if not isinstance(row, dict) or not row.get("uuid"):
+                continue
+            connector_channels.append(_live_channel_with_fresh_duration(row))
+    if connector_channels:
+        return connector_channels
 
     stmt = (
         select(Call)
@@ -145,7 +173,6 @@ async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSess
     if group_id is not None:
         stmt = stmt.where(Call.group_id == group_id)
     result = await db.execute(stmt)
-    now = datetime.now(timezone.utc)
     fallback = []
     for call in result.scalars().all():
         duration_s = max(0.0, (now - call.started_at).total_seconds()) if call.started_at else None
@@ -155,13 +182,24 @@ async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSess
                 refci=call.refci,
                 near_addr=call.near_addr,
                 far_addr=call.far_addr,
-                leg="portal",
                 dest="1034",
                 callstate="recording",
                 duration_s=duration_s,
             )
         )
     return fallback
+
+
+def _live_channel_with_fresh_duration(row: dict) -> LiveChannelOut:
+    """Recompute duration from created_epoch so heartbeat snapshots stay live."""
+    data = dict(row)
+    created = data.get("created_epoch")
+    if created is not None:
+        try:
+            data["duration_s"] = max(0.0, time.time() - float(created))
+        except (TypeError, ValueError):
+            pass
+    return LiveChannelOut.model_validate(data)
 
 
 @router.get("/calls", response_model=CallListResponse)

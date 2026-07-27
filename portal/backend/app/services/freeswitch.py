@@ -95,4 +95,41 @@ async def list_active_recording_channels() -> list[dict[str, Any]]:
         return []
 
     channels = [_normalize_channel(row) for row in _parse_fs_cli_output(stdout.decode()) if _is_active_recording(row)]
-    return [c for c in channels if c.get("uuid")]
+    channels = [c for c in channels if c.get("uuid")]
+    return _dedupe_channels_by_refci(channels)
+
+
+def _dedupe_channels_by_refci(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse near/far BIB forks into one row per call."""
+    by_key: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for ch in channels:
+        key = ch.get("refci") or ch.get("uuid") or ""
+        if not key:
+            continue
+        existing = by_key.get(key)
+        if existing is None:
+            by_key[key] = dict(ch)
+            order.append(key)
+            continue
+        for field in (
+            "near_addr",
+            "far_addr",
+            "read_codec",
+            "write_codec",
+            "cid_num",
+            "cid_name",
+            "created_epoch",
+            "duration_s",
+        ):
+            if not existing.get(field) and ch.get(field):
+                existing[field] = ch[field]
+        if ch.get("leg") == "far":
+            existing["uuid"] = ch.get("uuid") or existing.get("uuid")
+        if ch.get("created_epoch") and (
+            not existing.get("created_epoch")
+            or float(ch["created_epoch"]) < float(existing["created_epoch"])
+        ):
+            existing["created_epoch"] = ch["created_epoch"]
+            existing["duration_s"] = ch.get("duration_s")
+    return [by_key[k] for k in order]

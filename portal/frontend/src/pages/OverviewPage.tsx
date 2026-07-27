@@ -268,7 +268,6 @@ export function OverviewPage() {
                   <Table.Th>Near</Table.Th>
                   <Table.Th>Far</Table.Th>
                   <Table.Th>Ref CI</Table.Th>
-                  <Table.Th>Leg</Table.Th>
                   <Table.Th>Codec</Table.Th>
                   <Table.Th>Duration</Table.Th>
                 </Table.Tr>
@@ -281,8 +280,7 @@ export function OverviewPage() {
                     <Table.Td ff="monospace" fz="xs">
                       {c.refci || '—'}
                     </Table.Td>
-                    <Table.Td>{c.leg || '—'}</Table.Td>
-                    <Table.Td>{c.read_codec || '—'}</Table.Td>
+                    <Table.Td>{c.read_codec || c.write_codec || '—'}</Table.Td>
                     <Table.Td>{formatDuration(c.duration_s)}</Table.Td>
                   </Table.Tr>
                 ))}

@@ -35,8 +35,20 @@ def test_collect_heartbeat_stats_shape(monkeypatch):
         "check_sip_switch",
         lambda: {"ok": True, "detail": "ESL reachable"},
     )
+    monkeypatch.setattr(
+        "app.esl.list_active_recording_channels",
+        lambda: [
+            {
+                "uuid": "u1",
+                "refci": "123",
+                "read_codec": "PCMU",
+                "write_codec": "PCMU",
+            }
+        ],
+    )
     edge_health.note_whisper_claim()
     stats = edge_health.collect_heartbeat_stats(3)
     assert stats["queue_depth"] == 3
     assert stats["sip_switch"]["ok"] is True
     assert {c["name"] for c in stats["components"]} >= {"sip-switch", "connector", "whisper"}
+    assert stats["live_channels"][0]["read_codec"] == "PCMU"
