@@ -123,6 +123,22 @@ def _segment_dict(seg) -> dict:
     return {"start": start, "end": end, "text": (seg.text or "").strip()}
 
 
+def normalize_vad_parameters(params: dict) -> dict:
+    """Map vad_parameters for faster-whisper 1.1.0 (onset) vs 1.1.1+ (threshold)."""
+    try:
+        import dataclasses
+
+        from faster_whisper.vad import VadOptions
+
+        allowed = {f.name for f in dataclasses.fields(VadOptions)}
+    except Exception:
+        return params
+    out = dict(params)
+    if "threshold" in out and "threshold" not in allowed and "onset" in allowed:
+        out["onset"] = out.pop("threshold")
+    return {k: v for k, v in out.items() if k in allowed}
+
+
 def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple[str, list, str | None]:
     """Transcribe one mono leg with telephony-oriented faster-whisper settings.
 
@@ -159,7 +175,11 @@ def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple
     if "vad_filter" in opts:
         kwargs["vad_filter"] = bool(opts["vad_filter"])
     if isinstance(opts.get("vad_parameters"), dict):
-        kwargs["vad_parameters"] = {**kwargs["vad_parameters"], **opts["vad_parameters"]}
+        kwargs["vad_parameters"] = normalize_vad_parameters(
+            {**kwargs["vad_parameters"], **opts["vad_parameters"]}
+        )
+    else:
+        kwargs["vad_parameters"] = normalize_vad_parameters(kwargs["vad_parameters"])
 
     segments, info = model.transcribe(path, **kwargs)
     seg_list = []
