@@ -419,6 +419,10 @@ class LegalHoldUpdate(BaseModel):
     legal_hold: bool
 
 
+class CallDownloadZipRequest(BaseModel):
+    call_ids: list[int] = Field(..., min_length=1, max_length=25)
+
+
 # --- Tenant self-service ---
 
 

@@ -38,7 +38,9 @@ class Storage(ABC):
         """Filesystem path for the key, if the backend has one."""
         return None
 
-    def presigned_url(self, key: str, mime: str | None = None) -> str | None:
+    def presigned_url(
+        self, key: str, mime: str | None = None, content_disposition: str | None = None
+    ) -> str | None:
         """Direct-download URL for the key, if the backend supports it."""
         return None
 
@@ -144,10 +146,14 @@ class S3Storage(Storage):
     def delete(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=self._key(key))
 
-    def presigned_url(self, key: str, mime: str | None = None) -> str | None:
-        params = {"Bucket": self.bucket, "Key": self._key(key)}
+    def presigned_url(
+        self, key: str, mime: str | None = None, content_disposition: str | None = None
+    ) -> str | None:
+        params: dict = {"Bucket": self.bucket, "Key": self._key(key)}
         if mime:
             params["ResponseContentType"] = mime
+        if content_disposition:
+            params["ResponseContentDisposition"] = content_disposition
         return self.client.generate_presigned_url(
             "get_object", Params=params, ExpiresIn=settings.s3_presign_expire_s
         )

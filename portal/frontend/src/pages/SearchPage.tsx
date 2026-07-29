@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Group,
   Select,
   SimpleGrid,
@@ -13,7 +14,7 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconInfoCircle } from '@tabler/icons-react';
+import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { api, TranscriptSearchResult } from '../api/client';
 import { useCallPlayer } from '../components/CallPlayerContext';
 import { FAR_COLOR, NEAR_COLOR } from '../components/DualChannelWaveform';
@@ -26,6 +27,7 @@ const SENTIMENT_COLORS: Record<string, string> = {
 };
 
 const EXAMPLE_QUERIES = ['voicemail', 'callback', 'account number', 'transfer'];
+const MAX_BULK_DOWNLOAD = 25;
 
 const TIME_FRAMES = [
   { value: 'any', label: 'Any time' },
@@ -122,6 +124,8 @@ export function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCallIds, setSelectedCallIds] = useState<Set<number>>(new Set());
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   const coverage = useQuery({ queryKey: ['transcript-coverage'], queryFn: api.transcriptCoverage });
 
@@ -134,6 +138,11 @@ export function SearchPage() {
     }
     return rangeForPreset(timeFrame);
   }, [timeFrame, customFrom, customTo]);
+
+  const uniqueCallIds = useMemo(
+    () => [...new Set(results.map((r) => r.call_id))],
+    [results],
+  );
 
   const canSearch =
     q.trim().length >= 2 ||
@@ -149,6 +158,7 @@ export function SearchPage() {
     }
     setLoading(true);
     setError(null);
+    setSelectedCallIds(new Set());
     try {
       setResults(
         await api.searchTranscripts({
@@ -167,6 +177,44 @@ export function SearchPage() {
       setSearched(true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleCall = (callId: number, checked: boolean) => {
+    setSelectedCallIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        if (next.size >= MAX_BULK_DOWNLOAD && !next.has(callId)) return prev;
+        next.add(callId);
+      } else {
+        next.delete(callId);
+      }
+      return next;
+    });
+  };
+
+  const allSelectableSelected =
+    uniqueCallIds.length > 0 &&
+    uniqueCallIds.slice(0, MAX_BULK_DOWNLOAD).every((id) => selectedCallIds.has(id));
+
+  const toggleSelectAll = (checked: boolean) => {
+    if (!checked) {
+      setSelectedCallIds(new Set());
+      return;
+    }
+    setSelectedCallIds(new Set(uniqueCallIds.slice(0, MAX_BULK_DOWNLOAD)));
+  };
+
+  const bulkDownload = async () => {
+    if (selectedCallIds.size === 0) return;
+    setBulkDownloading(true);
+    setError(null);
+    try {
+      await api.downloadCallsZip([...selectedCallIds]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk download failed');
+    } finally {
+      setBulkDownloading(false);
     }
   };
 
@@ -284,40 +332,74 @@ export function SearchPage() {
           .
         </Text>
       )}
+      {results.length > 0 && (
+        <Group justify="space-between">
+          <Checkbox
+            label={`Select all${uniqueCallIds.length > MAX_BULK_DOWNLOAD ? ` (first ${MAX_BULK_DOWNLOAD})` : ''}`}
+            checked={allSelectableSelected}
+            indeterminate={selectedCallIds.size > 0 && !allSelectableSelected}
+            onChange={(e) => toggleSelectAll(e.currentTarget.checked)}
+          />
+          <Button
+            size="sm"
+            variant="light"
+            leftSection={<IconDownload size={16} />}
+            disabled={selectedCallIds.size === 0}
+            loading={bulkDownloading}
+            onClick={() => void bulkDownload()}
+          >
+            Download selected ({selectedCallIds.size})
+          </Button>
+        </Group>
+      )}
       {results.map((r) => {
         const title = formatParty(r.far_name, r.far_addr);
         const nearLabel = formatParty(r.near_name, r.near_addr);
         const dateLabel = r.started_at ? shortDate(r.started_at) : null;
+        const selected = selectedCallIds.has(r.call_id);
+        const selectionDisabled =
+          !selected && selectedCallIds.size >= MAX_BULK_DOWNLOAD;
         return (
           <Card key={r.transcript_id} padding="md" radius="md">
-            <Group justify="space-between" mb="xs">
-              <Group gap={6}>
-                <Text size="sm" fw={600}>
-                  {title}
-                </Text>
-                <Badge
-                  size="xs"
-                  variant="light"
-                  color="gray"
-                  style={{ color: r.leg === 'near' ? NEAR_COLOR : r.leg === 'far' ? FAR_COLOR : undefined }}
-                >
-                  {r.leg} leg
-                </Badge>
-                {r.sentiment && (
-                  <Badge size="xs" variant="light" color={SENTIMENT_COLORS[r.sentiment] ?? 'gray'}>
-                    {r.sentiment}
-                  </Badge>
-                )}
+            <Group justify="space-between" mb="xs" align="flex-start" wrap="nowrap">
+              <Group gap="sm" align="flex-start" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+                <Checkbox
+                  mt={4}
+                  checked={selected}
+                  disabled={selectionDisabled}
+                  onChange={(e) => toggleCall(r.call_id, e.currentTarget.checked)}
+                  aria-label={`Select call ${r.call_id}`}
+                />
+                <Stack gap={4} style={{ minWidth: 0 }}>
+                  <Group gap={6}>
+                    <Text size="sm" fw={600}>
+                      {title}
+                    </Text>
+                    <Badge
+                      size="xs"
+                      variant="light"
+                      color="gray"
+                      style={{ color: r.leg === 'near' ? NEAR_COLOR : r.leg === 'far' ? FAR_COLOR : undefined }}
+                    >
+                      {r.leg} leg
+                    </Badge>
+                    {r.sentiment && (
+                      <Badge size="xs" variant="light" color={SENTIMENT_COLORS[r.sentiment] ?? 'gray'}>
+                        {r.sentiment}
+                      </Badge>
+                    )}
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    Near: {nearLabel} · Far: {formatParty(r.far_name, r.far_addr)}
+                    {dateLabel ? ` · ${dateLabel}` : ''}
+                  </Text>
+                </Stack>
               </Group>
               <Button size="xs" variant="light" onClick={() => openCall(r.call_id)}>
                 Open recording
               </Button>
             </Group>
-            <Text size="xs" c="dimmed" mb={6}>
-              Near: {nearLabel} · Far: {formatParty(r.far_name, r.far_addr)}
-              {dateLabel ? ` · ${dateLabel}` : ''}
-            </Text>
-            <Text>
+            <Text pl={28}>
               <Headline text={r.headline} />
             </Text>
           </Card>

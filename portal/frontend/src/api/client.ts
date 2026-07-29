@@ -258,7 +258,57 @@ export const api = {
   listRecordings: (callId: number) => request<Recording[]>(`/calls/${callId}/recordings`),
   getRecordings: (callId: number) => request<Recording[]>(`/calls/${callId}/recordings`),
   getPeaks: (recordingId: number) => request<{ recording_id: number; peaks: unknown }>(`/recordings/${recordingId}/peaks`),
-  audioUrl: (recordingId: number) => `${API_BASE}/recordings/${recordingId}/audio`,
+  audioUrl: (recordingId: number, opts?: { download?: boolean }) =>
+    `${API_BASE}/recordings/${recordingId}/audio${opts?.download ? '?download=1' : ''}`,
+  downloadRecording: async (recordingId: number, filename?: string) => {
+    const res = await fetch(api.audioUrl(recordingId, { download: true }), { headers: authHeaders() });
+    if (res.status === 401) {
+      localStorage.removeItem('access_token');
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `${res.status} ${res.statusText}`);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition');
+    const match = cd?.match(/filename="?([^";]+)"?/i);
+    const name = filename || match?.[1] || `recording-${recordingId}`;
+    const obj = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = obj;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(obj);
+  },
+  downloadCallsZip: async (callIds: number[]) => {
+    const res = await fetch(`${API_BASE}/calls/download-zip`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ call_ids: callIds }),
+    });
+    if (res.status === 401) {
+      localStorage.removeItem('access_token');
+      window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `${res.status} ${res.statusText}`);
+    }
+    const blob = await res.blob();
+    const obj = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = obj;
+    a.download = 'recordings.zip';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(obj);
+  },
   listTags: (callId: number) => request<Tag[]>(`/calls/${callId}/tags`),
   getTags: (callId: number) => request<Tag[]>(`/calls/${callId}/tags`),
   listTranscripts: (callId: number) => request<Transcript[]>(`/calls/${callId}/transcripts`),

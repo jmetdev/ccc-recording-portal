@@ -28,6 +28,7 @@ import {
 import {
   IconAdjustments,
   IconArrowLeft,
+  IconDownload,
   IconInfoCircle,
   IconLock,
   IconMail,
@@ -333,6 +334,7 @@ function CallDetail({ callId }: { callId: number }) {
   const [pauseSignal, setPauseSignal] = useState<number | undefined>();
   const [tagSelectSignal, setTagSelectSignal] = useState(0);
   const [selectedTagId, setSelectedTagId] = useState<number | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const markedReadForCall = useRef<number | null>(null);
 
   const canManageTags = hasPermission(user, 'manage_tags');
@@ -435,6 +437,8 @@ function CallDetail({ callId }: { callId: number }) {
   const stereoRecording = items.find((r) => r.leg === 'stereo' && recordingHasMedia(r)) ?? null;
   const mixRecording = items.find((r) => r.leg === 'mix' && recordingHasMedia(r)) ?? null;
   const hasAudio = !!(nearRecording || farRecording || stereoRecording || mixRecording);
+  const downloadRecording =
+    stereoRecording || mixRecording || farRecording || nearRecording || null;
 
   const tagRecordingId = useMemo(() => {
     if (stereoRecording) return stereoRecording.id;
@@ -470,6 +474,18 @@ function CallDetail({ callId }: { callId: number }) {
     setRegionModal(null);
     setTagNote('');
     await tags.refetch();
+  };
+
+  const downloadAudio = async () => {
+    if (!downloadRecording) return;
+    setDownloading(true);
+    try {
+      await api.downloadRecording(downloadRecording.id);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const tagList = tags.data ?? [];
@@ -566,6 +582,15 @@ function CallDetail({ callId }: { callId: number }) {
                     Tag region
                   </Button>
                 )}
+                <Button
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconDownload size={14} />}
+                  loading={downloading}
+                  onClick={() => void downloadAudio()}
+                >
+                  Download
+                </Button>
               </Group>
             </Stack>
           ) : (

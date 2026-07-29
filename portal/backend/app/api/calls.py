@@ -1,5 +1,9 @@
 from datetime import datetime, timezone
+import io
+import os
+import re
 import time
+import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
@@ -11,6 +15,7 @@ from app.core.database import get_db
 from app.core.rbac import call_visibility_scope, can_view_call, get_current_user, require_permission, user_permissions
 from app.models import Call, CallRead, CallStatus, Group, Permission, RecordedExtension, Recording, RecordingLeg, Tag, Transcript
 from app.schemas import (
+    CallDownloadZipRequest,
     CallListResponse,
     CallOut,
     DashboardStats,
@@ -32,6 +37,42 @@ from app.services.storage import get_storage
 from app.services.system_health import fetch_transcription_coverage
 
 router = APIRouter(tags=["calls"])
+
+_DOWNLOAD_LEG_PRIORITY = (
+    RecordingLeg.STEREO,
+    RecordingLeg.MIX,
+    RecordingLeg.FAR,
+    RecordingLeg.NEAR,
+)
+
+
+def _leg_value(leg: RecordingLeg | str) -> str:
+    return leg.value if isinstance(leg, RecordingLeg) else str(leg)
+
+
+def recording_media(rec: Recording) -> tuple[str, str, str] | None:
+    """Return (storage_key, media_type, file_ext) for the preferred playable file."""
+    if rec.media_path:
+        ext = os.path.splitext(rec.media_path)[1].lstrip(".").lower() or "bin"
+        return rec.media_path, rec.media_mime or "application/octet-stream", ext
+    if rec.path_m4a:
+        return rec.path_m4a, "audio/mp4", "m4a"
+    if rec.path_wav:
+        return rec.path_wav, "audio/wav", "wav"
+    return None
+
+
+def preferred_download_recording(recordings: list[Recording]) -> Recording | None:
+    by_leg = {_leg_value(r.leg): r for r in recordings if recording_media(r)}
+    for leg in _DOWNLOAD_LEG_PRIORITY:
+        if leg.value in by_leg:
+            return by_leg[leg.value]
+    return next(iter(by_leg.values()), None)
+
+
+def download_filename(call: Call, rec: Recording, ext: str) -> str:
+    safe_ref = re.sub(r"[^A-Za-z0-9._-]+", "_", call.refci or str(call.id))[:64]
+    return f"call-{call.id}-{safe_ref}-{_leg_value(rec.leg)}.{ext}"
 
 
 def call_sentiment(call: Call) -> str | None:
@@ -403,7 +444,13 @@ async def get_peaks(recording_id: int, user=Depends(get_current_user), db: Async
 
 
 @router.get("/recordings/{recording_id}/audio")
-async def stream_audio(recording_id: int, request: Request, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def stream_audio(
+    recording_id: int,
+    request: Request,
+    download: bool = Query(False),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(Recording, Call)
         .join(Call, Recording.call_id == Call.id)
@@ -416,29 +463,27 @@ async def stream_audio(recording_id: int, request: Request, user=Depends(get_cur
     if not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    if rec.media_path:
-        key, media_type = rec.media_path, rec.media_mime or "application/octet-stream"
-    elif rec.path_m4a:
-        key, media_type = rec.path_m4a, "audio/mp4"
-    elif rec.path_wav:
-        key, media_type = rec.path_wav, "audio/wav"
-    else:
+    media = recording_media(rec)
+    if not media:
         raise HTTPException(status_code=404, detail="Audio not available")
+    key, media_type, ext = media
+    filename = download_filename(call, rec, ext)
+    disposition = f'attachment; filename="{filename}"' if download else None
 
     await record_audit(
         db,
         tenant_id=user.tenant_id,
-        action="recording.play",
+        action="recording.download" if download else "recording.play",
         user=user,
         resource_type="recording",
         resource_id=recording_id,
-        detail={"call_id": call.id, "refci": call.refci},
+        detail={"call_id": call.id, "refci": call.refci, "download": download},
         request=request,
         commit=True,
     )
 
     storage = get_storage()
-    presigned = storage.presigned_url(key, media_type)
+    presigned = storage.presigned_url(key, media_type, content_disposition=disposition)
     if presigned:
         # S3-backed media never proxies through the API; the audio element
         # follows the redirect and lets S3 handle range requests.
@@ -451,7 +496,7 @@ async def stream_audio(recording_id: int, request: Request, user=Depends(get_cur
     file_size = storage.size(key)
     range_header = request.headers.get("range")
 
-    if range_header:
+    if range_header and not download:
         try:
             _, range_spec = range_header.split("=")
             start_str, end_str = range_spec.split("-")
@@ -474,7 +519,88 @@ async def stream_audio(recording_id: int, request: Request, user=Depends(get_cur
             storage.iter_range(key, start, length), status_code=206, media_type=media_type, headers=headers
         )
 
-    return FileResponse(full_path, media_type=media_type, headers={"Accept-Ranges": "bytes"})
+    headers = {"Accept-Ranges": "bytes"}
+    if download:
+        return FileResponse(
+            full_path,
+            media_type=media_type,
+            filename=filename,
+            headers=headers,
+        )
+    return FileResponse(full_path, media_type=media_type, headers=headers)
+
+
+@router.post("/calls/download-zip")
+async def download_calls_zip(
+    body: CallDownloadZipRequest,
+    request: Request,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bundle preferred audio legs for the given calls into a zip download."""
+    call_ids = list(dict.fromkeys(body.call_ids))
+    result = await db.execute(
+        select(Call)
+        .where(Call.id.in_(call_ids), Call.tenant_id == user.tenant_id)
+        .options(selectinload(Call.recordings))
+    )
+    calls = {c.id: c for c in result.scalars().all()}
+
+    storage = get_storage()
+    entries: list[tuple[str, str]] = []  # (zip_name, storage_key)
+    included: list[int] = []
+    for call_id in call_ids:
+        call = calls.get(call_id)
+        if not call or not can_view_call(user, call.group_id, call.near_addr):
+            raise HTTPException(status_code=404, detail=f"Call {call_id} not found")
+        rec = preferred_download_recording(list(call.recordings))
+        if not rec:
+            continue
+        media = recording_media(rec)
+        if not media:
+            continue
+        key, _media_type, ext = media
+        if not storage.exists(key):
+            continue
+        entries.append((download_filename(call, rec, ext), key))
+        included.append(call.id)
+
+    if not entries:
+        raise HTTPException(status_code=404, detail="No downloadable audio for selected calls")
+
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        action="recording.bulk_download",
+        user=user,
+        resource_type="call",
+        resource_id=None,
+        detail={"call_ids": included, "file_count": len(entries)},
+        request=request,
+        commit=True,
+    )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        used_names: set[str] = set()
+        for name, key in entries:
+            zip_name = name
+            if zip_name in used_names:
+                stem, dot, ext = zip_name.rpartition(".")
+                n = 2
+                while zip_name in used_names:
+                    zip_name = f"{stem}_{n}{dot}{ext}" if stem else f"{name}_{n}"
+                    n += 1
+            used_names.add(zip_name)
+            data = b"".join(storage.iter_range(key, 0, storage.size(key)))
+            zf.writestr(zip_name, data)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="recordings.zip"'},
+    )
 
 
 @router.get("/calls/{call_id}/tags", response_model=list[TagOut])

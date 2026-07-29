@@ -82,7 +82,7 @@ type Props = {
   /** Cloud-source single-channel recording (e.g. Webex muxed MP3); streams
    * cannot be separated, so it renders as one waveform without channel mutes. */
   mixRecording?: Recording | null;
-  audioUrl: (recordingId: number) => string;
+  audioUrl: (id: number) => string;
   nearLabel: string;
   farLabel: string;
   /** When set, a single non-interactive region is drawn to show where the tag
