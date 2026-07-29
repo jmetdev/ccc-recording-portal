@@ -178,16 +178,53 @@ export function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+let refreshPromise: Promise<boolean> | null = null;
+
+function clearAuthAndRedirect(): void {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  window.location.href = '/login';
+}
+
+async function refreshTokens(): Promise<boolean> {
+  const refresh = localStorage.getItem('refresh_token');
+  if (!refresh) return false;
+  const res = await fetch(`${API_BASE}/auth/refresh?token=${encodeURIComponent(refresh)}`, {
+    method: 'POST',
+  });
+  if (!res.ok) return false;
+  const data = (await res.json()) as { access_token: string; refresh_token: string };
+  localStorage.setItem('access_token', data.access_token);
+  localStorage.setItem('refresh_token', data.refresh_token);
+  return true;
+}
+
+async function tryRefreshTokens(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = refreshTokens().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+export async function authFetch(url: string, init?: RequestInit, retried = false): Promise<Response> {
+  const res = await fetch(url, {
     ...init,
     headers: { ...authHeaders(), ...init?.headers },
   });
-  if (res.status === 401) {
-    localStorage.removeItem('access_token');
-    window.location.href = '/login';
+  if (res.status === 401 && !url.includes('/auth/refresh')) {
+    if (!retried && (await tryRefreshTokens())) {
+      return authFetch(url, init, true);
+    }
+    clearAuthAndRedirect();
     throw new Error('Unauthorized');
   }
+  return res;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await authFetch(`${API_BASE}${path}`, init);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `${res.status} ${res.statusText}`);
@@ -261,12 +298,7 @@ export const api = {
   audioUrl: (recordingId: number, opts?: { download?: boolean }) =>
     `${API_BASE}/recordings/${recordingId}/audio${opts?.download ? '?download=1' : ''}`,
   downloadRecording: async (recordingId: number, filename?: string) => {
-    const res = await fetch(api.audioUrl(recordingId, { download: true }), { headers: authHeaders() });
-    if (res.status === 401) {
-      localStorage.removeItem('access_token');
-      window.location.href = '/login';
-      throw new Error('Unauthorized');
-    }
+    const res = await authFetch(api.audioUrl(recordingId, { download: true }));
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || `${res.status} ${res.statusText}`);
@@ -285,16 +317,11 @@ export const api = {
     URL.revokeObjectURL(obj);
   },
   downloadCallsZip: async (callIds: number[]) => {
-    const res = await fetch(`${API_BASE}/calls/download-zip`, {
+    const res = await authFetch(`${API_BASE}/calls/download-zip`, {
       method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ call_ids: callIds }),
     });
-    if (res.status === 401) {
-      localStorage.removeItem('access_token');
-      window.location.href = '/login';
-      throw new Error('Unauthorized');
-    }
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || `${res.status} ${res.statusText}`);
@@ -335,7 +362,11 @@ export const api = {
   systemStatus: () => request<SystemStatus>('/system/status'),
   tenant: {
     getSettings: () => request<TenantSettings>('/tenant/settings'),
-    updateSettings: (body: { retention_days: number | null }) =>
+    updateSettings: (body: {
+      retention_days?: number | null;
+      session_access_minutes?: number | null;
+      session_refresh_days?: number | null;
+    }) =>
       request<TenantSettings>('/tenant/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -521,6 +552,8 @@ export type TenantSettings = {
   name: string;
   slug: string;
   retention_days: number | null;
+  session_access_minutes: number | null;
+  session_refresh_days: number | null;
 };
 
 export type TranscriptionSettings = {

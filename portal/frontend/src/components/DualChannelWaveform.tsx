@@ -3,7 +3,7 @@ import { ActionIcon, Box, Group, Stack, Text } from '@mantine/core';
 import { IconVolume, IconVolumeOff } from '@tabler/icons-react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
-import { authHeaders, Recording, recordingHasMedia } from '../api/client';
+import { authFetch, Recording, recordingHasMedia } from '../api/client';
 
 export const NEAR_COLOR = '#1997e4';
 export const FAR_COLOR = '#7450d5';
@@ -123,7 +123,7 @@ function useAudioBlobUrl(recordingId: number | null, audioUrl: (id: number) => s
     let objUrl: string | null = null;
     (async () => {
       try {
-        const resp = await fetch(audioUrl(recordingId), { headers: authHeaders() });
+        const resp = await authFetch(audioUrl(recordingId));
         if (!resp.ok) throw new Error(`audio fetch failed: ${resp.status}`);
         const blob = await resp.blob();
         if (cancelled) return;

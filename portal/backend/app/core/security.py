@@ -31,18 +31,25 @@ def hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
 
 
-def create_access_token(subject: str, extra: dict[str, Any] | None = None, tenant_id: int | None = None) -> str:
+def create_access_token(
+    subject: str,
+    extra: dict[str, Any] | None = None,
+    tenant_id: int | None = None,
+    expire_minutes: int | None = None,
+) -> str:
     if tenant_id is not None:
         extra = {**(extra or {}), "tid": tenant_id}
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    minutes = expire_minutes if expire_minutes is not None else settings.access_token_expire_minutes
+    expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     payload = {"sub": subject, "exp": expire, "type": "access"}
     if extra:
         payload.update(extra)
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+def create_refresh_token(subject: str, expire_days: int | None = None) -> str:
+    days = expire_days if expire_days is not None else settings.refresh_token_expire_days
+    expire = datetime.now(timezone.utc) + timedelta(days=days)
     payload = {"sub": subject, "exp": expire, "type": "refresh"}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

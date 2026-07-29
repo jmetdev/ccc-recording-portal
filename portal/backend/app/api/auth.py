@@ -18,6 +18,7 @@ from app.core.security import (
 from app.models import Role, User
 from app.schemas import TokenResponse, UserOut
 from app.services.audit import record_audit
+from app.services.session_config import tenant_access_minutes, tenant_refresh_days
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -47,11 +48,24 @@ async def _find_login_user(db: AsyncSession, identifier: str) -> User | None:
     Usernames are only unique per tenant; if the same username exists in more
     than one tenant the caller must log in with their email instead.
     """
-    opts = selectinload(User.roles).selectinload(Role.permissions)
     if "@" in identifier:
-        result = await db.execute(select(User).options(opts).where(User.email == identifier))
+        result = await db.execute(
+            select(User)
+            .options(
+                selectinload(User.roles).selectinload(Role.permissions),
+                selectinload(User.tenant),
+            )
+            .where(User.email == identifier)
+        )
         return result.scalar_one_or_none()
-    result = await db.execute(select(User).options(opts).where(User.username == identifier))
+    result = await db.execute(
+        select(User)
+        .options(
+            selectinload(User.roles).selectinload(Role.permissions),
+            selectinload(User.tenant),
+        )
+        .where(User.username == identifier)
+    )
     users = result.scalars().all()
     if len(users) > 1:
         raise HTTPException(
@@ -59,6 +73,19 @@ async def _find_login_user(db: AsyncSession, identifier: str) -> User | None:
             detail="Ambiguous username; log in with your email address",
         )
     return users[0] if users else None
+
+
+def _issue_tokens(user: User) -> TokenResponse:
+    sub = str(user.id)
+    tenant = user.tenant
+    return TokenResponse(
+        access_token=create_access_token(
+            sub,
+            tenant_id=user.tenant_id,
+            expire_minutes=tenant_access_minutes(tenant),
+        ),
+        refresh_token=create_refresh_token(sub, expire_days=tenant_refresh_days(tenant)),
+    )
 
 
 @router.post("/token", response_model=TokenResponse)
@@ -92,11 +119,7 @@ async def login(
         request=request,
         commit=True,
     )
-    sub = str(user.id)
-    return TokenResponse(
-        access_token=create_access_token(sub, tenant_id=user.tenant_id),
-        refresh_token=create_refresh_token(sub),
-    )
+    return _issue_tokens(user)
 
 
 @router.get("/me", response_model=UserOut)
@@ -160,11 +183,7 @@ async def sso_exchange(body: SsoExchangeIn, request: Request, db: AsyncSession =
         request=request,
         commit=True,
     )
-    sub = str(user.id)
-    return TokenResponse(
-        access_token=create_access_token(sub, tenant_id=user.tenant_id),
-        refresh_token=create_refresh_token(sub),
-    )
+    return _issue_tokens(user)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -177,12 +196,10 @@ async def refresh(token: str, db: AsyncSession = Depends(get_db)):
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid refresh token") from exc
 
-    result = await db.execute(select(User).where(User.id == int(user_id)))
+    result = await db.execute(
+        select(User).options(selectinload(User.tenant)).where(User.id == int(user_id))
+    )
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found")
-    sub = str(user.id)
-    return TokenResponse(
-        access_token=create_access_token(sub, tenant_id=user.tenant_id),
-        refresh_token=create_refresh_token(sub),
-    )
+    return _issue_tokens(user)

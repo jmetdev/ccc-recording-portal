@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -10,6 +10,7 @@ import {
   Group,
   Modal,
   MultiSelect,
+  NumberInput,
   Select,
   Stack,
   Table,
@@ -30,7 +31,8 @@ import {
   IconTrash,
   IconUsers,
 } from '@tabler/icons-react';
-import { api, type User } from '../api/client';
+import { api, hasPermission, type User } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import { ConnectorsTab } from './settings/ConnectorsTab';
 import { TranscriptionTab } from './settings/TranscriptionTab';
 import { WebexSetupTab } from './settings/WebexSetupTab';
@@ -575,6 +577,90 @@ function ExtensionsTab() {
   );
 }
 
+const DEFAULT_ACCESS_MINUTES = 60;
+const DEFAULT_REFRESH_DAYS = 7;
+
+function SessionSettingsCard() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ['tenant-settings'], queryFn: api.tenant.getSettings });
+  const canEdit = hasPermission(user, 'manage_users');
+  const [accessMinutes, setAccessMinutes] = useState(DEFAULT_ACCESS_MINUTES);
+  const [refreshDays, setRefreshDays] = useState(DEFAULT_REFRESH_DAYS);
+
+  useEffect(() => {
+    if (!settings.data) return;
+    setAccessMinutes(settings.data.session_access_minutes ?? DEFAULT_ACCESS_MINUTES);
+    setRefreshDays(settings.data.session_refresh_days ?? DEFAULT_REFRESH_DAYS);
+  }, [settings.data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.tenant.updateSettings({
+        session_access_minutes: accessMinutes,
+        session_refresh_days: refreshDays,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant-settings'] }),
+  });
+
+  return (
+    <Card padding="lg" radius="md">
+      <Title order={3} mb="xs">
+        Session
+      </Title>
+      <Text size="sm" c="dimmed" mb="md">
+        Controls how long users stay signed in to the recording portal. This applies to portal
+        sessions after login (including SSO) and is independent of Keycloak realm settings. When the
+        access token expires, the app silently refreshes it until the maximum session length is
+        reached.
+      </Text>
+      <Group align="flex-end" gap="lg" wrap="wrap">
+        <NumberInput
+          label="Access token lifetime (minutes)"
+          description="15–1440"
+          min={15}
+          max={1440}
+          value={accessMinutes}
+          onChange={(v) => setAccessMinutes(typeof v === 'number' ? v : DEFAULT_ACCESS_MINUTES)}
+          disabled={!canEdit}
+          w={220}
+        />
+        <NumberInput
+          label="Stay signed in for (days)"
+          description="1–90"
+          min={1}
+          max={90}
+          value={refreshDays}
+          onChange={(v) => setRefreshDays(typeof v === 'number' ? v : DEFAULT_REFRESH_DAYS)}
+          disabled={!canEdit}
+          w={220}
+        />
+        {canEdit && (
+          <Button onClick={() => save.mutate()} loading={save.isPending}>
+            Save session settings
+          </Button>
+        )}
+      </Group>
+      {!canEdit && (
+        <Text size="sm" c="dimmed" mt="sm">
+          Only users with user-management permission can change session settings.
+        </Text>
+      )}
+      {save.isSuccess && (
+        <Text size="sm" c="green" mt="sm">
+          Session settings updated. New logins use the updated lifetimes; existing sessions pick
+          them up on the next token refresh.
+        </Text>
+      )}
+      {save.isError && (
+        <Text size="sm" c="red" mt="sm">
+          {(save.error as Error).message}
+        </Text>
+      )}
+    </Card>
+  );
+}
+
 function DangerZone() {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ['tenant-settings'], queryFn: api.tenant.getSettings });
@@ -721,6 +807,7 @@ export function SettingsPage() {
         </Tabs.Panel>
         <Tabs.Panel value="system" pt="lg">
           <Stack gap="lg">
+            <SessionSettingsCard />
             <HealthStatusPage />
             <DangerZone />
           </Stack>

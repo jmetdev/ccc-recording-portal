@@ -24,6 +24,7 @@ from app.core.oauth import (
 )
 from app.core.security import create_access_token, create_refresh_token
 from app.services.audit import record_audit
+from app.services.session_config import tenant_access_minutes, tenant_refresh_days
 
 router = APIRouter(prefix="/auth/oauth", tags=["oauth"])
 
@@ -81,8 +82,15 @@ async def oauth_callback(
     )
     fragment = urlencode(
         {
-            "access_token": create_access_token(str(user.id), tenant_id=user.tenant_id),
-            "refresh_token": create_refresh_token(str(user.id)),
+            "access_token": create_access_token(
+                str(user.id),
+                tenant_id=user.tenant_id,
+                expire_minutes=tenant_access_minutes(user.tenant),
+            ),
+            "refresh_token": create_refresh_token(
+                str(user.id),
+                expire_days=tenant_refresh_days(user.tenant),
+            ),
         }
     )
     return RedirectResponse(f"{base}/auth/oauth-callback#{fragment}")

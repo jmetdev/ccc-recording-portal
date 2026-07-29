@@ -82,6 +82,9 @@ class Tenant(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # None = retain forever. Calls past retention are purged unless legal_hold.
     retention_days: Mapped[int | None] = mapped_column(Integer)
+    # None = use ACCESS_TOKEN_EXPIRE_MINUTES / REFRESH_TOKEN_EXPIRE_DAYS env defaults.
+    session_access_minutes: Mapped[int | None] = mapped_column(Integer)
+    session_refresh_days: Mapped[int | None] = mapped_column(Integer)
     settings_json: Mapped[dict | None] = mapped_column(JSONB)
     # Real correlation column for the Webex org that owns this tenant (replaces
     # the settings_json["webex_org_id"] convention as the source of truth).

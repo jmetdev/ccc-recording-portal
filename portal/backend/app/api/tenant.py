@@ -51,7 +51,11 @@ router = APIRouter(prefix="/tenant", tags=["tenant"])
 async def get_tenant_settings(user: User = Depends(get_current_user)):
     tenant = user.tenant
     return TenantSettingsOut(
-        name=tenant.name, slug=tenant.slug, retention_days=tenant.retention_days
+        name=tenant.name,
+        slug=tenant.slug,
+        retention_days=tenant.retention_days,
+        session_access_minutes=tenant.session_access_minutes,
+        session_refresh_days=tenant.session_refresh_days,
     )
 
 
@@ -59,9 +63,17 @@ async def get_tenant_settings(user: User = Depends(get_current_user)):
 async def update_tenant_settings(
     body: TenantSettingsUpdate,
     request: Request,
-    user: User = Depends(require_permission(Permission.MANAGE_RETENTION.value)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    perms = user_permissions(user)
+    if "retention_days" in body.model_fields_set and Permission.MANAGE_RETENTION.value not in perms:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if (
+        "session_access_minutes" in body.model_fields_set or "session_refresh_days" in body.model_fields_set
+    ) and Permission.MANAGE_USERS.value not in perms:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     tenant = (
         await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
     ).scalar_one()
@@ -78,10 +90,40 @@ async def update_tenant_settings(
             detail={"from": old, "to": body.retention_days},
             request=request,
         )
+    if "session_access_minutes" in body.model_fields_set:
+        old = tenant.session_access_minutes
+        tenant.session_access_minutes = body.session_access_minutes
+        await record_audit(
+            db,
+            tenant_id=user.tenant_id,
+            action="tenant.session_updated",
+            user=user,
+            resource_type="tenant",
+            resource_id=tenant.id,
+            detail={"field": "session_access_minutes", "from": old, "to": body.session_access_minutes},
+            request=request,
+        )
+    if "session_refresh_days" in body.model_fields_set:
+        old = tenant.session_refresh_days
+        tenant.session_refresh_days = body.session_refresh_days
+        await record_audit(
+            db,
+            tenant_id=user.tenant_id,
+            action="tenant.session_updated",
+            user=user,
+            resource_type="tenant",
+            resource_id=tenant.id,
+            detail={"field": "session_refresh_days", "from": old, "to": body.session_refresh_days},
+            request=request,
+        )
     await db.commit()
     await db.refresh(tenant)
     return TenantSettingsOut(
-        name=tenant.name, slug=tenant.slug, retention_days=tenant.retention_days
+        name=tenant.name,
+        slug=tenant.slug,
+        retention_days=tenant.retention_days,
+        session_access_minutes=tenant.session_access_minutes,
+        session_refresh_days=tenant.session_refresh_days,
     )
 
 

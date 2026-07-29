@@ -430,11 +430,15 @@ class TenantSettingsOut(BaseModel):
     name: str
     slug: str
     retention_days: int | None
+    session_access_minutes: int | None = None
+    session_refresh_days: int | None = None
 
 
 class TenantSettingsUpdate(BaseModel):
     # Explicit null clears the policy (retain forever); omitted = unchanged.
     retention_days: int | None = Field(default=None, ge=1, le=36500)
+    session_access_minutes: int | None = Field(default=None, ge=15, le=1440)
+    session_refresh_days: int | None = Field(default=None, ge=1, le=90)
 
 
 class TranscriptionSettingsOut(BaseModel):
