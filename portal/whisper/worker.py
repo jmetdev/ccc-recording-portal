@@ -12,7 +12,7 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
 WORKER_TOKEN = os.environ.get("WORKER_TOKEN", "")
 RECORDINGS_DIR = os.environ.get("RECORDINGS_DIR", "/recordings")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "5"))
-WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
 
 POSITIVE = {"great", "good", "excellent", "thanks", "thank", "happy", "perfect", "wonderful"}
 NEGATIVE = {"bad", "terrible", "angry", "upset", "problem", "issue", "complaint", "wrong", "hate"}
@@ -100,27 +100,70 @@ def align_segments_to_audio(path: str, segments: list[dict]) -> list[dict]:
     return out
 
 
+def _segment_dict(seg) -> dict:
+    """Build a segment dict; prefer word-level bounds when available."""
+    start = float(seg.start)
+    end = float(seg.end)
+    words = getattr(seg, "words", None) or []
+    word_starts = [float(w.start) for w in words if getattr(w, "start", None) is not None]
+    word_ends = [float(w.end) for w in words if getattr(w, "end", None) is not None]
+    if word_starts:
+        start = word_starts[0]
+    if word_ends:
+        end = word_ends[-1]
+    if end < start:
+        end = start
+    return {"start": start, "end": end, "text": (seg.text or "").strip()}
+
+
 def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple[str, list, str | None]:
+    """Transcribe one mono leg with telephony-oriented faster-whisper settings.
+
+    Dual-channel BIB legs have long listening silence (the other party talking).
+    We keep ``condition_on_previous_text=False`` so Whisper does not stitch
+    across those gaps. Silero VAD is enabled — faster-whisper restores segment
+    times onto the original timeline via ``restore_speech_timestamps``. Word
+    timestamps refine bubble start/end. Leading-silence alignment remains a
+    safety net when the first stamp still collapses to ~0.
+    """
     opts = whisper_opts or {}
-    # Dual-channel BIB legs: silence on one side is usually the other party
-    # talking (this side listening). Do NOT enable VAD — it strips that
-    # "silence" and shifts timestamps. Also avoid conditioning on prior text
-    # so Whisper does not stitch utterances across listening gaps.
     kwargs: dict = {
-        "beam_size": 1,
-        "vad_filter": False,
+        "language": opts.get("language") or "en",
+        "beam_size": int(opts.get("beam_size") or 5),
+        "best_of": int(opts.get("best_of") or 5),
+        "temperature": 0.0,
+        "vad_filter": True,
+        "vad_parameters": {
+            # Phone turn-taking: split on short pauses, pad speech edges.
+            "threshold": 0.5,
+            "min_speech_duration_ms": 250,
+            "min_silence_duration_ms": 400,
+            "speech_pad_ms": 300,
+        },
+        "word_timestamps": True,
         "condition_on_previous_text": False,
+        "no_speech_threshold": 0.6,
+        "compression_ratio_threshold": 2.4,
+        "log_prob_threshold": -1.0,
     }
     if opts.get("initial_prompt"):
         kwargs["initial_prompt"] = opts["initial_prompt"]
     if opts.get("hotwords"):
         kwargs["hotwords"] = opts["hotwords"]
+    if "vad_filter" in opts:
+        kwargs["vad_filter"] = bool(opts["vad_filter"])
+    if isinstance(opts.get("vad_parameters"), dict):
+        kwargs["vad_parameters"] = {**kwargs["vad_parameters"], **opts["vad_parameters"]}
+
     segments, info = model.transcribe(path, **kwargs)
     seg_list = []
     texts = []
     for seg in segments:
-        seg_list.append({"start": seg.start, "end": seg.end, "text": seg.text.strip()})
-        texts.append(seg.text.strip())
+        item = _segment_dict(seg)
+        if not item["text"]:
+            continue
+        seg_list.append(item)
+        texts.append(item["text"])
     seg_list = align_segments_to_audio(path, seg_list)
     text = " ".join(texts).strip()
     return text, seg_list, getattr(info, "language", None)

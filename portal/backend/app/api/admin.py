@@ -25,6 +25,7 @@ from app.models import (
 from app.schemas import (
     GroupCreate,
     GroupOut,
+    GroupUpdate,
     RecordedExtensionCreate,
     RecordedExtensionOut,
     RecordedExtensionUpdate,
@@ -126,14 +127,55 @@ async def create_group(
     user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
     db: AsyncSession = Depends(get_db),
 ):
-    group = Group(name=body.name, tenant_id=user.tenant_id)
+    group = Group(name=body.name.strip(), tenant_id=user.tenant_id)
     db.add(group)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A group with that name already exists") from exc
     await record_audit(
         db, tenant_id=user.tenant_id, user=user, action="admin.group_create",
         resource_type="group", resource_id=group.id, detail={"name": group.name}, request=request,
     )
     await db.commit()
+    await db.refresh(group)
+    return group
+
+
+@router.patch("/groups/{group_id}", response_model=GroupOut)
+async def update_group(
+    group_id: int,
+    body: GroupUpdate,
+    request: Request,
+    user: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    group = (
+        await db.execute(select(Group).where(Group.id == group_id, Group.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    new_name = body.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=422, detail="Group name is required")
+    old_name = group.name
+    group.name = new_name
+    await record_audit(
+        db,
+        tenant_id=user.tenant_id,
+        user=user,
+        action="admin.group_update",
+        resource_type="group",
+        resource_id=group.id,
+        detail={"old_name": old_name, "name": new_name},
+        request=request,
+    )
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A group with that name already exists") from exc
     await db.refresh(group)
     return group
 

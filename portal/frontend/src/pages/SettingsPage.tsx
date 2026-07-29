@@ -289,11 +289,35 @@ function GroupsRolesTab() {
   const groups = useQuery({ queryKey: ['admin-groups'], queryFn: api.admin.groups });
   const roles = useQuery({ queryKey: ['admin-roles'], queryFn: api.admin.roles });
   const [groupName, setGroupName] = useState('');
+  const [editGroup, setEditGroup] = useState<{ id: number; name: string } | null>(null);
+
   const createGroup = useMutation({
     mutationFn: () => api.admin.createGroup(groupName),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-groups'] });
       setGroupName('');
+    },
+  });
+
+  const updateGroup = useMutation({
+    mutationFn: () => {
+      if (!editGroup) throw new Error('No group selected');
+      return api.admin.updateGroup(editGroup.id, editGroup.name);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-groups'] });
+      qc.invalidateQueries({ queryKey: ['groups-mine'] });
+      setEditGroup(null);
+    },
+  });
+
+  const deleteGroup = useMutation({
+    mutationFn: (id: number) => api.admin.deleteGroup(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-groups'] });
+      qc.invalidateQueries({ queryKey: ['groups-mine'] });
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+      qc.invalidateQueries({ queryKey: ['admin-extensions'] });
     },
   });
 
@@ -305,19 +329,78 @@ function GroupsRolesTab() {
         </Title>
         <Group mb="md">
           <TextInput placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
-          <Button onClick={() => createGroup.mutate()} disabled={!groupName}>
+          <Button onClick={() => createGroup.mutate()} disabled={!groupName.trim()} loading={createGroup.isPending}>
             Add group
           </Button>
         </Group>
+        {createGroup.isError && (
+          <Alert color="red" mb="sm">
+            {createGroup.error instanceof Error ? createGroup.error.message : 'Could not create group'}
+          </Alert>
+        )}
         <Table>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Name</Table.Th>
+              <Table.Th />
+            </Table.Tr>
+          </Table.Thead>
           <Table.Tbody>
             {groups.data?.map((g) => (
               <Table.Tr key={g.id}>
                 <Table.Td>{g.name}</Table.Td>
+                <Table.Td>
+                  <Group gap={4} justify="flex-end">
+                    <ActionIcon
+                      variant="subtle"
+                      aria-label="Edit group"
+                      onClick={() => setEditGroup({ id: g.id, name: g.name })}
+                    >
+                      <IconEdit size={16} />
+                    </ActionIcon>
+                    <ActionIcon
+                      color="red"
+                      variant="subtle"
+                      aria-label="Delete group"
+                      loading={deleteGroup.isPending}
+                      onClick={() => {
+                        if (window.confirm(`Delete group “${g.name}”? Users and extensions keep their other memberships.`)) {
+                          deleteGroup.mutate(g.id);
+                        }
+                      }}
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </Group>
+                </Table.Td>
               </Table.Tr>
             ))}
           </Table.Tbody>
         </Table>
+        <Modal opened={!!editGroup} onClose={() => setEditGroup(null)} title="Edit group">
+          {editGroup && (
+            <Stack gap="sm">
+              {updateGroup.isError && (
+                <Alert color="red">
+                  {updateGroup.error instanceof Error ? updateGroup.error.message : 'Could not update group'}
+                </Alert>
+              )}
+              <TextInput
+                label="Name"
+                value={editGroup.name}
+                onChange={(e) => setEditGroup({ ...editGroup, name: e.target.value })}
+                autoFocus
+              />
+              <Button
+                onClick={() => updateGroup.mutate()}
+                loading={updateGroup.isPending}
+                disabled={!editGroup.name.trim()}
+              >
+                Save
+              </Button>
+            </Stack>
+          )}
+        </Modal>
       </div>
       <div>
         <Title order={3} mb="sm">

@@ -56,7 +56,7 @@ services:
       WORKER_TOKEN: ${WORKER_TOKEN}
       RECORDINGS_DIR: /recordings
       TRANSCRIBE: ${TRANSCRIBE:-true}
-      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
       LISTEN_PORT: "9000"
       UDS_BASE_URL: ${UDS_BASE_URL:-}
       UDS_USER: ${UDS_USER:-}
@@ -82,7 +82,7 @@ services:
       CONNECTOR_URL: http://127.0.0.1:9000
       WORKER_TOKEN: ${WORKER_TOKEN}
       RECORDINGS_DIR: /recordings
-      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
       POLL_INTERVAL: ${WHISPER_POLL_INTERVAL:-5}
     volumes:
       - ${DATA_DIR:-/opt/ccc-connector}/recordings:/recordings:ro

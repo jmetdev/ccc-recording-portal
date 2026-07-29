@@ -386,6 +386,14 @@ export const api = {
     groups: () => request<Group[]>('/admin/groups'),
     createGroup: (name: string) =>
       request<Group>('/admin/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+    updateGroup: (id: number, name: string) =>
+      request<Group>(`/admin/groups/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      }),
+    deleteGroup: (id: number) =>
+      request<{ status: string }>(`/admin/groups/${id}`, { method: 'DELETE' }),
     roles: () => request<Role[]>('/admin/roles'),
     createRole: (body: unknown) =>
       request<Role>('/admin/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),

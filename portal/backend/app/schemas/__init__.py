@@ -74,6 +74,10 @@ class GroupCreate(BaseModel):
     name: str
 
 
+class GroupUpdate(BaseModel):
+    name: str
+
+
 class RoleOut(BaseModel):
     id: int
     name: str
