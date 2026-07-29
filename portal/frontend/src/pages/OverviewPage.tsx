@@ -87,7 +87,10 @@ export function OverviewPage() {
   const { user } = useAuth();
   const canManage = hasPermission(user, 'manage_users');
   const canViewCalls =
-    canManage || hasPermission(user, 'view_all_calls') || hasPermission(user, 'view_group_calls');
+    canManage ||
+    hasPermission(user, 'view_all_calls') ||
+    hasPermission(user, 'view_group_calls') ||
+    hasPermission(user, 'view_own_calls');
 
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['dashboard-stats'],

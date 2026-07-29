@@ -23,6 +23,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def serialize_user(user: User) -> UserOut:
+    group_ids = [g.id for g in user.groups] if user.groups else (
+        [user.group_id] if user.group_id is not None else []
+    )
     return UserOut(
         id=user.id,
         email=user.email,
@@ -31,6 +34,8 @@ def serialize_user(user: User) -> UserOut:
         is_superadmin=user.is_superadmin,
         tenant_id=user.tenant_id,
         group_id=user.group_id,
+        group_ids=group_ids,
+        extension=user.extension,
         roles=[r.name for r in user.roles],
         permissions=sorted(user_permissions(user)),
     )

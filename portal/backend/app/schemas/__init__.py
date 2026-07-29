@@ -7,9 +7,11 @@ from pydantic import BaseModel, EmailStr, Field
 class PermissionEnum(str, Enum):
     view_all_calls = "view_all_calls"
     view_group_calls = "view_group_calls"
+    view_own_calls = "view_own_calls"
     manage_users = "manage_users"
     manage_tags = "manage_tags"
     view_transcripts = "view_transcripts"
+    manage_retention = "manage_retention"
 
 
 class TokenResponse(BaseModel):
@@ -26,6 +28,8 @@ class UserOut(BaseModel):
     is_superadmin: bool = False
     tenant_id: int | None = None
     group_id: int | None
+    group_ids: list[int] = []
+    extension: str | None = None
     roles: list[str]
     permissions: list[str]
 
@@ -39,6 +43,8 @@ class UserCreate(BaseModel):
     # portal-only until first Continue with Webex (no Keycloak pre-create).
     password: str | None = Field(default=None, min_length=6)
     group_id: int | None = None
+    group_ids: list[int] = []
+    extension: str | None = None
     role_ids: list[int] = []
     is_active: bool = True
     enable_webex_sso: bool = False
@@ -49,6 +55,8 @@ class UserUpdate(BaseModel):
     username: str | None = None
     password: str | None = Field(default=None, min_length=6)
     group_id: int | None = None
+    group_ids: list[int] | None = None
+    extension: str | None = None
     role_ids: list[int] | None = None
     is_active: bool | None = None
     enable_webex_sso: bool | None = None
@@ -146,7 +154,9 @@ class CallOut(BaseModel):
     holding: bool = False
     trashed_at: datetime | None = None
     group_id: int | None
+    group_name: str | None = None
     sentiment: str | None = None
+    is_unread: bool = True
 
     model_config = {"from_attributes": True}
 

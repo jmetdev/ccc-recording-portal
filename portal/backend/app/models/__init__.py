@@ -23,6 +23,7 @@ from app.core.database import Base
 class Permission(str, enum.Enum):
     VIEW_ALL_CALLS = "view_all_calls"
     VIEW_GROUP_CALLS = "view_group_calls"
+    VIEW_OWN_CALLS = "view_own_calls"
     MANAGE_USERS = "manage_users"
     MANAGE_TAGS = "manage_tags"
     VIEW_TRANSCRIPTS = "view_transcripts"
@@ -227,6 +228,25 @@ class UserRole(Base):
 
 user_roles = UserRole.__table__
 
+
+class UserGroup(Base):
+    __tablename__ = "user_groups"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
+
+
+user_groups = UserGroup.__table__
+
+
+class CallRead(Base):
+    __tablename__ = "call_reads"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    call_id: Mapped[int] = mapped_column(ForeignKey("calls.id", ondelete="CASCADE"), primary_key=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class RecordedExtensionGroup(Base):
     __tablename__ = "recorded_extension_groups"
 
@@ -249,6 +269,9 @@ class Group(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="group")
+    member_users: Mapped[list["User"]] = relationship(
+        secondary=user_groups, back_populates="groups", viewonly=False
+    )
     calls: Mapped[list["Call"]] = relationship(back_populates="group")
     recorded_extensions: Mapped[list["RecordedExtension"]] = relationship(
         secondary=recorded_extension_groups, back_populates="groups"
@@ -297,10 +320,15 @@ class User(Base):
     # Set when the account is provisioned/matched via an external IdP (Keycloak).
     oidc_subject: Mapped[str | None] = mapped_column(String(255), index=True)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"))
+    # Bare DN (e.g. "1034") for self_viewer call visibility via near_addr match.
+    extension: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     tenant: Mapped["Tenant"] = relationship(back_populates="users")
     group: Mapped["Group | None"] = relationship(back_populates="users")
+    groups: Mapped[list["Group"]] = relationship(
+        secondary=user_groups, back_populates="member_users"
+    )
     roles: Mapped[list["Role"]] = relationship(secondary=user_roles, back_populates="users")
 
 

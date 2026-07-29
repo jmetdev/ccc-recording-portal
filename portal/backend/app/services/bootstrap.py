@@ -5,16 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models import (
-    Group,
-    Permission,
-    RecordedExtension,
-    Role,
-    RolePermission,
-    Tenant,
-    User,
-    user_roles,
-)
+from app.models import Group, RecordedExtension, Role, Tenant, User, user_roles
+from app.services.tenancy import seed_tenant_roles
 
 logger = logging.getLogger(__name__)
 
@@ -46,25 +38,11 @@ async def bootstrap(db: AsyncSession) -> None:
         db.add(group)
         await db.flush()
 
+    await seed_tenant_roles(db, tenant.id)
+
     admin_role = (
         await db.execute(select(Role).where(Role.name == "admin", Role.tenant_id == tenant.id))
-    ).scalar_one_or_none()
-    if not admin_role:
-        admin_role = Role(name="admin", description="Full access", tenant_id=tenant.id)
-        db.add(admin_role)
-        await db.flush()
-        for perm in Permission:
-            db.add(RolePermission(role_id=admin_role.id, permission=perm))
-
-    viewer_role = (
-        await db.execute(select(Role).where(Role.name == "viewer", Role.tenant_id == tenant.id))
-    ).scalar_one_or_none()
-    if not viewer_role:
-        viewer_role = Role(name="viewer", description="Group-scoped call viewer", tenant_id=tenant.id)
-        db.add(viewer_role)
-        await db.flush()
-        for perm in [Permission.VIEW_GROUP_CALLS, Permission.MANAGE_TAGS, Permission.VIEW_TRANSCRIPTS]:
-            db.add(RolePermission(role_id=viewer_role.id, permission=perm))
+    ).scalar_one()
 
     admin = (await db.execute(select(User).where(User.email == settings.admin_email))).scalar_one_or_none()
     if not admin:

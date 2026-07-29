@@ -25,15 +25,23 @@ async def get_default_tenant_id(db: AsyncSession) -> int:
 
 TENANT_ROLES: dict[str, tuple[str, list[Permission]]] = {
     "admin": ("Full access", list(Permission)),
-    "viewer": (
-        "Group-scoped call viewer",
+    "team_viewer": (
+        "View calls in assigned teams",
         [Permission.VIEW_GROUP_CALLS, Permission.MANAGE_TAGS, Permission.VIEW_TRANSCRIPTS],
+    ),
+    "manager": (
+        "View all team recordings",
+        [Permission.VIEW_ALL_CALLS, Permission.MANAGE_TAGS, Permission.VIEW_TRANSCRIPTS],
+    ),
+    "self_viewer": (
+        "View own recordings only",
+        [Permission.VIEW_OWN_CALLS, Permission.MANAGE_TAGS, Permission.VIEW_TRANSCRIPTS],
     ),
 }
 
 
 async def seed_tenant_roles(db: AsyncSession, tenant_id: int) -> None:
-    """Idempotently ensure the standard admin/viewer roles exist for a tenant."""
+    """Idempotently ensure the standard roles exist for a tenant."""
     for name, (description, perms) in TENANT_ROLES.items():
         role = (
             await db.execute(select(Role).where(Role.tenant_id == tenant_id, Role.name == name))

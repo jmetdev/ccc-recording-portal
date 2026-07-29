@@ -40,7 +40,9 @@ function RecordingRoutes() {
           <Route element={<RequirePermission permission="manage_retention" />}>
             <Route path="retention" element={<RetentionPage />} />
           </Route>
-          <Route path="storage" element={<StoragePage />} />
+          <Route element={<RequirePermission permission="view_all_calls" />}>
+            <Route path="storage" element={<StoragePage />} />
+          </Route>
           <Route element={<RequirePermission permission="manage_users" />}>
             <Route path="settings" element={<SettingsPage />} />
           </Route>

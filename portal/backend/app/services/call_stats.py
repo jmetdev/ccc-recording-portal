@@ -8,12 +8,17 @@ figures agree with each other.
 
 from sqlalchemy import and_, func, select
 
-from app.models import Call
+from app.models import Call, User
+from app.services.call_visibility import CallVisibilityScope, append_visibility_scope
 
 
-def distinct_call_count_stmt(tenant_id: int, group_id: int | None, *extra_filters):
+def distinct_call_count_stmt(
+    tenant_id: int,
+    scope: CallVisibilityScope,
+    user: User,
+    *extra_filters,
+):
     filters = [Call.tenant_id == tenant_id, *extra_filters]
-    if group_id is not None:
-        filters.append(Call.group_id == group_id)
+    append_visibility_scope(filters, scope, user)
     deduped_ids = select(Call.id).where(and_(*filters)).distinct(Call.refci).subquery()
     return select(func.count()).select_from(deduped_ids)

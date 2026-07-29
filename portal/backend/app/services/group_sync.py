@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.orm import selectinload
+
 from app.core.config import settings
 
 from app.models import (
@@ -30,6 +32,7 @@ from app.models import (
     user_roles,
 )
 from app.services import webex_serviceapp as wx
+from app.services.user_groups import sync_user_primary_group
 
 logger = logging.getLogger(__name__)
 
@@ -68,26 +71,23 @@ async def sync_user_groups(db: AsyncSession, user: User) -> None:
     )
 
     matched_role_id: int | None = None
-    matched_group_id: int | None = None
+    matched_group_ids: set[int] = set()
     for mapping in mappings:
         try:
             members = await wx.list_group_members(token, mapping.webex_group_id)
         except Exception:
-            # Membership is authoritative only when every mapped lookup
-            # succeeds. Preserve current access on transient/API-shape errors
-            # instead of interpreting an unknown result as "not a member".
             logger.exception("Group membership lookup failed for %s", mapping.webex_group_id)
             return
         if user.email in members:
             if mapping.role_id is not None:
                 matched_role_id = mapping.role_id
             if mapping.group_id is not None:
-                matched_group_id = mapping.group_id
+                matched_group_ids.add(mapping.group_id)
 
     await db.execute(user_roles.delete().where(user_roles.c.user_id == user.id))
     if matched_role_id is not None:
         await db.execute(user_roles.insert().values(user_id=user.id, role_id=matched_role_id))
-    user.group_id = matched_group_id
+    await sync_user_primary_group(db, user, sorted(matched_group_ids))
     await db.commit()
 
 
@@ -122,32 +122,40 @@ async def sync_tenant(db: AsyncSession, tenant_id: int) -> int | None:
         await db.commit()
         return None
 
-    # Fetch each mapped group's members once; assemble email -> (role_id, group_id).
-    assignment: dict[str, tuple[int | None, int | None]] = {}
+    # Fetch each mapped group's members once; assemble email -> (role_id, group_ids).
+    assignment: dict[str, tuple[int | None, set[int]]] = {}
     try:
         for mapping in mappings:
             members = await wx.list_group_members(token, mapping.webex_group_id)
             for email in members:
-                role_id, group_id = assignment.get(email, (None, None))
-                assignment[email] = (
-                    mapping.role_id if mapping.role_id is not None else role_id,
-                    mapping.group_id if mapping.group_id is not None else group_id,
-                )
+                role_id, group_ids = assignment.get(email, (None, set()))
+                new_role = mapping.role_id if mapping.role_id is not None else role_id
+                if mapping.group_id is not None:
+                    group_ids.add(mapping.group_id)
+                assignment[email] = (new_role, group_ids)
     except Exception as exc:
         state.last_sync_status = "error"
         state.last_sync_error = str(exc)
         await db.commit()
         return None
 
-    users = (await db.execute(select(User).where(User.tenant_id == tenant_id))).scalars().all()
+    users = (
+        await db.execute(
+            select(User).options(selectinload(User.groups)).where(User.tenant_id == tenant_id)
+        )
+    ).scalars().all()
     changed = 0
     for user in users:
-        role_id, group_id = assignment.get(user.email, (None, None))
+        role_id, group_ids = assignment.get(user.email, (None, set()))
         await db.execute(user_roles.delete().where(user_roles.c.user_id == user.id))
         if role_id is not None:
             await db.execute(user_roles.insert().values(user_id=user.id, role_id=role_id))
-        if user.group_id != group_id:
-            user.group_id = group_id
+        sorted_groups = sorted(group_ids)
+        prev = sorted([g.id for g in user.groups]) if user.groups else (
+            [user.group_id] if user.group_id else []
+        )
+        await sync_user_primary_group(db, user, sorted_groups)
+        if prev != sorted_groups:
             changed += 1
 
     state.last_synced_at = datetime.now(timezone.utc)

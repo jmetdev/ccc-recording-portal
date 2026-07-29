@@ -101,6 +101,10 @@
   color: #74777d;
 }
 
+.rowMetaRead {
+  color: #9a9da3;
+}
+
 .empty {
   display: flex;
   flex-direction: column;

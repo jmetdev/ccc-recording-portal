@@ -7,12 +7,13 @@ Everything here is scoped to the calling user's own tenant — the platform
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import desc, func, select
+from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.rbac import get_current_user, require_permission, scoped_call_filter, user_permissions
+from app.core.rbac import call_visibility_scope, get_current_user, require_permission, user_permissions
+from app.services.call_visibility import append_visibility_scope
 from app.core.security import generate_connector_token
 from app.models import (
     Call,
@@ -294,18 +295,22 @@ async def delete_tenant_connector(
 
 @router.get("/storage-stats", response_model=StorageStats)
 async def storage_stats(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(Permission.VIEW_ALL_CALLS.value)),
     db: AsyncSession = Depends(get_db),
 ):
     tid = user.tenant_id
-    group_id = await scoped_call_filter(user)
+    scope = call_visibility_scope(user)
 
-    def group_scoped(stmt):
-        return stmt if group_id is None else stmt.where(Call.group_id == group_id)
+    def visibility_scoped(stmt):
+        filters: list = []
+        append_visibility_scope(filters, scope, user)
+        if not filters:
+            return stmt
+        return stmt.where(and_(*filters))
 
     totals = (
         await db.execute(
-            group_scoped(
+            visibility_scoped(
                 select(
                     func.coalesce(func.sum(Recording.bytes), 0),
                     func.count(Recording.id),
@@ -316,11 +321,11 @@ async def storage_stats(
         )
     ).one()
     total_bytes, recording_count = int(totals[0]), int(totals[1])
-    call_count = (await db.execute(distinct_call_count_stmt(tid, group_id))).scalar_one()
+    call_count = (await db.execute(distinct_call_count_stmt(tid, scope, user))).scalar_one()
 
     by_source_rows = (
         await db.execute(
-            group_scoped(
+            visibility_scoped(
                 select(
                     Call.source,
                     func.coalesce(func.sum(Recording.bytes), 0),
@@ -339,7 +344,7 @@ async def storage_stats(
     month = func.to_char(func.date_trunc("month", Call.started_at), "YYYY-MM")
     by_month_rows = (
         await db.execute(
-            group_scoped(
+            visibility_scoped(
                 select(
                     month.label("month"),
                     func.coalesce(func.sum(Recording.bytes), 0),
@@ -355,7 +360,7 @@ async def storage_stats(
 
     largest_rows = (
         await db.execute(
-            group_scoped(
+            visibility_scoped(
                 select(Recording, Call)
                 .join(Call, Recording.call_id == Call.id)
                 .where(Recording.tenant_id == tid, Recording.bytes.is_not(None))

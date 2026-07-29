@@ -44,6 +44,7 @@ from app.services.recorded_extensions import (
 from app.services.retention import purge_call_media
 from app.services.storage import get_storage
 from app.services.suite_entitlements import recording_seats_for_org
+from app.services.user_groups import sync_user_primary_group
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -58,12 +59,17 @@ def serialize_role(role: Role) -> RoleOut:
 
 
 def serialize_user(user: User) -> UserOut:
+    group_ids = [g.id for g in user.groups] if user.groups else (
+        [user.group_id] if user.group_id is not None else []
+    )
     return UserOut(
         id=user.id,
         email=user.email,
         username=user.username,
         is_active=user.is_active,
         group_id=user.group_id,
+        group_ids=group_ids,
+        extension=user.extension,
         roles=[r.name for r in user.roles],
         permissions=sorted(user_permissions(user)),
     )
@@ -218,7 +224,10 @@ async def list_users(
 ):
     result = await db.execute(
         select(User)
-        .options(selectinload(User.roles).selectinload(Role.permissions))
+        .options(
+            selectinload(User.roles).selectinload(Role.permissions),
+            selectinload(User.groups),
+        )
         .where(User.tenant_id == admin.tenant_id)
     )
     return [serialize_user(u) for u in result.scalars().all()]
@@ -264,17 +273,23 @@ async def create_user(
         except kc.KeycloakAdminError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    group_ids = list(body.group_ids)
+    if not group_ids and body.group_id is not None:
+        group_ids = [body.group_id]
+
     user = User(
         tenant_id=admin.tenant_id,
         email=str(body.email),
         username=body.username,
         password_hash=hash_password(portal_password),
-        group_id=body.group_id,
+        group_id=group_ids[0] if group_ids else None,
+        extension=body.extension,
         is_active=body.is_active,
     )
     db.add(user)
     try:
         await db.flush()
+        await sync_user_primary_group(db, user, group_ids)
         for role_id in body.role_ids:
             await db.execute(user_roles.insert().values(user_id=user.id, role_id=role_id))
         await record_audit(
@@ -301,7 +316,12 @@ async def create_user(
         ) from exc
 
     result = await db.execute(
-        select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == user.id)
+        select(User)
+        .options(
+            selectinload(User.roles).selectinload(Role.permissions),
+            selectinload(User.groups),
+        )
+        .where(User.id == user.id)
     )
     return serialize_user(result.scalar_one())
 
@@ -332,9 +352,15 @@ async def update_user(
     if body.password is not None:
         user.password_hash = hash_password(body.password)
         changed.append("password")
-    if body.group_id is not None:
-        user.group_id = body.group_id
+    if body.group_ids is not None:
+        await sync_user_primary_group(db, user, list(body.group_ids))
+        changed.append("group_ids")
+    elif body.group_id is not None:
+        await sync_user_primary_group(db, user, [body.group_id] if body.group_id else [])
         changed.append("group_id")
+    if body.extension is not None:
+        user.extension = body.extension or None
+        changed.append("extension")
     if body.is_active is not None:
         user.is_active = body.is_active
         changed.append("is_active")
@@ -374,7 +400,12 @@ async def update_user(
             detail="A user with that email or username already exists",
         ) from exc
     result = await db.execute(
-        select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == user_id)
+        select(User)
+        .options(
+            selectinload(User.roles).selectinload(Role.permissions),
+            selectinload(User.groups),
+        )
+        .where(User.id == user_id)
     )
     return serialize_user(result.scalar_one())
 

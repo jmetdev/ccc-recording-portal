@@ -23,7 +23,7 @@ const nav: NavItem[] = [
   { to: '/recordings', label: 'Recordings', icon: IconBroadcast },
   { to: '/search', label: 'Search', icon: IconSearch, perm: 'view_transcripts' },
   { to: '/retention', label: 'Retention', icon: IconLock, perm: 'manage_retention' },
-  { to: '/storage', label: 'Storage', icon: IconDatabase },
+  { to: '/storage', label: 'Storage', icon: IconDatabase, perm: 'view_all_calls' },
   { to: '/settings', label: 'Settings', icon: IconAdjustmentsHorizontal, perm: 'manage_users' },
 ];
 

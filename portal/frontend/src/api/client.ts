@@ -6,6 +6,8 @@ export type User = {
   username: string;
   is_active: boolean;
   group_id: number | null;
+  group_ids: number[];
+  extension: string | null;
   roles: string[];
   permissions: string[];
 };
@@ -29,6 +31,8 @@ export type Call = {
   trashed_at: string | null;
   sentiment: string | null;
   group_id: number | null;
+  group_name: string | null;
+  is_unread: boolean;
 };
 
 export type Recording = {
@@ -235,6 +239,9 @@ export const api = {
     const q = new URLSearchParams(params).toString();
     return request<{ items: Call[]; total: number }>(`/calls?${q}`);
   },
+  groupsMine: () => request<Group[]>('/groups/mine'),
+  markCallRead: (callId: number) =>
+    request<{ status: string }>(`/calls/${callId}/read`, { method: 'POST' }),
   getCall: (id: number) => request<Call>(`/calls/${id}`),
   setLegalHold: (callId: number, legal_hold: boolean) =>
     request<Call>(`/calls/${callId}/legal-hold`, {

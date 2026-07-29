@@ -51,7 +51,7 @@ Local username/password login keeps working alongside SSO.
   attribute `tenant`, token claim name `tenant`, add to access token — and set
   the attribute on each user (or use per-tenant realms/orgs).
 - **Roles**: realm role names that match portal role names in that tenant
-  (e.g. `admin`, `viewer`) are attached at provisioning time.
+  (e.g. `admin`, `team_viewer`, `manager`, `self_viewer`) are attached at provisioning time.
 - Customer IdPs (Entra ID, Google Workspace) are brokered *inside* Keycloak
   (Identity Providers → Add), so the portal only ever talks to Keycloak.
 

@@ -8,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.rbac import can_view_call, get_current_user, require_permission, scoped_call_filter, user_permissions
-from app.models import Call, CallStatus, Permission, RecordedExtension, Recording, RecordingLeg, Tag, Transcript
+from app.core.rbac import call_visibility_scope, can_view_call, get_current_user, require_permission, user_permissions
+from app.models import Call, CallRead, CallStatus, Group, Permission, RecordedExtension, Recording, RecordingLeg, Tag, Transcript
 from app.schemas import (
     CallListResponse,
     CallOut,
     DashboardStats,
+    GroupOut,
     LegalHoldUpdate,
     LiveChannelOut,
     PeaksOut,
@@ -25,6 +26,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.call_stats import distinct_call_count_stmt
+from app.services.call_visibility import append_visibility_scope, group_names_by_id, read_call_ids_for_user
 from app.services.freeswitch import list_active_recording_channels
 from app.services.storage import get_storage
 from app.services.system_health import fetch_transcription_coverage
@@ -37,22 +39,45 @@ def call_sentiment(call: Call) -> str | None:
     return sentiments[0] if sentiments else None
 
 
+async def calls_to_out(db: AsyncSession, user, calls: list[Call]) -> list[CallOut]:
+    if not calls:
+        return []
+    read_ids = await read_call_ids_for_user(db, user.id, [c.id for c in calls])
+    names = await group_names_by_id(
+        db, user.tenant_id, {c.group_id for c in calls if c.group_id is not None}
+    )
+    return [
+        CallOut.model_validate(c, from_attributes=True).model_copy(
+            update={
+                "sentiment": call_sentiment(c),
+                "is_unread": c.id not in read_ids,
+                "group_name": names.get(c.group_id) if c.group_id is not None else None,
+            }
+        )
+        for c in calls
+    ]
+
+
+async def call_to_out(db: AsyncSession, user, call: Call) -> CallOut:
+    return (await calls_to_out(db, user, [call]))[0]
+
+
 @router.get("/dashboard/stats", response_model=DashboardStats)
 async def dashboard_stats(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group_id = await scoped_call_filter(user)
+    scope = call_visibility_scope(user)
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
     not_trashed = Call.trashed_at.is_(None)
     calls_today = (
         await db.execute(
-            distinct_call_count_stmt(user.tenant_id, group_id, Call.started_at >= today, not_trashed)
+            distinct_call_count_stmt(user.tenant_id, scope, user, Call.started_at >= today, not_trashed)
         )
     ).scalar_one()
     calls_total = (
-        await db.execute(distinct_call_count_stmt(user.tenant_id, group_id, not_trashed))
+        await db.execute(distinct_call_count_stmt(user.tenant_id, scope, user, not_trashed))
     ).scalar_one()
     # FreeSWITCH fs_cli is host-local and not tenant-scoped. Only use it for
     # the legacy default tenant (shared lab box); everyone else reads
@@ -67,7 +92,7 @@ async def dashboard_stats(
             else (
                 await db.execute(
                     distinct_call_count_stmt(
-                        user.tenant_id, group_id, Call.status == CallStatus.RECORDING, not_trashed
+                        user.tenant_id, scope, user, Call.status == CallStatus.RECORDING, not_trashed
                     )
                 )
             ).scalar_one()
@@ -76,7 +101,7 @@ async def dashboard_stats(
         recording_now = (
             await db.execute(
                 distinct_call_count_stmt(
-                    user.tenant_id, group_id, Call.status == CallStatus.RECORDING, not_trashed
+                    user.tenant_id, scope, user, Call.status == CallStatus.RECORDING, not_trashed
                 )
             )
         ).scalar_one()
@@ -98,31 +123,24 @@ async def dashboard_stats(
 
 @router.get("/calls/live", response_model=list[CallOut])
 async def live_calls(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    group_id = await scoped_call_filter(user)
-    stmt = (
-        select(Call)
-        .where(
-            Call.status == CallStatus.RECORDING,
-            Call.tenant_id == user.tenant_id,
-            Call.trashed_at.is_(None),
-        )
-        .order_by(Call.started_at.desc())
-    )
-    if group_id is not None:
-        stmt = stmt.where(Call.group_id == group_id)
+    scope = call_visibility_scope(user)
+    filters = [
+        Call.status == CallStatus.RECORDING,
+        Call.tenant_id == user.tenant_id,
+        Call.trashed_at.is_(None),
+    ]
+    append_visibility_scope(filters, scope, user)
+    stmt = select(Call).where(and_(*filters)).order_by(Call.started_at.desc())
     result = await db.execute(stmt.options(selectinload(Call.transcripts)))
     calls = result.scalars().all()
-    return [
-        CallOut.model_validate(c, from_attributes=True).model_copy(update={"sentiment": call_sentiment(c)})
-        for c in calls
-    ]
+    return await calls_to_out(db, user, calls)
 
 
 @router.get("/freeswitch/live-channels", response_model=list[LiveChannelOut])
 async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     # Permission check first so users without call access get a clean 403
     # instead of leaking host-local FreeSWITCH state.
-    group_id = await scoped_call_filter(user)
+    scope = call_visibility_scope(user)
 
     # Host-local fs_cli is only meaningful for the legacy default tenant on a
     # shared lab box. Multi-tenant cloud tenants get live state from their
@@ -161,17 +179,13 @@ async def freeswitch_live_channels(user=Depends(get_current_user), db: AsyncSess
     if connector_channels:
         return connector_channels
 
-    stmt = (
-        select(Call)
-        .where(
-            Call.status == CallStatus.RECORDING,
-            Call.tenant_id == user.tenant_id,
-            Call.trashed_at.is_(None),
-        )
-        .order_by(Call.started_at.desc())
-    )
-    if group_id is not None:
-        stmt = stmt.where(Call.group_id == group_id)
+    filters = [
+        Call.status == CallStatus.RECORDING,
+        Call.tenant_id == user.tenant_id,
+        Call.trashed_at.is_(None),
+    ]
+    append_visibility_scope(filters, scope, user)
+    stmt = select(Call).where(and_(*filters)).order_by(Call.started_at.desc())
     result = await db.execute(stmt)
     fallback = []
     for call in result.scalars().all():
@@ -202,6 +216,24 @@ def _live_channel_with_fresh_duration(row: dict) -> LiveChannelOut:
     return LiveChannelOut.model_validate(data)
 
 
+@router.get("/groups/mine", response_model=list[GroupOut])
+async def my_groups(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    scope = call_visibility_scope(user)
+    if scope.mode == "all":
+        result = await db.execute(
+            select(Group).where(Group.tenant_id == user.tenant_id).order_by(Group.name)
+        )
+        return result.scalars().all()
+    if scope.mode == "groups":
+        if not scope.group_ids:
+            return []
+        result = await db.execute(
+            select(Group).where(Group.id.in_(scope.group_ids)).order_by(Group.name)
+        )
+        return result.scalars().all()
+    return []
+
+
 @router.get("/calls", response_model=CallListResponse)
 async def list_calls(
     page: int = Query(1, ge=1),
@@ -218,12 +250,18 @@ async def list_calls(
     legal_hold: bool | None = None,
     holding: bool | None = None,
     trashed: bool | None = None,
+    group_id: int | None = None,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group_id = await scoped_call_filter(user)
+    scope = call_visibility_scope(user)
     filters = [Call.tenant_id == user.tenant_id]
+    append_visibility_scope(filters, scope, user)
     if group_id is not None:
+        if scope.mode == "own":
+            raise HTTPException(status_code=403, detail="Not allowed to filter by group")
+        if scope.mode == "groups" and group_id not in scope.group_ids:
+            raise HTTPException(status_code=403, detail="Not allowed to view this group")
         filters.append(Call.group_id == group_id)
     if q:
         like = f"%{q}%"
@@ -277,10 +315,7 @@ async def list_calls(
         .offset(offset)
         .limit(page_size)
     )
-    items = [
-        CallOut.model_validate(c, from_attributes=True).model_copy(update={"sentiment": call_sentiment(c)})
-        for c in result.scalars().all()
-    ]
+    items = await calls_to_out(db, user, list(result.scalars().all()))
     return CallListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -292,9 +327,27 @@ async def get_call(call_id: int, user=Depends(get_current_user), db: AsyncSessio
         .where(Call.id == call_id, Call.tenant_id == user.tenant_id)
     )
     call = result.scalar_one_or_none()
-    if not call or not can_view_call(user, call.group_id):
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=404, detail="Call not found")
-    return CallOut.model_validate(call, from_attributes=True).model_copy(update={"sentiment": call_sentiment(call)})
+    return await call_to_out(db, user, call)
+
+
+@router.post("/calls/{call_id}/read")
+async def mark_call_read(call_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    call = (
+        await db.execute(select(Call).where(Call.id == call_id, Call.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
+        raise HTTPException(status_code=404, detail="Call not found")
+    existing = (
+        await db.execute(
+            select(CallRead).where(CallRead.user_id == user.id, CallRead.call_id == call_id)
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(CallRead(user_id=user.id, call_id=call_id, read_at=datetime.now(timezone.utc)))
+        await db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/calls/{call_id}/recordings", response_model=list[RecordingOut])
@@ -302,7 +355,7 @@ async def list_recordings(call_id: int, user=Depends(get_current_user), db: Asyn
     call = (
         await db.execute(select(Call).where(Call.id == call_id, Call.tenant_id == user.tenant_id))
     ).scalar_one_or_none()
-    if not call or not can_view_call(user, call.group_id):
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=404, detail="Call not found")
     result = await db.execute(select(Recording).where(Recording.call_id == call_id))
     recs = []
@@ -324,7 +377,7 @@ async def get_peaks(recording_id: int, user=Depends(get_current_user), db: Async
     if not row:
         raise HTTPException(status_code=404, detail="Recording not found")
     rec, call = row
-    if not can_view_call(user, call.group_id):
+    if not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=403, detail="Forbidden")
     if not rec.peaks_json:
         raise HTTPException(status_code=404, detail="Peaks not ready")
@@ -342,7 +395,7 @@ async def stream_audio(recording_id: int, request: Request, user=Depends(get_cur
     if not row:
         raise HTTPException(status_code=404, detail="Recording not found")
     rec, call = row
-    if not can_view_call(user, call.group_id):
+    if not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     if rec.media_path:
@@ -411,7 +464,7 @@ async def list_tags(call_id: int, user=Depends(get_current_user), db: AsyncSessi
     call = (
         await db.execute(select(Call).where(Call.id == call_id, Call.tenant_id == user.tenant_id))
     ).scalar_one_or_none()
-    if not call or not can_view_call(user, call.group_id):
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=404, detail="Call not found")
     result = await db.execute(select(Tag).where(Tag.call_id == call_id).order_by(Tag.start_s))
     return result.scalars().all()
@@ -422,7 +475,7 @@ async def create_tag(body: TagCreate, user=Depends(get_current_user), db: AsyncS
     call = (
         await db.execute(select(Call).where(Call.id == body.call_id, Call.tenant_id == user.tenant_id))
     ).scalar_one_or_none()
-    if not call or not can_view_call(user, call.group_id):
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=404, detail="Call not found")
     tag = Tag(
         tenant_id=user.tenant_id,
@@ -448,7 +501,7 @@ async def delete_tag(tag_id: int, user=Depends(get_current_user), db: AsyncSessi
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     call = (await db.execute(select(Call).where(Call.id == tag.call_id))).scalar_one_or_none()
-    if not call or not can_view_call(user, call.group_id):
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=403, detail="Forbidden")
     await db.delete(tag)
     await db.commit()
@@ -475,13 +528,12 @@ async def search_transcripts(
             detail="Provide keywords (2+ chars) and/or near, far, sentiment, or a time range",
         )
 
-    group_id = await scoped_call_filter(user)
+    scope = call_visibility_scope(user)
     filters = [
         Call.tenant_id == user.tenant_id,
         Call.trashed_at.is_(None),
     ]
-    if group_id is not None:
-        filters.append(Call.group_id == group_id)
+    append_visibility_scope(filters, scope, user)
     if sentiment:
         filters.append(Transcript.sentiment == sentiment)
     if near_clean:
@@ -565,7 +617,7 @@ async def list_transcripts(
     call = (
         await db.execute(select(Call).where(Call.id == call_id, Call.tenant_id == user.tenant_id))
     ).scalar_one_or_none()
-    if not call or not can_view_call(user, call.group_id):
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=404, detail="Call not found")
     result = await db.execute(select(Transcript).where(Transcript.call_id == call_id))
     return result.scalars().all()
@@ -600,9 +652,7 @@ async def set_legal_hold(
     )
     await db.commit()
     await db.refresh(call, ["transcripts"])
-    return CallOut.model_validate(call, from_attributes=True).model_copy(
-        update={"sentiment": call_sentiment(call)}
-    )
+    return await call_to_out(db, user, call)
 
 
 @router.post("/calls/{call_id}/trash", response_model=CallOut)
@@ -619,7 +669,7 @@ async def trash_call(
         .where(Call.id == call_id, Call.tenant_id == user.tenant_id)
     )
     call = result.scalar_one_or_none()
-    if not call or not can_view_call(user, call.group_id):
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=404, detail="Call not found")
     if call.legal_hold:
         raise HTTPException(
@@ -641,9 +691,7 @@ async def trash_call(
     )
     await db.commit()
     await db.refresh(call, ["transcripts"])
-    return CallOut.model_validate(call, from_attributes=True).model_copy(
-        update={"sentiment": call_sentiment(call)}
-    )
+    return await call_to_out(db, user, call)
 
 
 @router.post("/calls/{call_id}/restore", response_model=CallOut)
@@ -660,7 +708,7 @@ async def restore_call(
         .where(Call.id == call_id, Call.tenant_id == user.tenant_id)
     )
     call = result.scalar_one_or_none()
-    if not call or not can_view_call(user, call.group_id):
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
         raise HTTPException(status_code=404, detail="Call not found")
     if call.trashed_at is None:
         raise HTTPException(status_code=409, detail="Call is not in trash")
@@ -678,6 +726,4 @@ async def restore_call(
     )
     await db.commit()
     await db.refresh(call, ["transcripts"])
-    return CallOut.model_validate(call, from_attributes=True).model_copy(
-        update={"sentiment": call_sentiment(call)}
-    )
+    return await call_to_out(db, user, call)

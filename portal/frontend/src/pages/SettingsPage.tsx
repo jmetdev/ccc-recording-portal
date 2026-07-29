@@ -48,7 +48,8 @@ function UsersTab() {
     email: '',
     username: '',
     password: '',
-    group_id: null as number | null,
+    extension: '',
+    group_ids: [] as number[],
     role_ids: [] as number[],
     enable_webex_sso: false,
   });
@@ -59,7 +60,8 @@ function UsersTab() {
         email: form.email,
         username: form.username,
         password: form.password || undefined,
-        group_id: form.group_id,
+        extension: form.extension || undefined,
+        group_ids: form.group_ids,
         role_ids: form.role_ids,
         enable_webex_sso: form.enable_webex_sso,
       }),
@@ -70,7 +72,8 @@ function UsersTab() {
         email: '',
         username: '',
         password: '',
-        group_id: null,
+        extension: '',
+        group_ids: [],
         role_ids: [],
         enable_webex_sso: false,
       });
@@ -151,12 +154,20 @@ function UsersTab() {
                 : 'Leave blank for Webex-only. If set, used only for portal username/password login — not Keycloak.'
             }
           />
-          <Select
-            label="Group"
+          <MultiSelect
+            label="Groups"
+            description="Required for team viewers; optional for managers and self viewers."
             clearable
             data={groups.data?.map((g) => ({ value: String(g.id), label: g.name })) ?? []}
-            value={form.group_id ? String(form.group_id) : null}
-            onChange={(v) => setForm({ ...form, group_id: v ? Number(v) : null })}
+            value={form.group_ids.map(String)}
+            onChange={(v) => setForm({ ...form, group_ids: v.map(Number) })}
+          />
+          <TextInput
+            label="Extension"
+            placeholder="1034"
+            description="Required for self viewers — bare DN matched against call near-end."
+            value={form.extension}
+            onChange={(e) => setForm({ ...form, extension: e.target.value })}
           />
           <Select
             label="Role"

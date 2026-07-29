@@ -22,7 +22,7 @@ from app.core.security import hash_password
 from app.models import Role, Tenant, User, user_roles
 
 PLACEHOLDER = "REPLACE_ME"
-DEFAULT_ROLE = "viewer"
+DEFAULT_ROLE = "team_viewer"
 STATE_TTL_S = 600
 
 

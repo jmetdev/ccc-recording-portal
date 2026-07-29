@@ -80,11 +80,15 @@ function CallList({
   trashOnly: boolean;
 }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canFilterByGroup =
+    hasPermission(user, 'view_all_calls') || hasPermission(user, 'view_group_calls');
   const [q, setQ] = useState('');
   const [showFilters, setShowFilters] = useState(holdingOnly || trashOnly);
   const [direction, setDirection] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [sentiment, setSentiment] = useState<string | null>(null);
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
   const [holding, setHolding] = useState(holdingOnly);
   const [trashed, setTrashed] = useState(trashOnly);
   const [page, setPage] = useState(1);
@@ -101,13 +105,21 @@ function CallList({
 
   useEffect(() => {
     setPage(1);
-  }, [q, direction, source, sentiment, holding, trashed]);
+  }, [q, direction, source, sentiment, groupFilter, holding, trashed]);
+
+  const { data: myGroups } = useQuery({
+    queryKey: ['groups-mine'],
+    queryFn: api.groupsMine,
+    staleTime: 60_000,
+    enabled: canFilterByGroup,
+  });
 
   const params: Record<string, string> = { page: String(page), page_size: String(PAGE_SIZE) };
   if (q) params.q = q;
   if (direction) params.direction = direction;
   if (source) params.source = source;
   if (sentiment) params.sentiment = sentiment;
+  if (groupFilter) params.group_id = groupFilter;
   if (holding) params.holding = 'true';
   if (trashed) params.trashed = 'true';
 
@@ -120,6 +132,63 @@ function CallList({
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const groupSections = useMemo(() => {
+    if (!canFilterByGroup || groupFilter || items.length === 0) return null;
+    const byGroup = new Map<string, typeof items>();
+    for (const call of items) {
+      const key = call.group_name ?? 'Ungrouped';
+      const bucket = byGroup.get(key) ?? [];
+      bucket.push(call);
+      byGroup.set(key, bucket);
+    }
+    if (byGroup.size <= 1) return null;
+    return [...byGroup.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [canFilterByGroup, groupFilter, items]);
+
+  const renderCallRow = (c: (typeof items)[number]) => {
+    const title = formatParty(c.far_name, c.far_addr);
+    const active = c.id === selectedId;
+    return (
+      <li key={c.id}>
+        <button
+          type="button"
+          className={active ? `${classes.row} ${classes.rowActive}` : classes.row}
+          aria-current={active ? 'true' : undefined}
+          onClick={() =>
+            navigate(trashed ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`)
+          }
+        >
+          <div className={classes.playGlyph} aria-hidden="true">
+            <IconPlayerPlay size={15} />
+          </div>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Text size="sm" fw={c.is_unread ? 600 : 400} truncate>
+              {title}
+            </Text>
+            <div className={`${classes.rowMeta}${c.is_unread ? '' : ` ${classes.rowMetaRead}`}`}>
+              {(c.source || '').toUpperCase()} · {shortDate(c.started_at)} ·{' '}
+              {c.duration_s != null ? formatTime(c.duration_s) : '—'}
+              {c.trashed_at ? ` · ${daysUntilTrashPurge(c.trashed_at)}d left` : ''}
+            </div>
+          </Box>
+          <Group gap={4}>
+            {c.holding && (
+              <Badge size="xs" variant="light" color="orange">
+                Unconfigured
+              </Badge>
+            )}
+            {c.trashed_at && (
+              <Badge size="xs" variant="light" color="gray">
+                Trash
+              </Badge>
+            )}
+            <SourceBadge source={c.source} />
+          </Group>
+        </button>
+      </li>
+    );
+  };
 
   return (
     <div className={classes.listPane}>
@@ -154,6 +223,17 @@ function CallList({
               value={source}
               onChange={setSource}
             />
+            {canFilterByGroup && (
+              <Select
+                size="xs"
+                placeholder="Group"
+                aria-label="Filter by group"
+                clearable
+                data={(myGroups ?? []).map((g) => ({ value: String(g.id), label: g.name }))}
+                value={groupFilter}
+                onChange={setGroupFilter}
+              />
+            )}
             <Select
               size="xs"
               placeholder="Direction"
@@ -208,52 +288,19 @@ function CallList({
           <Text p="md" c="dimmed" size="sm">
             {trashed ? 'Trash is empty.' : 'No calls match.'}
           </Text>
+        ) : groupSections ? (
+          <div>
+            {groupSections.map(([groupName, calls]) => (
+              <section key={groupName}>
+                <Text size="xs" fw={600} c="dimmed" px="md" py="xs" tt="uppercase">
+                  {groupName}
+                </Text>
+                <ul className={classes.list}>{calls.map(renderCallRow)}</ul>
+              </section>
+            ))}
+          </div>
         ) : (
-          <ul className={classes.list}>
-            {items.map((c) => {
-              const title = formatParty(c.far_name, c.far_addr);
-              const active = c.id === selectedId;
-              return (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    className={active ? `${classes.row} ${classes.rowActive}` : classes.row}
-                    aria-current={active ? 'true' : undefined}
-                    onClick={() =>
-                      navigate(trashed ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`)
-                    }
-                  >
-                    <div className={classes.playGlyph} aria-hidden="true">
-                      <IconPlayerPlay size={15} />
-                    </div>
-                    <Box style={{ flex: 1, minWidth: 0 }}>
-                      <Text size="sm" fw={600} truncate>
-                        {title}
-                      </Text>
-                      <div className={classes.rowMeta}>
-                        {(c.source || '').toUpperCase()} · {shortDate(c.started_at)} ·{' '}
-                        {c.duration_s != null ? formatTime(c.duration_s) : '—'}
-                        {c.trashed_at ? ` · ${daysUntilTrashPurge(c.trashed_at)}d left` : ''}
-                      </div>
-                    </Box>
-                    <Group gap={4}>
-                      {c.holding && (
-                        <Badge size="xs" variant="light" color="orange">
-                          Unconfigured
-                        </Badge>
-                      )}
-                      {c.trashed_at && (
-                        <Badge size="xs" variant="light" color="gray">
-                          Trash
-                        </Badge>
-                      )}
-                      <SourceBadge source={c.source} />
-                    </Group>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <ul className={classes.list}>{items.map(renderCallRow)}</ul>
         )}
       </div>
       <div className={classes.listFooter}>
@@ -297,6 +344,20 @@ function CallDetail({ callId }: { callId: number }) {
       return s === 'recording' || s === 'processing' || s === 'transcribing' ? 3000 : false;
     },
   });
+
+  useEffect(() => {
+    if (!call.data || call.isError) return;
+    void (async () => {
+      if (!call.data.is_unread) return;
+      try {
+        await api.markCallRead(callId);
+        await queryClient.invalidateQueries({ queryKey: ['calls'] });
+        await queryClient.invalidateQueries({ queryKey: ['call', callId] });
+      } catch {
+        // Non-blocking; list will refresh on next load.
+      }
+    })();
+  }, [call.data, call.isError, callId, queryClient]);
 
   const recordings = useQuery({
     queryKey: ['recordings', callId],

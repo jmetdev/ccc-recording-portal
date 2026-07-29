@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.database import get_db, set_tenant_context
 from app.core.security import decode_token, is_token_type
 from app.models import Permission, Role, User
+from app.services.call_visibility import CallVisibilityScope, user_group_ids, user_matches_call_near
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
@@ -21,6 +22,7 @@ async def load_user(db: AsyncSession, user_id: int) -> User | None:
         .options(
             selectinload(User.roles).selectinload(Role.permissions),
             selectinload(User.tenant),
+            selectinload(User.groups),
         )
         .where(User.id == user_id)
     )
@@ -93,19 +95,25 @@ def require_permission(*required: str):
     return checker
 
 
-def can_view_call(user: User, call_group_id: int | None) -> bool:
+def call_visibility_scope(user: User) -> CallVisibilityScope:
     perms = user_permissions(user)
     if Permission.VIEW_ALL_CALLS.value in perms or Permission.MANAGE_USERS.value in perms:
-        return True
-    if Permission.VIEW_GROUP_CALLS.value in perms and call_group_id == user.group_id:
-        return True
-    return False
-
-
-async def scoped_call_filter(user: User):
-    perms = user_permissions(user)
-    if Permission.VIEW_ALL_CALLS.value in perms or Permission.MANAGE_USERS.value in perms:
-        return None
+        return CallVisibilityScope.all()
     if Permission.VIEW_GROUP_CALLS.value in perms:
-        return user.group_id
+        return CallVisibilityScope.groups(user_group_ids(user))
+    if Permission.VIEW_OWN_CALLS.value in perms:
+        return CallVisibilityScope.own()
     raise HTTPException(status_code=403, detail="No call viewing permission")
+
+
+def can_view_call(user: User, call_group_id: int | None, near_addr: str | None = None) -> bool:
+    perms = user_permissions(user)
+    if Permission.VIEW_ALL_CALLS.value in perms or Permission.MANAGE_USERS.value in perms:
+        return True
+    if Permission.VIEW_GROUP_CALLS.value in perms:
+        if call_group_id is None:
+            return False
+        return call_group_id in user_group_ids(user)
+    if Permission.VIEW_OWN_CALLS.value in perms:
+        return user_matches_call_near(user, near_addr)
+    return False
