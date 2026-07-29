@@ -35,7 +35,8 @@ class UserOut(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     username: str
-    # Required unless enable_webex_sso — then optional (Webex login; password is Keycloak fallback).
+    # Required unless enable_webex_sso — then optional. Webex SSO users are
+    # portal-only until first Continue with Webex (no Keycloak pre-create).
     password: str | None = Field(default=None, min_length=6)
     group_id: int | None = None
     role_ids: list[int] = []

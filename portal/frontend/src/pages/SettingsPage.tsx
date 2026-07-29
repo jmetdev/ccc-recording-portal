@@ -135,12 +135,12 @@ function UsersTab() {
           />
           <Checkbox
             label="Enable Webex single sign-on"
-            description="User signs in with Continue with Webex (Keycloak Webex IdP). Optional password below is a Keycloak local fallback."
+            description="Creates the portal user only. Their Keycloak account is created on first Continue with Webex (pre-creating it blocks Webex login)."
             checked={form.enable_webex_sso}
             onChange={(e) => setForm({ ...form, enable_webex_sso: e.currentTarget.checked })}
           />
           <TextInput
-            label={passwordRequired ? 'Password' : 'Password (optional Keycloak fallback)'}
+            label={passwordRequired ? 'Password' : 'Password (optional portal fallback)'}
             type="password"
             required={passwordRequired}
             value={form.password}
@@ -148,7 +148,7 @@ function UsersTab() {
             description={
               passwordRequired
                 ? 'Stored in Keycloak for local username/password sign-in (and portal password login).'
-                : 'Leave blank for Webex-only. If set, user can also sign in with Keycloak username/password.'
+                : 'Leave blank for Webex-only. If set, used only for portal username/password login — not Keycloak.'
             }
           />
           <Select

@@ -246,17 +246,21 @@ async def create_user(
     if tenant.webex_org_id:
         attrs["webex_org_id"] = [tenant.webex_org_id]
 
-    # Prefer Keycloak first when configured so a failed KC create does not leave
-    # an orphan portal row. Portal DB remains source of app roles/permissions.
-    if kc.keycloak_admin_configured():
+    # Webex SSO users must NOT be pre-created in Keycloak: a local KC account
+    # with the same email blocks first-broker-login ("account already exists").
+    # Portal row is enough; Continue with Webex creates the KC user via the IdP,
+    # and /auth/sso/exchange links oidc_subject by email.
+    keycloak_synced = False
+    if kc.keycloak_admin_configured() and not body.enable_webex_sso:
         try:
             await kc.upsert_user(
                 username=body.username,
                 email=str(body.email),
-                password=plain_password,  # None => Webex-only until password set
+                password=plain_password,
                 enabled=body.is_active,
                 attributes=attrs or None,
             )
+            keycloak_synced = True
         except kc.KeycloakAdminError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -284,7 +288,7 @@ async def create_user(
                 "email": user.email,
                 "username": user.username,
                 "enable_webex_sso": body.enable_webex_sso,
-                "keycloak_synced": kc.keycloak_admin_configured(),
+                "keycloak_synced": keycloak_synced,
             },
             request=request,
         )
@@ -344,11 +348,15 @@ async def update_user(
         "email" in changed or "username" in changed or "password" in changed or "is_active" in changed
     ):
         try:
+            # Never create on update — Webex SSO users are portal-only until
+            # first Continue with Webex; inventing a KC local account would
+            # block that broker login.
             await kc.upsert_user(
                 username=user.username,
                 email=user.email,
                 password=body.password,
                 enabled=user.is_active,
+                create_if_missing=False,
             )
         except kc.KeycloakAdminError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc

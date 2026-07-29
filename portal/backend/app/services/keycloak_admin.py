@@ -1,8 +1,8 @@
 """Keycloak Admin REST client for provisioning portal users into the realm.
 
-Creates/updates users in the shared ``ccc`` realm so they can sign in via:
-  - Webex IdP (Continue with Webex → kc_idp_hint=webex), and/or
-  - Keycloak username/password (local account / break-glass style).
+Used for local Keycloak username/password accounts (break-glass). Do not
+pre-create users that will sign in via the Webex IdP — a local account with
+the same email blocks first-broker-login ("account already exists").
 """
 
 from __future__ import annotations
@@ -70,10 +70,12 @@ async def upsert_user(
     password: str | None,
     enabled: bool = True,
     attributes: dict[str, list[str]] | None = None,
-) -> str:
+    create_if_missing: bool = True,
+) -> str | None:
     """Create or update a Keycloak user; optionally set a permanent password.
 
-    Returns the Keycloak user id.
+    Returns the Keycloak user id, or None when ``create_if_missing`` is False
+    and no matching user exists yet.
     """
     if not keycloak_admin_configured():
         raise KeycloakAdminError("Keycloak admin is not configured on this deployment")
@@ -96,6 +98,8 @@ async def upsert_user(
             resp = await client.put(f"{_realm_users_url()}/{user_id}", headers=headers, json=body)
             if resp.status_code not in (204, 200):
                 raise KeycloakAdminError(f"Keycloak user update failed: {resp.status_code} {resp.text[:200]}")
+        elif not create_if_missing:
+            return None
         else:
             resp = await client.post(_realm_users_url(), headers=headers, json=body)
             if resp.status_code not in (201, 204):
