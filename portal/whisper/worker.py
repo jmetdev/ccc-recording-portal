@@ -37,6 +37,69 @@ def simple_sentiment(text: str) -> tuple[str, float]:
     return "neutral", 0.0
 
 
+def measure_leading_silence_s(path: str, *, thresh: float = 0.012, frame_ms: int = 20) -> float:
+    """Return seconds of leading near-silence in a mono PCM WAV.
+
+    Whisper often stamps the first utterance at t≈0 even when the leg has
+    listening silence (other party talking). We measure energy onset so
+    segments can be shifted onto the real stereo timeline.
+    """
+    import math
+    import struct
+    import wave
+
+    try:
+        with wave.open(path, "rb") as wf:
+            if wf.getnchannels() != 1 or wf.getsampwidth() != 2:
+                return 0.0
+            rate = wf.getframerate()
+            if rate <= 0:
+                return 0.0
+            frame_len = max(1, int(rate * frame_ms / 1000))
+            total = wf.getnframes()
+            read = 0
+            while read < total:
+                raw = wf.readframes(frame_len)
+                if not raw:
+                    break
+                n = len(raw) // 2
+                if n == 0:
+                    break
+                samples = struct.unpack("<" + "h" * n, raw[: n * 2])
+                rms = math.sqrt(sum(s * s for s in samples) / n) / 32768.0
+                if rms >= thresh:
+                    return read / rate
+                read += n
+    except Exception:
+        return 0.0
+    return 0.0
+
+
+def align_segments_to_audio(path: str, segments: list[dict]) -> list[dict]:
+    """Shift Whisper segment times when leading silence was collapsed to t=0."""
+    if not segments:
+        return segments
+    first = float(segments[0].get("start") or 0.0)
+    if first > 0.35:
+        return segments
+    silence = measure_leading_silence_s(path)
+    if silence < 0.4:
+        return segments
+    delta = silence - first
+    if delta < 0.35:
+        return segments
+    out = []
+    for seg in segments:
+        out.append(
+            {
+                **seg,
+                "start": float(seg["start"]) + delta,
+                "end": float(seg["end"]) + delta,
+            }
+        )
+    return out
+
+
 def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple[str, list, str | None]:
     opts = whisper_opts or {}
     # Dual-channel BIB legs: silence on one side is usually the other party
@@ -58,6 +121,7 @@ def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple
     for seg in segments:
         seg_list.append({"start": seg.start, "end": seg.end, "text": seg.text.strip()})
         texts.append(seg.text.strip())
+    seg_list = align_segments_to_audio(path, seg_list)
     text = " ".join(texts).strip()
     return text, seg_list, getattr(info, "language", None)
 

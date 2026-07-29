@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollArea, Text } from '@mantine/core';
 import { Transcript } from '../api/client';
 import { FAR_COLOR, NEAR_COLOR } from './DualChannelWaveform';
@@ -24,6 +24,8 @@ type Props = {
 };
 
 const MERGE_GAP_S = 0.35;
+/** Prefer near before far when timestamps collide (agent typically speaks first). */
+const LEG_ORDER: Record<string, number> = { near: 0, far: 1, stereo: 2, mix: 3 };
 
 function formatTime(seconds: number) {
   const total = Math.max(0, Math.round(seconds * 10) / 10);
@@ -32,6 +34,10 @@ function formatTime(seconds: number) {
   const tenth = Math.round((total % 1) * 10);
   if (tenth === 0) return `${m}:${whole.toString().padStart(2, '0')}`;
   return `${m}:${whole.toString().padStart(2, '0')}.${tenth}`;
+}
+
+function legRank(leg: string): number {
+  return LEG_ORDER[leg] ?? 9;
 }
 
 /** True when another speaker has speech overlapping the gap between two turns. */
@@ -54,7 +60,12 @@ function otherLegSpokeInGap(turns: Turn[], leg: string, gapStart: number, gapEnd
  */
 function mergeTurns(turns: Turn[]): Turn[] {
   if (turns.length === 0) return turns;
-  const sorted = [...turns].sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || a.leg.localeCompare(b.leg));
+  const sorted = [...turns].sort(
+    (a, b) =>
+      (a.start ?? 0) - (b.start ?? 0) ||
+      legRank(a.leg) - legRank(b.leg) ||
+      a.leg.localeCompare(b.leg),
+  );
   const out: Turn[] = [];
   for (const turn of sorted) {
     const prev = out[out.length - 1];
@@ -76,6 +87,47 @@ function mergeTurns(turns: Turn[]): Turn[] {
   return out;
 }
 
+function turnContains(turn: Turn, time: number): boolean {
+  return turn.start != null && turn.end != null && time >= turn.start && time < turn.end;
+}
+
+/**
+ * When Whisper stamps overlapping near/far ranges (common when both start at 0),
+ * prefer the shortest matching span so a long agent bubble does not steal the
+ * highlight from a shorter caller utterance.
+ */
+function pickActiveTurn(turns: Turn[], currentTime: number, pinnedKey: string | null): Turn | null {
+  if (pinnedKey) {
+    const pinned = turns.find((t) => t.key === pinnedKey);
+    if (pinned && turnContains(pinned, currentTime)) return pinned;
+  }
+
+  const matches = turns.filter((t) => turnContains(t, currentTime));
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    return [...matches].sort(
+      (a, b) =>
+        a.end! - a.start! - (b.end! - b.start!) ||
+        legRank(a.leg) - legRank(b.leg),
+    )[0];
+  }
+
+  // In gaps between utterances, keep the most recently started turn visible
+  // so follow-along does not flicker to "nothing".
+  let best: Turn | null = null;
+  for (const t of turns) {
+    if (t.start == null || t.start > currentTime) continue;
+    if (
+      !best ||
+      t.start > (best.start ?? -1) ||
+      (t.start === best.start && legRank(t.leg) < legRank(best.leg))
+    ) {
+      best = t;
+    }
+  }
+  return best;
+}
+
 export function ConversationTranscript({
   transcripts,
   nearLabel,
@@ -85,6 +137,7 @@ export function ConversationTranscript({
   maxHeight = 320,
 }: Props) {
   const activeRef = useRef<HTMLDivElement>(null);
+  const [pinnedKey, setPinnedKey] = useState<string | null>(null);
 
   const turns = useMemo<Turn[]>(() => {
     // Per-leg transcripts give speaker attribution; stereo/mix duplicates them.
@@ -119,12 +172,15 @@ export function ConversationTranscript({
     [turns],
   );
 
-  const activeKey = useMemo(() => {
-    const active = turns.find(
-      (r) => r.start != null && r.end != null && currentTime >= r.start && currentTime < r.end,
-    );
-    return active?.key ?? null;
-  }, [turns, currentTime]);
+  const activeTurn = useMemo(
+    () => pickActiveTurn(turns, currentTime, pinnedKey),
+    [turns, currentTime, pinnedKey],
+  );
+  const activeKey = activeTurn?.key ?? null;
+
+  useEffect(() => {
+    if (pinnedKey && activeKey !== pinnedKey) setPinnedKey(null);
+  }, [activeKey, pinnedKey]);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -132,8 +188,12 @@ export function ConversationTranscript({
 
   if (turns.length === 0) return null;
 
-  const seek = (start: number | null) => {
-    if (start != null && onSeek) onSeek(start);
+  const seek = (turn: Turn) => {
+    if (turn.start == null || !onSeek) return;
+    setPinnedKey(turn.key);
+    // Nudge slightly into the span so an exclusive end-boundary on another
+    // overlapping turn does not keep the previous bubble highlighted.
+    onSeek(turn.start + 0.05);
   };
 
   return (
@@ -170,7 +230,7 @@ export function ConversationTranscript({
                       className={`${classes.bubble} ${classes.bubbleNear} ${
                         turn.start != null && onSeek ? classes.bubbleClickable : ''
                       }`}
-                      onClick={() => seek(turn.start)}
+                      onClick={() => seek(turn)}
                     >
                       {turn.text}
                     </div>
@@ -182,7 +242,7 @@ export function ConversationTranscript({
                       className={`${classes.bubble} ${classes.bubbleFar} ${
                         turn.start != null && onSeek ? classes.bubbleClickable : ''
                       }`}
-                      onClick={() => seek(turn.start)}
+                      onClick={() => seek(turn)}
                     >
                       {turn.text}
                     </div>
@@ -204,7 +264,7 @@ export function ConversationTranscript({
                 className={`${classes.monoRow} ${active ? classes.monoRowActive : ''} ${
                   clickable ? classes.monoRowClickable : ''
                 }`}
-                onClick={() => seek(turn.start)}
+                onClick={() => seek(turn)}
               >
                 <div className={classes.monoTime}>
                   {turn.start != null ? formatTime(turn.start) : '—'}
