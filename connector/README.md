@@ -84,9 +84,30 @@ Enabled by default (`TRANSCRIBE=true`). The whisper service:
 - Shares the recordings volume read-only
 - Authenticates to the connector with `WORKER_TOKEN` (defaults to `INGEST_TOKEN`)
 - Loads `WHISPER_MODEL` (default `base`) on CPU/int8
+- Splits transcript bubbles on phone pauses (tighter VAD + word-gap splitting)
 
 Disable with `--no-transcribe` (or `TRANSCRIBE=false` in `.env` and restart
 without the `transcription` profile).
+
+### Upgrading whisper after a code change
+
+`/opt/ccc-connector/src` is **not** a git checkout — `install.sh` unpacks a
+GitHub tarball. To pick up whisper changes without a full reinstall:
+
+```bash
+TMP=$(mktemp -d)
+curl -fsSL https://github.com/jmetdev/ccc-recording-portal/archive/refs/heads/main.tar.gz | tar xz -C "$TMP"
+sudo cp -r "$TMP/ccc-recording-portal-main/connector/whisper/"* /opt/ccc-connector/src/whisper/
+cd /opt/ccc-connector/src
+sudo docker compose --profile transcription up -d --build whisper
+sudo docker compose --profile transcription logs -f whisper
+```
+
+Re-run `install.sh` with your original `--token`, `--portal`, and `--cucm-nodes`
+to upgrade the full stack; it preserves `INGEST_TOKEN` / `WORKER_TOKEN`.
+
+Existing calls keep their old segment layout until re-transcribed; new calls
+pick up the updated bubble splitting automatically.
 
 ## Local test without CUCM
 

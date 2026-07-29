@@ -13,6 +13,8 @@ import time
 
 import httpx
 
+from segment_utils import segments_from_whisper_seg
+
 CONNECTOR_URL = os.environ.get("CONNECTOR_URL", "http://127.0.0.1:9000").rstrip("/")
 WORKER_TOKEN = os.environ.get("WORKER_TOKEN", "")
 RECORDINGS_DIR = os.environ.get("RECORDINGS_DIR", "/recordings")
@@ -107,22 +109,6 @@ def align_segments_to_audio(path: str, segments: list[dict]) -> list[dict]:
     return out
 
 
-def _segment_dict(seg) -> dict:
-    """Build a segment dict; prefer word-level bounds when available."""
-    start = float(seg.start)
-    end = float(seg.end)
-    words = getattr(seg, "words", None) or []
-    word_starts = [float(w.start) for w in words if getattr(w, "start", None) is not None]
-    word_ends = [float(w.end) for w in words if getattr(w, "end", None) is not None]
-    if word_starts:
-        start = word_starts[0]
-    if word_ends:
-        end = word_ends[-1]
-    if end < start:
-        end = start
-    return {"start": start, "end": end, "text": (seg.text or "").strip()}
-
-
 def normalize_vad_parameters(params: dict) -> dict:
     """Map vad_parameters for faster-whisper 1.1.0 (onset) vs 1.1.1+ (threshold)."""
     try:
@@ -146,8 +132,8 @@ def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple
     We keep ``condition_on_previous_text=False`` so Whisper does not stitch
     across those gaps. Silero VAD is enabled — faster-whisper restores segment
     times onto the original timeline via ``restore_speech_timestamps``. Word
-    timestamps refine bubble start/end. Leading-silence alignment remains a
-    safety net when the first stamp still collapses to ~0.
+    timestamps split bubbles on listening pauses (≥0.5s). Leading-silence
+    alignment remains a safety net when the first stamp still collapses to ~0.
     """
     opts = whisper_opts or {}
     kwargs: dict = {
@@ -159,8 +145,8 @@ def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple
         "vad_parameters": {
             "threshold": 0.5,
             "min_speech_duration_ms": 250,
-            "min_silence_duration_ms": 400,
-            "speech_pad_ms": 300,
+            "min_silence_duration_ms": 250,
+            "speech_pad_ms": 120,
         },
         "word_timestamps": True,
         "condition_on_previous_text": False,
@@ -185,11 +171,11 @@ def transcribe_file(model, path: str, whisper_opts: dict | None = None) -> tuple
     seg_list = []
     texts = []
     for seg in segments:
-        item = _segment_dict(seg)
-        if not item["text"]:
-            continue
-        seg_list.append(item)
-        texts.append(item["text"])
+        for item in segments_from_whisper_seg(seg):
+            if not item["text"]:
+                continue
+            seg_list.append(item)
+            texts.append(item["text"])
     seg_list = align_segments_to_audio(path, seg_list)
     text = " ".join(texts).strip()
     return text, seg_list, getattr(info, "language", None)
