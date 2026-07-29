@@ -30,12 +30,47 @@ import {
   IconTrash,
   IconUsers,
 } from '@tabler/icons-react';
-import { api } from '../api/client';
+import { api, type User } from '../api/client';
 import { ConnectorsTab } from './settings/ConnectorsTab';
 import { TranscriptionTab } from './settings/TranscriptionTab';
 import { WebexSetupTab } from './settings/WebexSetupTab';
 import { GroupSyncTab } from './settings/GroupSyncTab';
 import { HealthStatusPage } from './HealthStatusPage';
+
+type UserForm = {
+  email: string;
+  username: string;
+  password: string;
+  extension: string;
+  group_ids: number[];
+  role_ids: number[];
+  enable_webex_sso: boolean;
+  is_active: boolean;
+};
+
+const emptyForm = (): UserForm => ({
+  email: '',
+  username: '',
+  password: '',
+  extension: '',
+  group_ids: [],
+  role_ids: [],
+  enable_webex_sso: false,
+  is_active: true,
+});
+
+function formFromUser(u: User): UserForm {
+  return {
+    email: u.email,
+    username: u.username,
+    password: '',
+    extension: u.extension ?? '',
+    group_ids: u.group_ids?.length ? u.group_ids : u.group_id != null ? [u.group_id] : [],
+    role_ids: [],
+    enable_webex_sso: false,
+    is_active: u.is_active,
+  };
+}
 
 function UsersTab() {
   const qc = useQueryClient();
@@ -44,15 +79,28 @@ function UsersTab() {
   const roles = useQuery({ queryKey: ['admin-roles'], queryFn: api.admin.roles });
 
   const [userModal, setUserModal] = useState(false);
-  const [form, setForm] = useState({
-    email: '',
-    username: '',
-    password: '',
-    extension: '',
-    group_ids: [] as number[],
-    role_ids: [] as number[],
-    enable_webex_sso: false,
-  });
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [form, setForm] = useState<UserForm>(emptyForm);
+
+  const openCreate = () => {
+    setEditingUser(null);
+    setForm(emptyForm());
+    setUserModal(true);
+  };
+
+  const openEdit = (u: User) => {
+    const matchedRoleIds =
+      roles.data?.filter((r) => u.roles.includes(r.name)).map((r) => r.id) ?? [];
+    setEditingUser(u);
+    setForm({ ...formFromUser(u), role_ids: matchedRoleIds });
+    setUserModal(true);
+  };
+
+  const closeModal = () => {
+    setUserModal(false);
+    setEditingUser(null);
+    setForm(emptyForm());
+  };
 
   const createUser = useMutation({
     mutationFn: () =>
@@ -64,19 +112,30 @@ function UsersTab() {
         group_ids: form.group_ids,
         role_ids: form.role_ids,
         enable_webex_sso: form.enable_webex_sso,
+        is_active: form.is_active,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-users'] });
-      setUserModal(false);
-      setForm({
-        email: '',
-        username: '',
-        password: '',
-        extension: '',
-        group_ids: [],
-        role_ids: [],
-        enable_webex_sso: false,
+      closeModal();
+    },
+  });
+
+  const updateUser = useMutation({
+    mutationFn: () => {
+      if (!editingUser) throw new Error('No user selected');
+      return api.admin.updateUser(editingUser.id, {
+        email: form.email,
+        username: form.username,
+        password: form.password || undefined,
+        extension: form.extension || null,
+        group_ids: form.group_ids,
+        role_ids: form.role_ids,
+        is_active: form.is_active,
       });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+      closeModal();
     },
   });
 
@@ -85,21 +144,31 @@ function UsersTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
   });
 
-  const passwordRequired = !form.enable_webex_sso;
+  const passwordRequired = !editingUser && !form.enable_webex_sso;
+  const saving = createUser.isPending || updateUser.isPending;
+  const saveError = createUser.error || updateUser.error;
+  const groupOptions = groups.data?.map((g) => ({ value: String(g.id), label: g.name })) ?? [];
+  const roleOptions = roles.data?.map((r) => ({ value: String(r.id), label: r.name })) ?? [];
 
   return (
     <Stack gap="md">
       <Group>
-        <Button leftSection={<IconPlus size={16} />} onClick={() => setUserModal(true)}>
+        <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
           Add user
         </Button>
       </Group>
+      {roles.isError && (
+        <Alert color="red" title="Could not load roles">
+          {roles.error instanceof Error ? roles.error.message : 'Unknown error'}
+        </Alert>
+      )}
       <Table>
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Username</Table.Th>
             <Table.Th>Email</Table.Th>
             <Table.Th>Roles</Table.Th>
+            <Table.Th>Extension</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -109,21 +178,27 @@ function UsersTab() {
               <Table.Td>{u.username}</Table.Td>
               <Table.Td>{u.email}</Table.Td>
               <Table.Td>{u.roles.join(', ')}</Table.Td>
+              <Table.Td>{u.extension || '—'}</Table.Td>
               <Table.Td ta="right">
-                <ActionIcon color="red" variant="subtle" onClick={() => deleteUser.mutate(u.id)}>
-                  <IconTrash size={16} />
-                </ActionIcon>
+                <Group gap={4} justify="flex-end">
+                  <ActionIcon variant="subtle" onClick={() => openEdit(u)} aria-label="Edit user">
+                    <IconEdit size={16} />
+                  </ActionIcon>
+                  <ActionIcon color="red" variant="subtle" onClick={() => deleteUser.mutate(u.id)}>
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Group>
               </Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
 
-      <Modal opened={userModal} onClose={() => setUserModal(false)} title="New user">
+      <Modal opened={userModal} onClose={closeModal} title={editingUser ? 'Edit user' : 'New user'}>
         <Stack gap="sm">
-          {createUser.isError && (
-            <Alert color="red" title="Could not create user">
-              {createUser.error instanceof Error ? createUser.error.message : 'Unknown error'}
+          {saveError && (
+            <Alert color="red" title={editingUser ? 'Could not update user' : 'Could not create user'}>
+              {saveError instanceof Error ? saveError.message : 'Unknown error'}
             </Alert>
           )}
           <TextInput
@@ -136,29 +211,39 @@ function UsersTab() {
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
           />
-          <Checkbox
-            label="Enable Webex single sign-on"
-            description="Creates the portal user only. Their Keycloak account is created on first Continue with Webex (pre-creating it blocks Webex login)."
-            checked={form.enable_webex_sso}
-            onChange={(e) => setForm({ ...form, enable_webex_sso: e.currentTarget.checked })}
-          />
+          {!editingUser && (
+            <Checkbox
+              label="Enable Webex single sign-on"
+              description="Creates the portal user only. Their sign-in account is created on first Continue with Webex (pre-creating it blocks Webex login)."
+              checked={form.enable_webex_sso}
+              onChange={(e) => setForm({ ...form, enable_webex_sso: e.currentTarget.checked })}
+            />
+          )}
           <TextInput
-            label={passwordRequired ? 'Password' : 'Password (optional portal fallback)'}
+            label={
+              editingUser
+                ? 'New password (optional)'
+                : passwordRequired
+                  ? 'Password'
+                  : 'Password (optional portal fallback)'
+            }
             type="password"
             required={passwordRequired}
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
             description={
-              passwordRequired
-                ? 'Stored in Keycloak for local username/password sign-in (and portal password login).'
-                : 'Leave blank for Webex-only. If set, used only for portal username/password login — not Keycloak.'
+              editingUser
+                ? 'Leave blank to keep the current password.'
+                : passwordRequired
+                  ? 'Used for username/password sign-in.'
+                  : 'Leave blank for Webex-only. If set, used for portal username/password login.'
             }
           />
           <MultiSelect
             label="Groups"
             description="Required for team viewers; optional for managers and self viewers."
             clearable
-            data={groups.data?.map((g) => ({ value: String(g.id), label: g.name })) ?? []}
+            data={groupOptions}
             value={form.group_ids.map(String)}
             onChange={(v) => setForm({ ...form, group_ids: v.map(Number) })}
           />
@@ -171,16 +256,27 @@ function UsersTab() {
           />
           <Select
             label="Role"
-            data={roles.data?.map((r) => ({ value: String(r.id), label: r.name })) ?? []}
+            data={roleOptions}
             value={form.role_ids[0] ? String(form.role_ids[0]) : null}
             onChange={(v) => setForm({ ...form, role_ids: v ? [Number(v)] : [] })}
           />
+          {editingUser && (
+            <Checkbox
+              label="Active"
+              checked={form.is_active}
+              onChange={(e) => setForm({ ...form, is_active: e.currentTarget.checked })}
+            />
+          )}
           <Button
-            onClick={() => createUser.mutate()}
-            loading={createUser.isPending}
-            disabled={!form.email || !form.username || (passwordRequired && form.password.length < 6)}
+            onClick={() => (editingUser ? updateUser.mutate() : createUser.mutate())}
+            loading={saving}
+            disabled={
+              !form.email ||
+              !form.username ||
+              (passwordRequired && form.password.length < 6)
+            }
           >
-            Create
+            {editingUser ? 'Save' : 'Create'}
           </Button>
         </Stack>
       </Modal>
@@ -227,6 +323,11 @@ function GroupsRolesTab() {
         <Title order={3} mb="sm">
           Roles
         </Title>
+        {roles.isError && (
+          <Alert color="red" mb="sm">
+            {roles.error instanceof Error ? roles.error.message : 'Could not load roles'}
+          </Alert>
+        )}
         <Table>
           <Table.Thead>
             <Table.Tr>

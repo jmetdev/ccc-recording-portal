@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMediaQuery } from '@mantine/hooks';
@@ -30,6 +30,8 @@ import {
   IconArrowLeft,
   IconInfoCircle,
   IconLock,
+  IconMail,
+  IconMailOpened,
   IconPlayerPause,
   IconPlayerPlay,
   IconRestore,
@@ -331,6 +333,7 @@ function CallDetail({ callId }: { callId: number }) {
   const [pauseSignal, setPauseSignal] = useState<number | undefined>();
   const [tagSelectSignal, setTagSelectSignal] = useState(0);
   const [selectedTagId, setSelectedTagId] = useState<number | null>(null);
+  const markedReadForCall = useRef<number | null>(null);
 
   const canManageTags = hasPermission(user, 'manage_tags');
   const canViewTranscripts = hasPermission(user, 'view_transcripts');
@@ -346,15 +349,23 @@ function CallDetail({ callId }: { callId: number }) {
   });
 
   useEffect(() => {
+    markedReadForCall.current = null;
+  }, [callId]);
+
+  useEffect(() => {
     if (!call.data || call.isError) return;
+    if (!call.data.is_unread) return;
+    if (markedReadForCall.current === callId) return;
+    markedReadForCall.current = callId;
     void (async () => {
-      if (!call.data.is_unread) return;
       try {
         await api.markCallRead(callId);
         await queryClient.invalidateQueries({ queryKey: ['calls'] });
-        await queryClient.invalidateQueries({ queryKey: ['call', callId] });
+        queryClient.setQueryData(['call', callId], (prev: typeof call.data) =>
+          prev ? { ...prev, is_unread: false } : prev,
+        );
       } catch {
-        // Non-blocking; list will refresh on next load.
+        markedReadForCall.current = null;
       }
     })();
   }, [call.data, call.isError, callId, queryClient]);
@@ -404,6 +415,17 @@ function CallDetail({ callId }: { callId: number }) {
       await queryClient.invalidateQueries({ queryKey: ['calls'] });
       await queryClient.invalidateQueries({ queryKey: ['call', callId] });
       navigate(`/recordings/${callId}`);
+    },
+  });
+
+  const markUnread = useMutation({
+    mutationFn: () => api.markCallUnread(callId),
+    onSuccess: async () => {
+      markedReadForCall.current = callId; // prevent auto-read from firing again while still open
+      await queryClient.invalidateQueries({ queryKey: ['calls'] });
+      queryClient.setQueryData(['call', callId], (prev: typeof call.data) =>
+        prev ? { ...prev, is_unread: true } : prev,
+      );
     },
   });
 
@@ -607,6 +629,25 @@ function CallDetail({ callId }: { callId: number }) {
                 />
               )}
             </Stack>
+          </Card>
+
+          <Card padding="md" radius="md">
+            <Text fw={600} size="sm" mb={4}>
+              Read status
+            </Text>
+            <Text size="xs" c="dimmed" mb="sm">
+              {c?.is_unread ? 'This recording is unread.' : 'Marked as read when you opened it.'}
+            </Text>
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={c?.is_unread ? <IconMailOpened size={14} /> : <IconMail size={14} />}
+              loading={markUnread.isPending}
+              disabled={!c || !!c.is_unread}
+              onClick={() => markUnread.mutate()}
+            >
+              Mark as unread
+            </Button>
           </Card>
 
           {canManageRetention && (

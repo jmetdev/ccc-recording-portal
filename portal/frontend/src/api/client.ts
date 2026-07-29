@@ -242,6 +242,8 @@ export const api = {
   groupsMine: () => request<Group[]>('/groups/mine'),
   markCallRead: (callId: number) =>
     request<{ status: string }>(`/calls/${callId}/read`, { method: 'POST' }),
+  markCallUnread: (callId: number) =>
+    request<{ status: string }>(`/calls/${callId}/read`, { method: 'DELETE' }),
   getCall: (id: number) => request<Call>(`/calls/${id}`),
   setLegalHold: (callId: number, legal_hold: boolean) =>
     request<Call>(`/calls/${callId}/legal-hold`, {
@@ -373,6 +375,12 @@ export const api = {
     users: () => request<User[]>('/admin/users'),
     createUser: (body: unknown) =>
       request<User>('/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    updateUser: (id: number, body: unknown) =>
+      request<User>(`/admin/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
     deleteUser: (id: number) =>
       request<void>(`/admin/users/${id}`, { method: 'DELETE' }),
     groups: () => request<Group[]>('/admin/groups'),

@@ -298,7 +298,13 @@ class RolePermission(Base):
 
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
     permission: Mapped[Permission] = mapped_column(
-        Enum(Permission, name="permission_enum", native_enum=False), primary_key=True
+        Enum(
+            Permission,
+            name="permission_enum",
+            native_enum=False,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        primary_key=True,
     )
 
     role: Mapped["Role"] = relationship(back_populates="permissions")

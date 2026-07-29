@@ -350,6 +350,24 @@ async def mark_call_read(call_id: int, user=Depends(get_current_user), db: Async
     return {"status": "ok"}
 
 
+@router.delete("/calls/{call_id}/read")
+async def mark_call_unread(call_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    call = (
+        await db.execute(select(Call).where(Call.id == call_id, Call.tenant_id == user.tenant_id))
+    ).scalar_one_or_none()
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
+        raise HTTPException(status_code=404, detail="Call not found")
+    existing = (
+        await db.execute(
+            select(CallRead).where(CallRead.user_id == user.id, CallRead.call_id == call_id)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        await db.commit()
+    return {"status": "ok"}
+
+
 @router.get("/calls/{call_id}/recordings", response_model=list[RecordingOut])
 async def list_recordings(call_id: int, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     call = (

@@ -155,8 +155,8 @@ export function LoginPage() {
               {!webexPrimary && (
                 <Stack>
                   <Text size="sm" c="dimmed">
-                    Local Keycloak accounts (break-glass, not tied to Webex) sign in on Keycloak's own
-                    page.
+                    Local accounts (break-glass, not tied to Webex) sign in on the identity
+                    provider&apos;s own page.
                   </Text>
                   <Button
                     fullWidth
@@ -223,8 +223,8 @@ export function LoginPage() {
                 {sso?.enabled ? (
                   <>
                     <Text size="sm" c="dimmed">
-                      Local accounts sign in through Keycloak (username/password in the Keycloak
-                      directory). Webex SSO users should use Continue with Webex.
+                      Local accounts sign in with username and password through the identity
+                      provider. Webex SSO users should use Continue with Webex.
                     </Text>
                     <Button fullWidth loading={ssoLoading} onClick={localKeycloakSignIn}>
                       Sign in with a local account
