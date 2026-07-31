@@ -31,11 +31,11 @@ default role until group mappings apply.
 If you record through **Webex Calling** (not on-prem UCM):
 
 1. Authorize the Service App (step 1).
-2. **Settings → Connectors** — create a **WXC (Webex cloud)** credential.
-3. CloudCoreCollab deploys the `ccc-connector-webex` Docker poller on the VPS
-   with that token and your Webex org authorization.
-4. **Settings → Recorded users** — add owner emails that should count against
-   your recording seats and map to call-visibility groups.
+2. Open **Settings → WXC setup** and click **Enable WXC connector**.
+3. The portal provisions a Docker poller with your org's Webex tokens and a
+   connector credential — no manual CLI deploy.
+4. **Settings → Recorded users** — add owner emails for seat licensing and
+   group visibility.
 
 Webex delivers muxed mono audio and a VTT transcript (no on-prem Whisper).
 See `scripts/wxc-smoke-checklist.md` for verification steps.

@@ -4,10 +4,10 @@ Use after deploying portal + `ccc-connector-webex` on the VPS.
 
 ## Prerequisites
 
-1. Portal tenant with `webex_org_id` matching HyeTech Network org
-2. Connector credential: Settings → Connectors → **WXC (Webex cloud)** → copy `ccck_...`
-3. Webex Service App authorized with `spark-compliance:recordings_read` (or admin fallback)
-4. `/data/tokens.json` seeded on connector host; `docker compose up -d --build`
+1. Portal tenant with `webex_org_id` matching the customer Webex org
+2. Service App authorized in Control Hub (Settings → WXC setup shows **Authorized**)
+3. `WEBEX_CONNECTOR_BACKEND=docker` and `WEBEX_CONNECTOR_IMAGE` set on the portal host
+4. Click **Enable WXC connector** in Settings → WXC setup (no manual `deploy-connector-webex.sh`)
 
 ## Ingest
 

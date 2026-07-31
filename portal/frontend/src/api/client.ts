@@ -420,11 +420,15 @@ export const api = {
         };
       }>('/tenant/webex/status'),
     connectorStatus: () =>
-      request<{ enabled: boolean; status: string | null; webhook_url: string | null }>(
-        '/tenant/webex/connector/status',
-      ),
+      request<{
+        enabled: boolean;
+        status: string | null;
+        container?: string | null;
+        error?: string | null;
+        detail?: string | null;
+      }>('/tenant/webex/connector/status'),
     enableConnector: () =>
-      request<{ status: string; webhook_url: string | null }>('/tenant/webex/connector/enable', {
+      request<{ status: string; container: string | null }>('/tenant/webex/connector/enable', {
         method: 'POST',
       }),
     disableConnector: () =>

@@ -324,28 +324,16 @@ export function ConnectorsTab() {
           ) : (
             <>
               <Text size="sm">
-                Copy the token into{' '}
-                <Text span ff="monospace" fz="xs">
-                  CONNECTOR_TOKEN
-                </Text>{' '}
-                in the WXC connector{' '}
-                <Text span ff="monospace" fz="xs">
-                  .env
-                </Text>
-                , set{' '}
-                <Text span ff="monospace" fz="xs">
-                  PORTAL_URL
-                </Text>{' '}
-                to this portal, and authorize the Webex Service App (Compliance Officer recording
-                scopes). Then run{' '}
-                <Text span ff="monospace" fz="xs">
-                  docker compose up -d --build
-                </Text>{' '}
-                from the{' '}
+                For portal-managed ingest, open <strong>Settings → WXC setup</strong> and click{' '}
+                <strong>Enable WXC connector</strong> after Control Hub authorization. The portal
+                starts the poller container with this token automatically.
+              </Text>
+              <Text size="sm" mt="xs">
+                For external hosting only, copy this token into a self-managed{' '}
                 <Text span ff="monospace" fz="xs">
                   ccc-connector-webex
                 </Text>{' '}
-                repo on the VPS.
+                deployment:
               </Text>
               <Card padding="sm" radius="md" bg="#f7f8fa">
                 <Text ff="monospace" fz="xs" style={{ wordBreak: 'break-all' }}>
@@ -367,12 +355,12 @@ export function ConnectorsTab() {
                 </CopyButton>
               </Group>
               <List size="sm" type="ordered" spacing={4}>
-                <List.Item>Seed Webex refresh token to /data/tokens.json on the connector host</List.Item>
+                <List.Item>Use WXC setup to enable managed ingest on this portal</List.Item>
                 <List.Item>
-                  Connector heartbeats here once polling succeeds — confirm on Settings → System
+                  Or self-host: seed /data/tokens.json and set CONNECTOR_TOKEN in .env
                 </List.Item>
                 <List.Item>
-                  Add owner emails under Settings → Recorded users for seat licensing and group ACLs
+                  Add owner emails under Settings → Recorded users for seat licensing
                 </List.Item>
               </List>
             </>

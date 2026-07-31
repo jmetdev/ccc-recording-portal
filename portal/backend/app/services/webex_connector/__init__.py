@@ -27,6 +27,16 @@ async def get_instance(db: AsyncSession, tenant_id: int) -> WebexConnectorInstan
     return await ecs_backend.get_instance(db, tenant_id)
 
 
+async def enable_tenant_connector(db: AsyncSession, tenant_id: int) -> WebexConnectorInstance:
+    from app.core.config import settings
+    from . import docker as docker_backend
+    from . import ecs as ecs_backend
+
+    if settings.webex_connector_backend == "docker":
+        return await docker_backend.enable_tenant_connector(db, tenant_id)
+    raise RuntimeError("WXC auto-provisioning is only supported with WEBEX_CONNECTOR_BACKEND=docker")
+
+
 async def launch_tenant_connector(
     db: AsyncSession, tenant_id: int, connector_credential: ConnectorCredential, connector_token: str
 ) -> WebexConnectorInstance:

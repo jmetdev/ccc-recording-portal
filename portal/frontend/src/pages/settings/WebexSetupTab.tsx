@@ -1,21 +1,45 @@
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Card, Group, List, Stack, Text, Title } from '@mantine/core';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Alert, Badge, Button, Card, Group, List, Stack, Text, Title } from '@mantine/core';
 import { api } from '../../api/client';
 
 export function WebexSetupTab() {
+  const qc = useQueryClient();
   const status = useQuery({ queryKey: ['webex-status'], queryFn: api.webex.status });
+  const connector = useQuery({ queryKey: ['webex-connector-status'], queryFn: api.webex.connectorStatus });
   const s = status.data;
+  const c = connector.data;
 
   const configured = s?.serviceapp_configured ?? false;
   const authorized = s?.authorized ?? false;
+  const provisioningAvailable = c?.enabled === true;
+  const connectorStatus = c?.status;
+  const canEnable =
+    provisioningAvailable && configured && authorized && connectorStatus !== 'running' && connectorStatus !== 'provisioning';
+  const canDisable =
+    provisioningAvailable && !!connectorStatus && connectorStatus !== 'not_provisioned';
+
+  const enable = useMutation({
+    mutationFn: api.webex.enableConnector,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['webex-connector-status'] });
+      qc.invalidateQueries({ queryKey: ['tenant-connectors'] });
+    },
+  });
+  const disable = useMutation({
+    mutationFn: api.webex.disableConnector,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['webex-connector-status'] });
+      qc.invalidateQueries({ queryKey: ['tenant-connectors'] });
+    },
+  });
 
   return (
     <Stack gap="md">
       <Title order={3}>WXC setup</Title>
       <Text size="sm" c="dimmed">
-        Webex Calling (WXC) tenants authorize the CCC Recording Portal Service App once in Control
-        Hub. That unlocks org-admin detection and Control Hub group sync. Recording ingest runs via
-        the external WXC connector (Docker on the VPS) — not the on-prem UCM edge stack.
+        Authorize the Service App in Control Hub, then enable the WXC connector here. The portal
+        writes Webex tokens and connector configuration, then starts a dedicated Docker poller for
+        your org — no manual CLI deploy required.
       </Text>
 
       <Card padding="md" radius="md" withBorder>
@@ -24,32 +48,20 @@ export function WebexSetupTab() {
         </Text>
         <List size="sm" spacing={4}>
           <List.Item>
-            In Control Hub → Management → Apps → Service Apps, find <strong>CCC Recording Portal</strong>
+            In Control Hub → Management → Apps → Service Apps, authorize{' '}
+            <strong>CCC Recording Portal</strong>
           </List.Item>
-          <List.Item>Review permissions and click Authorize (Full Administrator required)</List.Item>
-          <List.Item>Return here — status should flip to Authorized for your Webex org</List.Item>
-          <List.Item>
-            Settings → Group sync to map Control Hub groups to portal roles and call-visibility groups
-          </List.Item>
-          <List.Item>
-            Settings → Connectors → create a <strong>webex</strong> credential, then deploy{' '}
-            <Text span ff="monospace" fz="xs">
-              ccc-connector-webex
-            </Text>{' '}
-            on the VPS with that token
-          </List.Item>
-          <List.Item>
-            Settings → Recorded users — add Webex owner emails that should count against recording
-            seats (parallel to UCM extensions)
-          </List.Item>
+          <List.Item>Confirm authorization status below shows <strong>Authorized</strong></List.Item>
+          <List.Item>Optional: Settings → Group sync for Control Hub group → portal role mapping</List.Item>
+          <List.Item>Optional: Settings → Recorded users for licensed owner emails</List.Item>
+          <List.Item>Click <strong>Enable WXC connector</strong> below to start recording ingest</List.Item>
         </List>
       </Card>
 
       {!configured ? (
         <Alert color="yellow" variant="light" title="Service App not configured on this deployment">
-          Platform credentials are missing. Contact CloudCoreCollab support — customers cannot
-          authorize until the Service App is registered on this environment
-          {s?.missing_keys?.length ? ` (missing ${s.missing_keys.join(', ')})` : ''}.
+          Platform credentials are missing. Contact CloudCoreCollab support.
+          {s?.missing_keys?.length ? ` (missing ${s.missing_keys.join(', ')})` : ''}
         </Alert>
       ) : authorized ? (
         <Card padding="lg" radius="md">
@@ -76,31 +88,69 @@ export function WebexSetupTab() {
         </Card>
       ) : (
         <Alert color="blue" variant="light" title="Waiting for Control Hub authorization">
-          {s?.status === 'deauthorized'
-            ? 'Authorization was revoked in Control Hub. Re-authorize the Service App to restore org APIs.'
-            : s?.status === 'error'
-              ? 'Authorization was received but token exchange failed. Re-authorize or contact support.'
-              : 'A Full Administrator must authorize CCC Recording Portal in Control Hub before group sync or WXC recording ingest can work.'}
+          A Full Administrator must authorize the Service App before the WXC connector can be enabled.
         </Alert>
       )}
 
       <Card padding="lg" radius="md" withBorder>
-        <Text size="sm" fw={600} mb="xs">
-          WXC connector (recording ingest)
-        </Text>
-        <Text size="sm" c="dimmed">
-          Deploy one Docker Compose instance of{' '}
-          <Text span ff="monospace" fz="xs">
-            ccc-connector-webex
-          </Text>{' '}
-          per customer org on the VPS. It polls Webex for converged Calling recordings (MP3 +
-          VTT) and pushes them to this portal over ingest v2. Create the connector token under
-          Settings → Connectors (kind <strong>webex</strong>).
-        </Text>
-        <Text size="xs" c="dimmed" mt="sm">
-          Webex delivers muxed mono audio — unlike UCM dual-channel recordings. Transcripts come from
-          Webex VTT (no on-prem Whisper).
-        </Text>
+        <Group justify="space-between" align="flex-start">
+          <div>
+            <Text size="sm" fw={500}>
+              WXC recording connector
+            </Text>
+            <Text size="sm" c="dimmed" maw={520}>
+              Polls Webex Calling recordings (MP3 + VTT) and ingests them into this portal. One
+              container per tenant, managed automatically from here.
+            </Text>
+            {connectorStatus && connectorStatus !== 'not_provisioned' && (
+              <Badge
+                mt="xs"
+                color={
+                  connectorStatus === 'running'
+                    ? 'green'
+                    : connectorStatus === 'error'
+                      ? 'red'
+                      : 'yellow'
+                }
+              >
+                {connectorStatus}
+              </Badge>
+            )}
+            {c?.container && (
+              <Text size="xs" c="dimmed" mt="xs" ff="monospace">
+                {c.container}
+              </Text>
+            )}
+            {c?.error && (
+              <Text size="xs" c="red" mt="xs">
+                {c.error}
+              </Text>
+            )}
+            {!provisioningAvailable && (
+              <Text size="xs" c="dimmed" mt="xs">
+                {c?.detail ?? 'Connector provisioning is not enabled on this deployment.'}
+              </Text>
+            )}
+          </div>
+          {!provisioningAvailable ? null : canDisable ? (
+            <Button color="red" variant="light" loading={disable.isPending} onClick={() => disable.mutate()}>
+              Disable
+            </Button>
+          ) : (
+            <Button
+              loading={enable.isPending}
+              disabled={!canEnable}
+              onClick={() => enable.mutate()}
+            >
+              Enable WXC connector
+            </Button>
+          )}
+        </Group>
+        {provisioningAvailable && (!configured || !authorized) && (
+          <Text size="xs" c="dimmed" mt="sm">
+            Authorize the Service App above before enabling the connector.
+          </Text>
+        )}
       </Card>
     </Stack>
   );

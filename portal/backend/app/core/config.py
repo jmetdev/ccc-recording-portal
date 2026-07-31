@@ -123,10 +123,18 @@ class Settings(BaseSettings):
     webex_connector_security_group_ids: str = ""  # comma-separated
     webex_connector_domain: str = ""  # e.g. recorddev.cloudcorecollab.com
     webex_connector_ssm_prefix: str = "/ccc/dev/webex-connector"
-    # Docker backend (VPS)
+    # Docker backend (VPS) — portal provisions ccc-connector-webex pollers per tenant
     webex_connector_image: str = ""
     webex_connector_network: str = "ccc"
     webex_connector_portal_url: str = "http://backend:8000"
+    # Path inside the backend container where tenant runtime dirs are written
+    webex_connector_data_path: str = "/webex-connector-data"
+    # Host path (as seen by the Docker daemon) bind-mounted into each poller at /data
+    webex_connector_data_host_path: str = ""
+    webex_connector_scopes: str = (
+        "spark-compliance:recordings_read spark-admin:recordings_read"
+    )
+    webex_connector_list_mode: str = "admin"
 
     # Retention sweep cadence; 0 disables the background task.
     retention_sweep_interval_s: int = 3600

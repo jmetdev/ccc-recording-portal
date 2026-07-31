@@ -109,12 +109,14 @@ that repo.
 
 ## WXC recording ingest (canonical path)
 
-The experimental `webex-connector/` webhook stub and ECS/Docker auto-provisioning
-in this repo are **deprecated**. Production WXC ingest:
+Portal-managed (VPS): **Settings → WXC setup → Enable WXC connector**. The backend
+writes `tokens.json` + connector token under `/webex-connector-data/t{tenant}/`
+and starts a `ccc-connector-webex` container via Docker.
 
-1. Create a connector credential (`kind=webex`) in the portal.
-2. Deploy `ccc-connector-webex` on the VPS (`deploy/deploy-connector-webex.sh`).
-3. Configure recorded users (owner emails) and Control Hub group sync for RBAC.
+Self-hosted fallback: deploy `ccc-connector-webex` manually
+(`deploy/deploy-connector-webex.sh`) for hosts outside portal orchestration.
+
+The experimental `webex-connector/` webhook stub in this repo is **deprecated**.
 
 ## Live spike results (2026-07-18, AWS dev — portal Service App only)
 
