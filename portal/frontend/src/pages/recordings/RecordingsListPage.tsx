@@ -16,9 +16,9 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconArrowLeft, IconInfoCircle } from '@tabler/icons-react';
+import { IconArrowLeft, IconInfoCircle, IconSearch } from '@tabler/icons-react';
 import { api, hasPermission } from '../../api/client';
-import { SourceBadge } from '../../components/SourceBadge';
+import { CallStatusBadge } from '../../components/CallStatusBadge';
 import { useAuth } from '../../auth/AuthContext';
 import { formatParty } from '../../utils/partyLabel';
 import {
@@ -31,7 +31,7 @@ import {
 } from './recordingsShared';
 import classes from './Recordings.module.css';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 export function RecordingsListPage() {
   const navigate = useNavigate();
@@ -44,7 +44,6 @@ export function RecordingsListPage() {
   const trashOnly = searchParams.get('trashed') === 'true';
 
   const [q, setQ] = useState('');
-  const [direction, setDirection] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [sentiment, setSentiment] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState<string | null>(null);
@@ -62,7 +61,7 @@ export function RecordingsListPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [q, direction, source, sentiment, groupFilter, holding, trashed]);
+  }, [q, source, sentiment, groupFilter, holding, trashed]);
 
   const { data: myGroups } = useQuery({
     queryKey: ['groups-mine'],
@@ -73,7 +72,6 @@ export function RecordingsListPage() {
 
   const params: Record<string, string> = { page: String(page), page_size: String(PAGE_SIZE) };
   if (q) params.q = q;
-  if (direction) params.direction = direction;
   if (source) params.source = source;
   if (sentiment) params.sentiment = sentiment;
   if (groupFilter) params.group_id = groupFilter;
@@ -89,6 +87,8 @@ export function RecordingsListPage() {
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
 
   const groupSections = useMemo(() => {
     if (!canFilterByGroup || groupFilter || items.length === 0) return null;
@@ -116,23 +116,30 @@ export function RecordingsListPage() {
             navigate(trashed ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`)
           }
         >
-          <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+          <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
             <Box style={{ flex: 1, minWidth: 0 }}>
-              <Text className={classes.rowTitle} fw={c.is_unread ? 600 : 500} truncate>
+              <Text className={classes.rowTitle} truncate>
                 {title}
               </Text>
+              <div className={classes.rowMeta}>
+                Near: {near} · Far: {far} · {shortDate(c.started_at)}
+                {c.started_at
+                  ? ` ${new Date(c.started_at).toLocaleTimeString(undefined, {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}`
+                  : ''}{' '}
+                · {c.duration_s != null ? formatTime(c.duration_s) : '—'} ·{' '}
+                {(c.source || '').toUpperCase() || '—'}
+                {c.trashed_at ? ` · ${daysUntilTrashPurge(c.trashed_at)}d left` : ''}
+              </div>
               {c.summary && (
-                <Text className={classes.rowSummary} lineClamp={1}>
+                <Text className={classes.rowSummary} lineClamp={2}>
                   {c.summary}
                 </Text>
               )}
-              <div className={classes.rowMeta}>
-                Near: {near} · Far: {far} · {shortDate(c.started_at)} ·{' '}
-                {c.duration_s != null ? formatTime(c.duration_s) : '—'}
-                {c.trashed_at ? ` · ${daysUntilTrashPurge(c.trashed_at)}d left` : ''}
-              </div>
             </Box>
-            <Group gap={6} wrap="nowrap">
+            <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
               {c.sentiment && (
                 <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
                   {c.sentiment}
@@ -140,15 +147,16 @@ export function RecordingsListPage() {
               )}
               {c.holding && (
                 <Badge size="sm" variant="light" radius="sm" color="orange">
-                  Unconfigured
+                  holding
                 </Badge>
               )}
-              {c.trashed_at && (
+              {c.trashed_at ? (
                 <Badge size="sm" variant="light" radius="sm" color="gray">
-                  Trash
+                  trash
                 </Badge>
+              ) : (
+                <CallStatusBadge status={c.status} size="sm" radius="sm" />
               )}
-              <SourceBadge source={c.source} />
             </Group>
           </Group>
         </button>
@@ -162,11 +170,7 @@ export function RecordingsListPage() {
         <Title order={2}>{trashed ? 'Trash' : 'Recordings'}</Title>
         <Group gap="xs">
           {!trashed && (
-            <Button
-              variant="subtle"
-              size="xs"
-              onClick={() => navigate('/recordings?trashed=true')}
-            >
+            <Button variant="subtle" size="xs" onClick={() => navigate('/recordings?trashed=true')}>
               View trash
             </Button>
           )}
@@ -186,20 +190,34 @@ export function RecordingsListPage() {
       <div className={classes.filterBar}>
         <TextInput
           size="sm"
-          placeholder={trashed ? 'Search trash…' : 'Search calls…'}
+          placeholder="Search recordings…"
+          leftSection={<IconSearch size={14} />}
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
-          style={{ flex: '1 1 200px', minWidth: 180 }}
+          style={{ flex: '1 1 240px', minWidth: 200 }}
         />
         <Select
           size="sm"
           placeholder="Source"
           aria-label="Filter by source"
           clearable
-          data={['cucm', 'webex']}
+          data={[
+            { value: 'cucm', label: 'CUCM' },
+            { value: 'webex', label: 'Webex' },
+          ]}
           value={source}
           onChange={setSource}
-          style={{ width: 120 }}
+          style={{ width: 130 }}
+        />
+        <Select
+          size="sm"
+          placeholder="Sentiment"
+          aria-label="Filter by sentiment"
+          clearable
+          data={['positive', 'neutral', 'negative']}
+          value={sentiment}
+          onChange={setSentiment}
+          style={{ width: 130 }}
         />
         {canFilterByGroup && (
           <Select
@@ -213,26 +231,6 @@ export function RecordingsListPage() {
             style={{ width: 140 }}
           />
         )}
-        <Select
-          size="sm"
-          placeholder="Direction"
-          aria-label="Filter by direction"
-          clearable
-          data={['inbound', 'outbound', 'internal']}
-          value={direction}
-          onChange={setDirection}
-          style={{ width: 130 }}
-        />
-        <Select
-          size="sm"
-          placeholder="Sentiment"
-          aria-label="Filter by sentiment"
-          clearable
-          data={['positive', 'neutral', 'negative']}
-          value={sentiment}
-          onChange={setSentiment}
-          style={{ width: 130 }}
-        />
         <Switch
           size="sm"
           label="Unconfigured"
@@ -285,11 +283,20 @@ export function RecordingsListPage() {
 
       <div className={classes.listFooter}>
         <Text size="xs" c="dimmed">
-          {total.toLocaleString()} call{total === 1 ? '' : 's'}
+          {total === 0
+            ? 'No recordings'
+            : `${rangeStart}–${rangeEnd} of ${total.toLocaleString()} recording${total === 1 ? '' : 's'}`}
           {trashed ? ' in trash' : ''}
         </Text>
         {totalPages > 1 && (
-          <Pagination size="sm" total={totalPages} value={page} onChange={setPage} siblings={1} boundaries={1} />
+          <Pagination
+            size="sm"
+            total={totalPages}
+            value={page}
+            onChange={setPage}
+            siblings={1}
+            boundaries={1}
+          />
         )}
       </div>
     </Stack>

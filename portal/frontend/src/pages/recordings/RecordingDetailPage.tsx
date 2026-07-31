@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,7 +6,6 @@ import {
   Alert,
   Anchor,
   Badge,
-  Box,
   Breadcrumbs,
   Button,
   Card,
@@ -23,10 +22,12 @@ import {
 import {
   IconArrowLeft,
   IconDownload,
+  IconFileText,
   IconInfoCircle,
-  IconLock,
   IconMail,
   IconMailOpened,
+  IconMessages,
+  IconNote,
   IconPlayerPause,
   IconPlayerPlay,
   IconRestore,
@@ -35,19 +36,40 @@ import {
 } from '@tabler/icons-react';
 import { api, hasPermission, recordingHasMedia } from '../../api/client';
 import { CallStatusBadge } from '../../components/CallStatusBadge';
-import { SourceBadge } from '../../components/SourceBadge';
 import { useAuth } from '../../auth/AuthContext';
 import { DualChannelWaveform } from '../../components/DualChannelWaveform';
 import { ConversationTranscript } from '../../components/ConversationTranscript';
-import { formatParty } from '../../utils/partyLabel';
 import {
   SENTIMENT_COLORS,
   TRASH_RETENTION_DAYS,
   callTitle,
   daysUntilTrashPurge,
+  formatDurationHms,
   formatTime,
+  longDateTime,
+  partyParts,
 } from './recordingsShared';
 import classes from './Recordings.module.css';
+
+function SectionCard({
+  icon,
+  title,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card padding={0} radius="md" className={classes.sectionCard}>
+      <div className={classes.sectionHeader}>
+        <span className={classes.sectionIcon}>{icon}</span>
+        <span className={classes.sectionTitle}>{title}</span>
+      </div>
+      <div className={classes.sectionBody}>{children}</div>
+    </Card>
+  );
+}
 
 export function RecordingDetailPage() {
   const { id } = useParams();
@@ -245,13 +267,16 @@ export function RecordingDetailPage() {
   };
 
   const c = call.data;
-  const nearParty = formatParty(c?.near_name, c?.near_addr);
-  const farParty = formatParty(c?.far_name, c?.far_addr);
+  const near = partyParts(c?.near_name, c?.near_addr);
+  const far = partyParts(c?.far_name, c?.far_addr);
+  const nearLabel = near.detail ? `${near.name} (${near.detail})` : near.name;
+  const farLabel = far.detail ? `${far.name} (${far.detail})` : far.name;
   const status = c?.status;
   const tagList = tags.data ?? [];
   const selectedTag = tagList.find((t) => t.id === selectedTagId) ?? null;
   const transcriptList = transcripts.data ?? [];
   const listBack = trashOnly ? '/recordings?trashed=true' : '/recordings';
+  const durationSeconds = duration || c?.duration_s || 0;
 
   if (!Number.isFinite(callId)) {
     return (
@@ -263,109 +288,110 @@ export function RecordingDetailPage() {
 
   return (
     <Stack gap="md" className={classes.detailPage}>
-      <Group justify="space-between" align="flex-start" wrap="wrap">
-        <Box>
-          <Breadcrumbs mb="xs">
-            <Anchor component={Link} to={listBack} size="sm">
-              Recordings
-            </Anchor>
-            <Text size="sm" c="dimmed">
-              Details
-            </Text>
-          </Breadcrumbs>
-          <Title order={2}>{c ? callTitle(c) : 'Recording'}</Title>
-          {c && (
-            <Text size="sm" c="dimmed" mt={4}>
-              Near: {nearParty} · Far: {farParty}
-              {c.started_at ? ` · ${new Date(c.started_at).toLocaleString()}` : ''}
-            </Text>
-          )}
-          {c && (
-            <Group gap="xs" mt="sm">
-              {status && <CallStatusBadge status={status} />}
-              {c.sentiment && (
-                <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
-                  {c.sentiment}
-                </Badge>
-              )}
-              {c.source && <SourceBadge source={c.source} />}
-              {c.legal_hold && (
-                <Badge color="orange" variant="light" radius="sm" leftSection={<IconLock size={11} />}>
-                  Legal hold
-                </Badge>
-              )}
-              {c.holding && (
-                <Badge color="gray" variant="light" radius="sm">
-                  Unconfigured
-                </Badge>
-              )}
-              {c.trashed_at && (
-                <Badge color="gray" variant="light" radius="sm" leftSection={<IconTrash size={11} />}>
-                  Trash
-                </Badge>
-              )}
-            </Group>
-          )}
-        </Box>
-        <Group gap="xs">
-          <Button
-            variant="subtle"
-            size="xs"
-            leftSection={<IconArrowLeft size={14} />}
-            onClick={() => navigate(listBack)}
-          >
-            Back
-          </Button>
-          {hasAudio && (
-            <Button
-              size="xs"
-              variant="light"
-              leftSection={<IconDownload size={14} />}
-              loading={downloading}
-              onClick={() => void downloadAudio()}
-            >
-              Download
-            </Button>
-          )}
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={c?.is_unread ? <IconMailOpened size={14} /> : <IconMail size={14} />}
-            loading={markUnread.isPending}
-            disabled={!c || !!c.is_unread}
-            onClick={() => markUnread.mutate()}
-          >
-            Mark unread
-          </Button>
-          {canManageRetention && c && !c.trashed_at && (
-            <Tooltip label="Release legal hold before trashing" disabled={!c.legal_hold}>
-              <span>
-                <Button
-                  size="xs"
-                  variant="light"
+      <Breadcrumbs>
+        <Anchor component={Link} to={listBack} size="sm">
+          Recordings
+        </Anchor>
+        <Text size="sm" c="dimmed">
+          Details
+        </Text>
+      </Breadcrumbs>
+
+      <div className={classes.detailHeader}>
+        <div className={classes.headerTop}>
+          <div className={classes.headerTitleBlock}>
+            <Title order={2} style={{ lineHeight: 1.25 }}>
+              {c ? callTitle(c) : 'Recording'}
+            </Title>
+            {c && (
+              <div className={classes.headerMetaLine}>
+                {c.started_at ? longDateTime(c.started_at) : '—'}
+                <span aria-hidden="true"> · </span>
+                ID: {c.id}
+              </div>
+            )}
+          </div>
+          <div className={classes.headerActions}>
+            {status && <CallStatusBadge status={status} radius="sm" />}
+            {c?.sentiment && (
+              <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
+                {c.sentiment}
+              </Badge>
+            )}
+            <Tooltip label="Back to list">
+              <ActionIcon variant="subtle" color="gray" onClick={() => navigate(listBack)} aria-label="Back">
+                <IconArrowLeft size={18} />
+              </ActionIcon>
+            </Tooltip>
+            {hasAudio && (
+              <Tooltip label="Download">
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  loading={downloading}
+                  onClick={() => void downloadAudio()}
+                  aria-label="Download"
+                >
+                  <IconDownload size={18} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+            <Tooltip label={c?.is_unread ? 'Already unread' : 'Mark unread'}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                loading={markUnread.isPending}
+                disabled={!c || !!c.is_unread}
+                onClick={() => markUnread.mutate()}
+                aria-label="Mark unread"
+              >
+                {c?.is_unread ? <IconMailOpened size={18} /> : <IconMail size={18} />}
+              </ActionIcon>
+            </Tooltip>
+            {canManageRetention && c && !c.trashed_at && (
+              <Tooltip label={c.legal_hold ? 'Release legal hold before trashing' : 'Move to trash'}>
+                <ActionIcon
+                  variant="subtle"
                   color="red"
-                  leftSection={<IconTrash size={14} />}
                   disabled={!!c.legal_hold}
                   onClick={() => setTrashConfirmOpen(true)}
+                  aria-label="Trash"
                 >
-                  Trash
-                </Button>
-              </span>
-            </Tooltip>
-          )}
-          {canManageRetention && c?.trashed_at && (
-            <Button
-              size="xs"
-              variant="light"
-              leftSection={<IconRestore size={14} />}
-              loading={restoreCall.isPending}
-              onClick={() => restoreCall.mutate()}
-            >
-              Restore
-            </Button>
-          )}
-        </Group>
-      </Group>
+                  <IconTrash size={18} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+            {canManageRetention && c?.trashed_at && (
+              <Tooltip label="Restore">
+                <ActionIcon
+                  variant="subtle"
+                  color="brandBlue"
+                  loading={restoreCall.isPending}
+                  onClick={() => restoreCall.mutate()}
+                  aria-label="Restore"
+                >
+                  <IconRestore size={18} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+
+        {c && (
+          <div className={classes.partyRow}>
+            <div className={classes.partyCard}>
+              <span className={`${classes.partyLabel} ${classes.partyLabelNear}`}>Near</span>
+              <span className={classes.partyName}>{near.name}</span>
+              {near.detail && <span className={classes.partyDetail}>{near.detail}</span>}
+            </div>
+            <div className={classes.partyCard}>
+              <span className={`${classes.partyLabel} ${classes.partyLabelFar}`}>Far</span>
+              <span className={classes.partyName}>{far.name}</span>
+              {far.detail && <span className={classes.partyDetail}>{far.detail}</span>}
+            </div>
+          </div>
+        )}
+      </div>
 
       {c?.trashed_at && (
         <Alert variant="light" color="orange" icon={<IconInfoCircle size={16} />}>
@@ -378,15 +404,17 @@ export function RecordingDetailPage() {
         <div className={classes.metaStrip}>
           <div className={classes.metaItem}>
             <Text className={classes.metaLabel}>Status</Text>
-            {status ? <CallStatusBadge status={status} /> : <Text size="sm">—</Text>}
+            {status ? <CallStatusBadge status={status} radius="sm" /> : <Text className={classes.metaValue}>—</Text>}
           </div>
           <div className={classes.metaItem}>
             <Text className={classes.metaLabel}>Source</Text>
-            {c.source ? <SourceBadge source={c.source} /> : <Text size="sm">—</Text>}
+            <Text className={classes.metaValue}>{(c.source || '—').toUpperCase()}</Text>
           </div>
           <div className={classes.metaItem}>
             <Text className={classes.metaLabel}>Duration</Text>
-            <Text size="sm">{c.duration_s != null ? formatTime(c.duration_s) : '—'}</Text>
+            <Text className={classes.metaValue}>
+              {c.duration_s != null ? formatDurationHms(c.duration_s) : '—'}
+            </Text>
           </div>
           <div className={classes.metaItem}>
             <Text className={classes.metaLabel}>Legal hold</Text>
@@ -396,20 +424,11 @@ export function RecordingDetailPage() {
                 checked={!!c.legal_hold}
                 disabled={legalHold.isPending}
                 onChange={(e) => legalHold.mutate(e.currentTarget.checked)}
+                aria-label="Legal hold"
               />
             ) : (
-              <Text size="sm">{c.legal_hold ? 'Yes' : 'No'}</Text>
+              <Text className={classes.metaValue}>{c.legal_hold ? 'On' : 'Off'}</Text>
             )}
-          </div>
-          {c.group_name && (
-            <div className={classes.metaItem}>
-              <Text className={classes.metaLabel}>Group</Text>
-              <Text size="sm">{c.group_name}</Text>
-            </div>
-          )}
-          <div className={classes.metaItem}>
-            <Text className={classes.metaLabel}>Read</Text>
-            <Text size="sm">{c.is_unread ? 'Unread' : 'Read'}</Text>
           </div>
         </div>
       )}
@@ -417,16 +436,28 @@ export function RecordingDetailPage() {
       <Card padding="md" radius="md" className={classes.waveformCard}>
         {hasAudio ? (
           <Stack gap="sm">
+            <div className={classes.waveLegend}>
+              <span className={classes.waveLegendItem}>
+                <span className={`${classes.waveSwatch} ${classes.waveSwatchNear}`} />
+                Near ({near.name})
+              </span>
+              <span className={classes.waveLegendItem}>
+                <span className={`${classes.waveSwatch} ${classes.waveSwatchFar}`} />
+                Far ({far.name})
+              </span>
+            </div>
             <DualChannelWaveform
               nearRecording={nearRecording}
               farRecording={farRecording}
               stereoRecording={stereoRecording}
               mixRecording={mixRecording}
               audioUrl={api.audioUrl}
-              nearLabel={nearParty}
-              farLabel={farParty}
+              nearLabel={nearLabel}
+              farLabel={farLabel}
               highlightTag={
-                selectedTag ? { start: selectedTag.start_s, end: selectedTag.end_s, note: selectedTag.note } : null
+                selectedTag
+                  ? { start: selectedTag.start_s, end: selectedTag.end_s, note: selectedTag.note }
+                  : null
               }
               canTag={canManageTags}
               onRegionSelected={(start, end) => setRegionModal({ start, end })}
@@ -438,30 +469,36 @@ export function RecordingDetailPage() {
               pauseSignal={pauseSignal}
               tagSelectSignal={tagSelectSignal}
             />
-            <Group gap="sm" wrap="nowrap">
+            <div className={classes.transport}>
               <ActionIcon variant="filled" size="xl" radius="xl" onClick={togglePlay} aria-label="Play or pause">
                 {playing ? <IconPlayerPause size={22} /> : <IconPlayerPlay size={22} />}
               </ActionIcon>
-              <Text size="xs" c="dimmed" ff="monospace" style={{ width: 44 }}>
-                {formatTime(currentTime)}
+              <Text size="xs" c="dimmed" ff="monospace" style={{ width: 52 }}>
+                {formatDurationHms(currentTime)}
               </Text>
               <Slider
                 style={{ flex: 1 }}
-                value={duration ? (currentTime / duration) * 100 : 0}
+                value={durationSeconds ? (currentTime / durationSeconds) * 100 : 0}
                 onChange={onSeek}
-                disabled={!duration}
+                disabled={!durationSeconds}
                 size="sm"
-                label={(v) => (duration ? formatTime((v / 100) * duration) : null)}
+                label={(v) => (durationSeconds ? formatDurationHms((v / 100) * durationSeconds) : null)}
+                color="brandBlue"
               />
-              <Text size="xs" c="dimmed" ff="monospace" style={{ width: 44, textAlign: 'right' }}>
-                {formatTime(duration)}
+              <Text size="xs" c="dimmed" ff="monospace" style={{ width: 52, textAlign: 'right' }}>
+                {formatDurationHms(durationSeconds)}
               </Text>
               {canManageTags && (
-                <Button size="xs" variant="light" leftSection={<IconTag size={14} />} onClick={() => setTagSelectSignal((n) => n + 1)}>
+                <Button
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconTag size={14} />}
+                  onClick={() => setTagSelectSignal((n) => n + 1)}
+                >
                   Tag region
                 </Button>
               )}
-            </Group>
+            </div>
           </Stack>
         ) : (
           <Text size="sm" c="dimmed">
@@ -476,23 +513,19 @@ export function RecordingDetailPage() {
         )}
       </Card>
 
-      <Card padding="md" radius="md" className={classes.contentCard}>
-        <Text fw={600} mb="xs">
-          Summary
-        </Text>
+      <SectionCard icon={<IconFileText size={16} />} title="Summary">
         {c?.summary ? (
-          <Text size="sm">{c.summary}</Text>
+          <Text size="sm" style={{ lineHeight: 1.55 }}>
+            {c.summary}
+          </Text>
         ) : (
           <Text size="sm" c="dimmed">
             Summary available after transcription.
           </Text>
         )}
-      </Card>
+      </SectionCard>
 
-      <Card padding="md" radius="md" className={classes.contentCard}>
-        <Text fw={600} mb="xs">
-          Notes
-        </Text>
+      <SectionCard icon={<IconNote size={16} />} title="Notes">
         <Textarea
           value={notesDraft}
           onChange={(e) => {
@@ -503,39 +536,40 @@ export function RecordingDetailPage() {
           autosize
           minRows={3}
           mb="sm"
+          styles={{ input: { borderColor: '#e9eaed' } }}
         />
-        <Button
-          size="xs"
-          variant="light"
-          loading={saveNotes.isPending}
-          disabled={!notesDirty}
-          onClick={() => saveNotes.mutate()}
-        >
-          Save notes
-        </Button>
+        <Group justify="flex-end">
+          <Button
+            size="xs"
+            variant="light"
+            loading={saveNotes.isPending}
+            disabled={!notesDirty}
+            onClick={() => saveNotes.mutate()}
+          >
+            Save notes
+          </Button>
+        </Group>
         {saveNotes.isError && (
           <Text size="xs" c="red" mt="xs">
             {(saveNotes.error as Error).message}
           </Text>
         )}
-      </Card>
+      </SectionCard>
 
-      <Card padding="md" radius="md" className={classes.contentCard}>
-        <Text fw={600} mb="xs">
-          Tags
-        </Text>
+      <SectionCard icon={<IconTag size={16} />} title="Tags">
         {tagList.length === 0 ? (
           <Text size="sm" c="dimmed">
             {canManageTags ? 'Select a region on the waveform to add a tag.' : 'No tags.'}
           </Text>
         ) : (
-          <Group gap={6}>
+          <Group gap={8}>
             {tagList.map((t) => (
               <Badge
                 key={t.id}
                 radius="sm"
-                variant={selectedTagId === t.id ? 'filled' : 'light'}
-                className={classes.tagBadge}
+                variant={selectedTagId === t.id ? 'filled' : 'outline'}
+                color="brandBlue"
+                className={classes.tagChip}
                 onClick={() => {
                   setSelectedTagId((cur) => (cur === t.id ? null : t.id));
                   setSeekTo(t.start_s + Math.random() * 1e-6);
@@ -543,32 +577,40 @@ export function RecordingDetailPage() {
                 title={t.note || undefined}
               >
                 {formatTime(t.start_s)}–{formatTime(t.end_s)}
-                {t.note ? `: ${t.note}` : ''}
+                {t.note ? ` · ${t.note}` : ''}
               </Badge>
             ))}
           </Group>
         )}
-      </Card>
+      </SectionCard>
 
       {canViewTranscripts && (
-        <Card padding="md" radius="md" className={classes.contentCard}>
-          <Text fw={600} mb="xs">
-            Transcription
-          </Text>
-          {transcripts.isLoading && <Text size="sm" c="dimmed">Loading…</Text>}
-          {status === 'transcribing' && <Text size="sm" c="dimmed">Transcription in progress…</Text>}
+        <SectionCard icon={<IconMessages size={16} />} title="Transcription">
+          {transcripts.isLoading && (
+            <Text size="sm" c="dimmed">
+              Loading…
+            </Text>
+          )}
+          {status === 'transcribing' && (
+            <Text size="sm" c="dimmed">
+              Transcription in progress…
+            </Text>
+          )}
           {!transcripts.isLoading && transcriptList.length === 0 && status === 'completed' && (
-            <Text size="sm" c="dimmed">No transcript available for this call.</Text>
+            <Text size="sm" c="dimmed">
+              No transcript available for this call.
+            </Text>
           )}
           <ConversationTranscript
             transcripts={transcriptList}
-            nearLabel="Near"
-            farLabel="Far"
+            nearLabel={nearLabel}
+            farLabel={farLabel}
             currentTime={currentTime}
             onSeek={(t) => setSeekTo(t + Math.random() * 1e-6)}
-            maxHeight={420}
+            maxHeight={480}
+            layout="timeline"
           />
-        </Card>
+        </SectionCard>
       )}
 
       <Modal opened={!!regionModal} onClose={() => setRegionModal(null)} title="Tag region">
@@ -577,7 +619,14 @@ export function RecordingDetailPage() {
             {formatTime(regionModal.start)} – {formatTime(regionModal.end)}
           </Text>
         )}
-        <Textarea label="Note" value={tagNote} onChange={(e) => setTagNote(e.currentTarget.value)} mb="md" autosize minRows={2} />
+        <Textarea
+          label="Note"
+          value={tagNote}
+          onChange={(e) => setTagNote(e.currentTarget.value)}
+          mb="md"
+          autosize
+          minRows={2}
+        />
         <Button onClick={saveTag}>Save tag</Button>
       </Modal>
 

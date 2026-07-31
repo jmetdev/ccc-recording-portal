@@ -21,7 +21,19 @@ type Props = {
   currentTime?: number;
   onSeek?: (time: number) => void;
   maxHeight?: number;
+  /** dual = side-by-side bubbles; timeline = Option B chronological list. */
+  layout?: 'dual' | 'timeline';
 };
+
+function formatTimelineTime(seconds: number) {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s
+    .toString()
+    .padStart(2, '0')}`;
+}
 
 const MERGE_GAP_S = 0.35;
 /** Prefer near before far when timestamps collide (near leg typically speaks first). */
@@ -135,6 +147,7 @@ export function ConversationTranscript({
   currentTime = 0,
   onSeek,
   maxHeight = 320,
+  layout = 'dual',
 }: Props) {
   const activeRef = useRef<HTMLDivElement>(null);
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
@@ -196,13 +209,66 @@ export function ConversationTranscript({
     onSeek(turn.start + 0.05);
   };
 
+  const cssVars = {
+    ['--near-color' as string]: NEAR_COLOR,
+    ['--far-color' as string]: FAR_COLOR,
+  };
+
+  if (layout === 'timeline' || (!dual && layout !== 'dual')) {
+    return (
+      <ScrollArea.Autosize mah={maxHeight} type="auto" className={classes.scroll}>
+        <div className={classes.timeline} style={cssVars}>
+          {dual && (
+            <div className={classes.timelineFilters}>
+              <span className={`${classes.timelineFilter} ${classes.timelineFilterNear}`} title={nearLabel}>
+                Near · {nearLabel}
+              </span>
+              <span className={`${classes.timelineFilter} ${classes.timelineFilterFar}`} title={farLabel}>
+                Far · {farLabel}
+              </span>
+            </div>
+          )}
+          {turns.map((turn) => {
+            const active = turn.key === activeKey;
+            const isNear = turn.leg === 'near';
+            const clickable = turn.start != null && !!onSeek;
+            const speaker = turn.leg === 'near' ? nearLabel : turn.leg === 'far' ? farLabel : 'Call';
+            return (
+              <div
+                key={turn.key}
+                ref={active ? activeRef : undefined}
+                className={`${classes.timelineRow} ${active ? classes.timelineRowActive : ''} ${
+                  clickable ? classes.timelineRowClickable : ''
+                }`}
+                onClick={() => seek(turn)}
+              >
+                <div className={classes.timelineTime}>
+                  {turn.start != null ? formatTimelineTime(turn.start) : '—'}
+                </div>
+                <div
+                  className={`${classes.timelineSpeaker} ${
+                    isNear
+                      ? classes.timelineSpeakerNear
+                      : turn.leg === 'far'
+                        ? classes.timelineSpeakerFar
+                        : ''
+                  }`}
+                >
+                  {dual ? (isNear ? 'Near' : 'Far') : speaker}
+                </div>
+                <div className={classes.timelineText}>{turn.text}</div>
+              </div>
+            );
+          })}
+        </div>
+      </ScrollArea.Autosize>
+    );
+  }
+
   return (
     <ScrollArea.Autosize mah={maxHeight} type="auto" className={classes.scroll}>
       {dual ? (
-        <div
-          className={classes.dual}
-          style={{ ['--near-color' as string]: NEAR_COLOR, ['--far-color' as string]: FAR_COLOR }}
-        >
+        <div className={classes.dual} style={cssVars}>
           <div className={classes.dualHeader}>
             <span />
             <Text className={`${classes.dualHeaderLabel} ${classes.dualHeaderNear}`} title={nearLabel}>
