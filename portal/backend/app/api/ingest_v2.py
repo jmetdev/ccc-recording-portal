@@ -316,6 +316,9 @@ async def v2_create_transcript(
     # Near/far monos are only needed for Whisper; drop them once a transcript lands
     # and stereo/mix playback media is already on the call.
     await purge_near_far_mono_media(db, call.id)
+    from app.services.call_subject import refresh_call_subject_summary
+
+    await refresh_call_subject_summary(db, call.id)
     await db.commit()
     return {"status": "ok", "transcript_id": transcript.id}
 

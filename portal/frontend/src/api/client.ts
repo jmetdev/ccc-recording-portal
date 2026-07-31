@@ -33,6 +33,9 @@ export type Call = {
   group_id: number | null;
   group_name: string | null;
   is_unread: boolean;
+  subject: string | null;
+  summary: string | null;
+  notes: string | null;
 };
 
 export type Recording = {
@@ -292,6 +295,12 @@ export const api = {
     request<Call>(`/calls/${callId}/trash`, { method: 'POST' }),
   restoreCall: (callId: number) =>
     request<Call>(`/calls/${callId}/restore`, { method: 'POST' }),
+  patchCallNotes: (callId: number, notes: string | null) =>
+    request<Call>(`/calls/${callId}/notes`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes }),
+    }),
   listRecordings: (callId: number) => request<Recording[]>(`/calls/${callId}/recordings`),
   getRecordings: (callId: number) => request<Recording[]>(`/calls/${callId}/recordings`),
   getPeaks: (recordingId: number) => request<{ recording_id: number; peaks: unknown }>(`/recordings/${recordingId}/peaks`),

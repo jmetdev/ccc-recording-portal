@@ -5,7 +5,8 @@ import { LoginPage } from './pages/LoginPage';
 import { SsoCallbackPage } from './pages/SsoCallbackPage';
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
 import { OverviewPage } from './pages/OverviewPage';
-import { RecordingsPage } from './pages/RecordingsPage';
+import { RecordingDetailPage } from './pages/recordings/RecordingDetailPage';
+import { RecordingsListPage } from './pages/recordings/RecordingsListPage';
 import { SearchPage } from './pages/SearchPage';
 import { RetentionPage } from './pages/RetentionPage';
 import { StoragePage } from './pages/StoragePage';
@@ -30,8 +31,8 @@ function RecordingRoutes() {
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
           <Route index element={<OverviewPage />} />
-          <Route path="recordings" element={<RecordingsPage />} />
-          <Route path="recordings/:id" element={<RecordingsPage />} />
+          <Route path="recordings" element={<RecordingsListPage />} />
+          <Route path="recordings/:id" element={<RecordingDetailPage />} />
           <Route path="calls" element={<Navigate to="/recordings" replace />} />
           <Route path="calls/:id" element={<CallRedirect />} />
           <Route element={<RequirePermission permission="view_transcripts" />}>

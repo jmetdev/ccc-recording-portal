@@ -24,7 +24,7 @@ type Props = {
 };
 
 const MERGE_GAP_S = 0.35;
-/** Prefer near before far when timestamps collide (agent typically speaks first). */
+/** Prefer near before far when timestamps collide (near leg typically speaks first). */
 const LEG_ORDER: Record<string, number> = { near: 0, far: 1, stereo: 2, mix: 3 };
 
 function formatTime(seconds: number) {
@@ -93,7 +93,7 @@ function turnContains(turn: Turn, time: number): boolean {
 
 /**
  * When Whisper stamps overlapping near/far ranges (common when both start at 0),
- * prefer the shortest matching span so a long agent bubble does not steal the
+ * prefer the shortest matching span so a long near-leg bubble does not steal the
  * highlight from a shorter caller utterance.
  */
 function pickActiveTurn(turns: Turn[], currentTime: number, pinnedKey: string | null): Turn | null {

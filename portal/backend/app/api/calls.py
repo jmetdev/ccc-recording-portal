@@ -17,6 +17,7 @@ from app.models import Call, CallRead, CallStatus, Group, Permission, RecordedEx
 from app.schemas import (
     CallDownloadZipRequest,
     CallListResponse,
+    CallNotesUpdate,
     CallOut,
     DashboardStats,
     GroupOut,
@@ -313,6 +314,8 @@ async def list_calls(
                 Call.far_name.ilike(like),
                 Call.near_addr.ilike(like),
                 Call.far_addr.ilike(like),
+                Call.subject.ilike(like),
+                Call.summary.ilike(like),
             )
         )
     if near_addr:
@@ -765,6 +768,27 @@ async def list_transcripts(
         raise HTTPException(status_code=404, detail="Call not found")
     result = await db.execute(select(Transcript).where(Transcript.call_id == call_id))
     return result.scalars().all()
+
+
+@router.patch("/calls/{call_id}/notes", response_model=CallOut)
+async def update_call_notes(
+    call_id: int,
+    body: CallNotesUpdate,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Call)
+        .options(selectinload(Call.transcripts))
+        .where(Call.id == call_id, Call.tenant_id == user.tenant_id)
+    )
+    call = result.scalar_one_or_none()
+    if not call or not can_view_call(user, call.group_id, call.near_addr):
+        raise HTTPException(status_code=404, detail="Call not found")
+    call.notes = body.notes
+    await db.commit()
+    await db.refresh(call, ["transcripts"])
+    return await call_to_out(db, user, call)
 
 
 @router.patch("/calls/{call_id}/legal-hold", response_model=CallOut)

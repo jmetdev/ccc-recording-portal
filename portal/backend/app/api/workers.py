@@ -134,6 +134,9 @@ async def create_transcript(body: TranscriptCreate, db: AsyncSession = Depends(g
         .where(Transcript.id == transcript.id)
         .values(search_tsv=func.to_tsvector("english", body.text))
     )
+    from app.services.call_subject import refresh_call_subject_summary
+
+    await refresh_call_subject_summary(db, body.call_id)
     await db.commit()
     return {"status": "ok", "id": transcript.id}
 

@@ -161,8 +161,15 @@ class CallOut(BaseModel):
     group_name: str | None = None
     sentiment: str | None = None
     is_unread: bool = True
+    subject: str | None = None
+    summary: str | None = None
+    notes: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class CallNotesUpdate(BaseModel):
+    notes: str | None = None
 
 
 class CallListResponse(BaseModel):

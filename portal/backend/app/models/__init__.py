@@ -395,6 +395,11 @@ class Call(Base):
     # Soft-delete timestamp; permanently purged 30 days after being trashed.
     trashed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), index=True)
+    # Extractive blurb from transcript text (no LLM).
+    subject: Mapped[str | None] = mapped_column(String(256))
+    summary: Mapped[str | None] = mapped_column(Text)
+    # User-editable call notes (Notes card on detail page).
+    notes: Mapped[str | None] = mapped_column(Text)
 
     group: Mapped["Group | None"] = relationship(back_populates="calls")
     recordings: Mapped[list["Recording"]] = relationship(back_populates="call", cascade="all, delete-orphan")
