@@ -10,12 +10,13 @@ from app.services.call_visibility import (
 )
 
 
-def _user(*, group_ids: list[int] | None = None, extension: str | None = None):
+def _user(*, group_ids: list[int] | None = None, extension: str | None = None, email: str | None = None):
     groups = [SimpleNamespace(id=gid) for gid in (group_ids or [])]
     return SimpleNamespace(
         groups=groups,
         group_id=group_ids[0] if group_ids else None,
         extension=extension,
+        email=email,
     )
 
 

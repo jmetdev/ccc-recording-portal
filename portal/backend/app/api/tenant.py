@@ -41,6 +41,7 @@ from app.services.audit import record_audit
 from app.services.call_stats import distinct_call_count_stmt
 from app.services.party_label import format_party
 from app.services.recorded_extensions import count_enabled_extensions
+from app.services.recorded_users import count_enabled_recorded_users
 from app.services.suite_entitlements import recording_seats_for_org
 from app.services.whisper_config import get_transcription_settings, set_transcription_settings
 
@@ -192,7 +193,9 @@ async def license_usage(
     tenant = (
         await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
     ).scalar_one()
-    used = await count_enabled_extensions(db, user.tenant_id)
+    used = await count_enabled_extensions(db, user.tenant_id) + await count_enabled_recorded_users(
+        db, user.tenant_id
+    )
     holding_calls = (
         await db.execute(
             select(func.count())

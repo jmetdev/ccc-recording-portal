@@ -115,6 +115,28 @@ class RecordedExtensionUpdate(BaseModel):
     group_ids: list[int] | None = None
 
 
+class RecordedUserOut(BaseModel):
+    id: int
+    email: str
+    label: str | None
+    enabled: bool
+    group_ids: list[int]
+
+
+class RecordedUserCreate(BaseModel):
+    email: str
+    label: str | None = None
+    enabled: bool = True
+    group_ids: list[int] = []
+
+
+class RecordedUserUpdate(BaseModel):
+    email: str | None = None
+    label: str | None = None
+    enabled: bool | None = None
+    group_ids: list[int] | None = None
+
+
 class IngestStartPayload(BaseModel):
     refci: str
     session: str | None = None

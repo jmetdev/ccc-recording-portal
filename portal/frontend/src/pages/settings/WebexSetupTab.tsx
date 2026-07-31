@@ -1,37 +1,21 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Badge, Button, Card, Group, List, Stack, Text, Title } from '@mantine/core';
+import { useQuery } from '@tanstack/react-query';
+import { Alert, Card, Group, List, Stack, Text, Title } from '@mantine/core';
 import { api } from '../../api/client';
 
 export function WebexSetupTab() {
-  const qc = useQueryClient();
   const status = useQuery({ queryKey: ['webex-status'], queryFn: api.webex.status });
-  const connector = useQuery({ queryKey: ['webex-connector-status'], queryFn: api.webex.connectorStatus });
   const s = status.data;
-  const c = connector.data;
 
   const configured = s?.serviceapp_configured ?? false;
   const authorized = s?.authorized ?? false;
-  const connectorInfra = !!c?.enabled;
-  const connectorInstance = c?.status; // null = no instance yet when infra on
-  const canEnableHosted = connectorInfra && configured && authorized && !connectorInstance;
-  const canDisableHosted = connectorInfra && !!connectorInstance && connectorInstance !== 'not_provisioned';
-
-  const enable = useMutation({
-    mutationFn: api.webex.enableConnector,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['webex-connector-status'] }),
-  });
-  const disable = useMutation({
-    mutationFn: api.webex.disableConnector,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['webex-connector-status'] }),
-  });
 
   return (
     <Stack gap="md">
-      <Title order={3}>Webex setup</Title>
+      <Title order={3}>WXC setup</Title>
       <Text size="sm" c="dimmed">
-        A Control Hub Full Administrator authorizes the CCC Recording Portal Service App once. That
-        unlocks org-admin detection, Control Hub group sync, and (when enabled) the hosted Webex
-        Calling recording connector. CUCM on-prem recording does not require this step.
+        Webex Calling (WXC) tenants authorize the CCC Recording Portal Service App once in Control
+        Hub. That unlocks org-admin detection and Control Hub group sync. Recording ingest runs via
+        the external WXC connector (Docker on the VPS) — not the on-prem UCM edge stack.
       </Text>
 
       <Card padding="md" radius="md" withBorder>
@@ -45,7 +29,18 @@ export function WebexSetupTab() {
           <List.Item>Review permissions and click Authorize (Full Administrator required)</List.Item>
           <List.Item>Return here — status should flip to Authorized for your Webex org</List.Item>
           <List.Item>
-            Optional: Settings → Group sync to map Control Hub groups to portal roles
+            Settings → Group sync to map Control Hub groups to portal roles and call-visibility groups
+          </List.Item>
+          <List.Item>
+            Settings → Connectors → create a <strong>webex</strong> credential, then deploy{' '}
+            <Text span ff="monospace" fz="xs">
+              ccc-connector-webex
+            </Text>{' '}
+            on the VPS with that token
+          </List.Item>
+          <List.Item>
+            Settings → Recorded users — add Webex owner emails that should count against recording
+            seats (parallel to UCM extensions)
           </List.Item>
         </List>
       </Card>
@@ -85,54 +80,27 @@ export function WebexSetupTab() {
             ? 'Authorization was revoked in Control Hub. Re-authorize the Service App to restore org APIs.'
             : s?.status === 'error'
               ? 'Authorization was received but token exchange failed. Re-authorize or contact support.'
-              : 'A Full Administrator must authorize CCC Recording Portal in Control Hub before group sync or hosted Webex recording can work.'}
+              : 'A Full Administrator must authorize CCC Recording Portal in Control Hub before group sync or WXC recording ingest can work.'}
         </Alert>
       )}
 
-      <Card padding="lg" radius="md">
-        <Group justify="space-between" align="flex-start">
-          <div>
-            <Text size="sm" fw={500}>
-              Hosted Webex recording connector
-            </Text>
-            <Text size="sm" c="dimmed" maw={480}>
-              For organizations recording calls natively through Webex Calling (no on-prem CUCM
-              needed). Each tenant gets its own fully isolated connector instance.
-            </Text>
-            {connectorInstance && connectorInstance !== 'not_provisioned' && (
-              <Badge
-                mt="xs"
-                color={
-                  connectorInstance === 'running' ? 'green' : connectorInstance === 'error' ? 'red' : 'yellow'
-                }
-              >
-                {connectorInstance}
-              </Badge>
-            )}
-            {connectorInfra && (!configured || !authorized) && (
-              <Text size="xs" c="dimmed" mt="xs">
-                Authorize the Service App above before enabling the hosted connector.
-              </Text>
-            )}
-          </div>
-          {!connectorInfra ? (
-            <Text size="sm" c="dimmed">
-              Not available on this deployment
-            </Text>
-          ) : canDisableHosted ? (
-            <Button color="red" variant="light" loading={disable.isPending} onClick={() => disable.mutate()}>
-              Disable
-            </Button>
-          ) : (
-            <Button
-              loading={enable.isPending}
-              disabled={!canEnableHosted}
-              onClick={() => enable.mutate()}
-            >
-              Enable
-            </Button>
-          )}
-        </Group>
+      <Card padding="lg" radius="md" withBorder>
+        <Text size="sm" fw={600} mb="xs">
+          WXC connector (recording ingest)
+        </Text>
+        <Text size="sm" c="dimmed">
+          Deploy one Docker Compose instance of{' '}
+          <Text span ff="monospace" fz="xs">
+            ccc-connector-webex
+          </Text>{' '}
+          per customer org on the VPS. It polls Webex for converged Calling recordings (MP3 +
+          VTT) and pushes them to this portal over ingest v2. Create the connector token under
+          Settings → Connectors (kind <strong>webex</strong>).
+        </Text>
+        <Text size="xs" c="dimmed" mt="sm">
+          Webex delivers muxed mono audio — unlike UCM dual-channel recordings. Transcripts come from
+          Webex VTT (no on-prem Whisper).
+        </Text>
       </Card>
     </Stack>
   );

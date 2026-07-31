@@ -81,8 +81,8 @@ export function ConnectorsTab() {
         </Button>
       </Group>
       <Text size="sm" c="dimmed">
-        Each on-prem CUCM edge stack or Webex connector authenticates to the portal with its own
-        bearer token. Tokens are shown once at creation — store them in the connector's{' '}
+        Each on-prem UCM edge stack or WXC (Webex cloud) connector authenticates to the portal with
+        its own bearer token. Tokens are shown once at creation — store them in the connector's{' '}
         <Text span ff="monospace" fz="xs">
           .env
         </Text>{' '}
@@ -177,7 +177,16 @@ export function ConnectorsTab() {
       <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="New connector credential">
         <Stack gap="sm">
           <TextInput label="Name" placeholder="hq-cucm-edge" value={name} onChange={(e) => setName(e.currentTarget.value)} />
-          <Select label="Kind" data={['cucm', 'webex']} value={kind} onChange={setKind} />
+          <Select
+            label="Kind"
+            description="UCM = on-prem BIB edge · WXC = Webex cloud poller"
+            data={[
+              { value: 'cucm', label: 'UCM (on-prem)' },
+              { value: 'webex', label: 'WXC (Webex cloud)' },
+            ]}
+            value={kind}
+            onChange={setKind}
+          />
           {kind === 'cucm' && (
             <>
               <TextInput
@@ -231,7 +240,7 @@ export function ConnectorsTab() {
       <Modal
         opened={!!created}
         onClose={() => setCreated(null)}
-        title={created?.kind === 'cucm' ? 'Deploy the CUCM connector' : 'Connector token'}
+        title={created?.kind === 'cucm' ? 'Deploy the UCM connector' : 'Deploy the WXC connector'}
         size="xl"
       >
         <Stack gap="sm">
@@ -315,11 +324,28 @@ export function ConnectorsTab() {
           ) : (
             <>
               <Text size="sm">
-                Store this in the connector's{' '}
+                Copy the token into{' '}
                 <Text span ff="monospace" fz="xs">
                   CONNECTOR_TOKEN
+                </Text>{' '}
+                in the WXC connector{' '}
+                <Text span ff="monospace" fz="xs">
+                  .env
                 </Text>
-                .
+                , set{' '}
+                <Text span ff="monospace" fz="xs">
+                  PORTAL_URL
+                </Text>{' '}
+                to this portal, and authorize the Webex Service App (Compliance Officer recording
+                scopes). Then run{' '}
+                <Text span ff="monospace" fz="xs">
+                  docker compose up -d --build
+                </Text>{' '}
+                from the{' '}
+                <Text span ff="monospace" fz="xs">
+                  ccc-connector-webex
+                </Text>{' '}
+                repo on the VPS.
               </Text>
               <Card padding="sm" radius="md" bg="#f7f8fa">
                 <Text ff="monospace" fz="xs" style={{ wordBreak: 'break-all' }}>
@@ -340,6 +366,15 @@ export function ConnectorsTab() {
                   )}
                 </CopyButton>
               </Group>
+              <List size="sm" type="ordered" spacing={4}>
+                <List.Item>Seed Webex refresh token to /data/tokens.json on the connector host</List.Item>
+                <List.Item>
+                  Connector heartbeats here once polling succeeds — confirm on Settings → System
+                </List.Item>
+                <List.Item>
+                  Add owner emails under Settings → Recorded users for seat licensing and group ACLs
+                </List.Item>
+              </List>
             </>
           )}
 

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Call, CallRead, Group, User
 from app.services.recorded_extensions import near_addr_matches_extension, normalize_extension
+from app.services.party_identity import looks_like_email
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,11 @@ def user_group_ids(user: User) -> list[int]:
 
 
 def user_matches_call_near(user: User, near_addr: str | None) -> bool:
+    if not near_addr:
+        return False
+    email = getattr(user, "email", None)
+    if looks_like_email(near_addr) and email:
+        return email.strip().lower() == near_addr.strip().lower()
     ext = normalize_extension(user.extension)
     if not ext:
         return False

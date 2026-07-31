@@ -7,9 +7,9 @@ type SourceConfig = { label: string; color: string };
 function configFor(source: string): SourceConfig {
   switch (source.toLowerCase()) {
     case 'cucm':
-      return { label: 'CUCM', color: 'violet' };
+      return { label: 'UCM', color: 'violet' };
     case 'webex':
-      return { label: 'Webex', color: 'teal' };
+      return { label: 'WXC', color: 'teal' };
     default:
       return { label: source, color: 'gray' };
   }

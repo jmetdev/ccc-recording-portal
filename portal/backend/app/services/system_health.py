@@ -353,6 +353,13 @@ async def check_freeswitch(connectors: list[dict[str, Any]] | None = None) -> di
 
 
 def _whisper_from_connectors(connectors: list[dict[str, Any]]) -> dict[str, Any]:
+    has_cucm = any(c.get("enabled") and c.get("kind") == "cucm" for c in connectors)
+    if not has_cucm:
+        return {
+            "ok": None,
+            "source": "none",
+            "detail": "WXC tenants use Webex VTT — no on-prem Whisper",
+        }
     edge = _edge_stats_from_connectors(connectors)
     if not edge:
         return {"ok": None, "source": "none", "detail": None}

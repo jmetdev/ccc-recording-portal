@@ -15,11 +15,13 @@ from app.models import (
     Job,
     Permission,
     RecordedExtension,
+    RecordedUser,
     Role,
     RolePermission,
     Tenant,
     User,
     recorded_extension_groups,
+    recorded_user_groups,
     user_roles,
 )
 from app.schemas import (
@@ -29,6 +31,9 @@ from app.schemas import (
     RecordedExtensionCreate,
     RecordedExtensionOut,
     RecordedExtensionUpdate,
+    RecordedUserCreate,
+    RecordedUserOut,
+    RecordedUserUpdate,
     RoleCreate,
     RoleOut,
     UserCreate,
@@ -41,6 +46,11 @@ from app.services.recorded_extensions import (
     count_enabled_extensions,
     group_id_for_extension,
     release_holding_calls_for_extension,
+)
+from app.services.recorded_users import (
+    count_enabled_recorded_users,
+    group_id_for_recorded_user,
+    release_holding_calls_for_email,
 )
 from app.services.retention import purge_call_media
 from app.services.storage import get_storage
@@ -103,11 +113,13 @@ async def _enforce_recording_seat_cap(
     allotted = await recording_seats_for_org(tenant.webex_org_id)
     if allotted is None:
         return
-    used = await count_enabled_extensions(db, tenant_id)
+    used = await count_enabled_extensions(db, tenant_id) + await count_enabled_recorded_users(
+        db, tenant_id
+    )
     if used >= allotted:
         raise HTTPException(
             status_code=403,
-            detail=f"Recording seat limit reached ({used} of {allotted} allotted). Disable another extension or request more seats.",
+            detail=f"Recording seat limit reached ({used} of {allotted} allotted). Disable another seat or request more seats.",
         )
 
 
@@ -598,6 +610,170 @@ async def delete_extension(
         detail={"extension": ext.extension}, request=request,
     )
     await db.delete(ext)
+    await db.commit()
+    return {"status": "ok"}
+
+
+def serialize_recorded_user(user: RecordedUser) -> RecordedUserOut:
+    return RecordedUserOut(
+        id=user.id,
+        email=user.email,
+        label=user.label,
+        enabled=user.enabled,
+        group_ids=[g.id for g in user.groups],
+    )
+
+
+async def set_recorded_user_groups(db: AsyncSession, user: RecordedUser, group_ids: list[int]) -> None:
+    await db.execute(delete(recorded_user_groups).where(recorded_user_groups.c.user_id == user.id))
+    for group_id in group_ids:
+        await db.execute(
+            recorded_user_groups.insert().values(user_id=user.id, group_id=group_id)
+        )
+
+
+@router.get("/recorded-users", response_model=list[RecordedUserOut])
+async def list_recorded_users(
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(RecordedUser)
+        .options(selectinload(RecordedUser.groups))
+        .where(RecordedUser.tenant_id == admin.tenant_id)
+        .order_by(RecordedUser.email)
+    )
+    return [serialize_recorded_user(u) for u in result.scalars().all()]
+
+
+@router.post("/recorded-users", response_model=RecordedUserOut)
+async def create_recorded_user(
+    body: RecordedUserCreate,
+    request: Request,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    await _enforce_recording_seat_cap(db, admin.tenant_id, enabling=body.enabled, currently_enabled=False)
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="A valid email is required")
+    data = body.model_dump(exclude={"group_ids", "email"})
+    user = RecordedUser(**data, email=email, tenant_id=admin.tenant_id)
+    db.add(user)
+    await db.flush()
+    await set_recorded_user_groups(db, user, body.group_ids)
+    released = 0
+    if user.enabled:
+        group_id = body.group_ids[0] if body.group_ids else None
+        released = await release_holding_calls_for_email(
+            db, tenant_id=admin.tenant_id, email=user.email, group_id=group_id
+        )
+    await record_audit(
+        db,
+        tenant_id=admin.tenant_id,
+        user=admin,
+        action="admin.recorded_user_create",
+        resource_type="recorded_user",
+        resource_id=user.id,
+        detail={"email": user.email, "released_holding": released},
+        request=request,
+    )
+    await db.commit()
+    result = await db.execute(
+        select(RecordedUser)
+        .options(selectinload(RecordedUser.groups))
+        .where(RecordedUser.id == user.id)
+    )
+    return serialize_recorded_user(result.scalar_one())
+
+
+@router.patch("/recorded-users/{user_id}", response_model=RecordedUserOut)
+async def update_recorded_user(
+    user_id: int,
+    body: RecordedUserUpdate,
+    request: Request,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(RecordedUser)
+        .options(selectinload(RecordedUser.groups))
+        .where(RecordedUser.id == user_id, RecordedUser.tenant_id == admin.tenant_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Recorded user not found")
+    enabling = body.enabled is True and not user.enabled
+    await _enforce_recording_seat_cap(
+        db, admin.tenant_id, enabling=enabling, currently_enabled=user.enabled
+    )
+    changed = list(body.model_dump(exclude_unset=True, exclude={"group_ids", "email"}).keys())
+    for k, v in body.model_dump(exclude_unset=True, exclude={"group_ids", "email"}).items():
+        setattr(user, k, v)
+    if body.email is not None:
+        email = body.email.strip().lower()
+        if not email or "@" not in email:
+            raise HTTPException(status_code=422, detail="A valid email is required")
+        user.email = email
+        changed.append("email")
+    if body.group_ids is not None:
+        await set_recorded_user_groups(db, user, body.group_ids)
+        changed.append("group_ids")
+    released = 0
+    if user.enabled:
+        if body.group_ids is not None:
+            group_id = body.group_ids[0] if body.group_ids else None
+        else:
+            group_id = group_id_for_recorded_user(user)
+        released = await release_holding_calls_for_email(
+            db, tenant_id=admin.tenant_id, email=user.email, group_id=group_id
+        )
+    await record_audit(
+        db,
+        tenant_id=admin.tenant_id,
+        user=admin,
+        action="admin.recorded_user_update",
+        resource_type="recorded_user",
+        resource_id=user.id,
+        detail={"email": user.email, "changed": changed, "released_holding": released},
+        request=request,
+    )
+    await db.commit()
+    result = await db.execute(
+        select(RecordedUser)
+        .options(selectinload(RecordedUser.groups))
+        .where(RecordedUser.id == user_id)
+    )
+    return serialize_recorded_user(result.scalar_one())
+
+
+@router.delete("/recorded-users/{user_id}")
+async def delete_recorded_user(
+    user_id: int,
+    request: Request,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    user = (
+        await db.execute(
+            select(RecordedUser).where(
+                RecordedUser.id == user_id, RecordedUser.tenant_id == admin.tenant_id
+            )
+        )
+    ).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Recorded user not found")
+    await record_audit(
+        db,
+        tenant_id=admin.tenant_id,
+        user=admin,
+        action="admin.recorded_user_delete",
+        resource_type="recorded_user",
+        resource_id=user.id,
+        detail={"email": user.email},
+        request=request,
+    )
+    await db.delete(user)
     await db.commit()
     return {"status": "ok"}
 

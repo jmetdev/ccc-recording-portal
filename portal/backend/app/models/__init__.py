@@ -262,6 +262,18 @@ class RecordedExtensionGroup(Base):
 recorded_extension_groups = RecordedExtensionGroup.__table__
 
 
+class RecordedUserGroup(Base):
+    __tablename__ = "recorded_user_groups"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("recorded_users.id", ondelete="CASCADE"), primary_key=True
+    )
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
+
+
+recorded_user_groups = RecordedUserGroup.__table__
+
+
 class Group(Base):
     __tablename__ = "groups"
     __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_groups_tenant_name"),)
@@ -278,6 +290,9 @@ class Group(Base):
     calls: Mapped[list["Call"]] = relationship(back_populates="group")
     recorded_extensions: Mapped[list["RecordedExtension"]] = relationship(
         secondary=recorded_extension_groups, back_populates="groups"
+    )
+    recorded_users: Mapped[list["RecordedUser"]] = relationship(
+        secondary=recorded_user_groups, back_populates="groups"
     )
 
 
@@ -359,6 +374,24 @@ class RecordedExtension(Base):
     )
 
 
+class RecordedUser(Base):
+    __tablename__ = "recorded_users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_recorded_users_tenant_email"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(128))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    groups: Mapped[list["Group"]] = relationship(
+        secondary=recorded_user_groups, back_populates="recorded_users"
+    )
+
+
 class Call(Base):
     __tablename__ = "calls"
 
@@ -390,7 +423,7 @@ class Call(Base):
     status_message: Mapped[str | None] = mapped_column(Text)
     # Excluded from retention sweeps while true (litigation/public-records hold).
     legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    # True when near-end DN is not an enabled recorded extension (7-day holding pool).
+    # True when near-end is not a licensed recorded extension/user (7-day holding pool).
     holding: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # Soft-delete timestamp; permanently purged 30 days after being trashed.
     trashed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

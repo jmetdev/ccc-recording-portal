@@ -21,7 +21,7 @@ tunnel cutover (issuer URL must be publicly reachable).
 | B | ccc-recording-portal | Owner/customer Webex docs | done |
 | C | ccc-recording-portal | Service App webhook onboarding (migration 007) | done, verified live (real HMAC sig tests) |
 | D | ccc-recording-portal | Cross-app SSO via Keycloak Webex broker | implemented; Keycloak on AWS + VPS; `OIDC_ENABLED=false` until tunnel cutover |
-| E | ccc-recording-portal | Per-tenant isolated hosted Webex connector (migration 008) | done, verified (moto-mocked AWS round-trip); **recording-retrieval logic is a stub** pending a live-org API spike |
+| E | ccc-recording-portal | Per-tenant hosted Webex connector (migration 008) | **deprecated** — replaced by `ccc-connector-webex` VPS poller; enable API returns 410 |
 | F | ccc-recording-portal | Control Hub group→role sync (migration 009) | done, verified against real DB with a **stubbed** Webex client; **Groups API shape unvalidated** |
 | G | cloudcorefax | Per-tenant isolated FreeSWITCH gateway (migration 008) | done |
 | H–M | both | VPS dev migration (GHCR, compose, docker backends) | see `deploy/vps/` |

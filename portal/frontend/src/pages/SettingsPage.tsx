@@ -24,6 +24,7 @@ import {
   IconCloud,
   IconEdit,
   IconHeartbeat,
+  IconMail,
   IconMicrophone,
   IconPhone,
   IconPlugConnected,
@@ -477,19 +478,23 @@ function ExtensionsTab() {
 
   return (
     <Stack gap="md">
+      <Text size="sm" c="dimmed">
+        UCM mode: licensed DNs that may be recorded via on-prem BIB. WXC tenants use Recorded users
+        instead.
+      </Text>
       {licenseUsage.data && (
         <Card padding="md" radius="md" withBorder>
           <Title order={4} mb="xs">
             Licenses
           </Title>
           <Text size="sm">
-            Recording licenses:{' '}
+            Recording seats:{' '}
             <strong>
               {licenseUsage.data.used} used
               {licenseUsage.data.allotted != null ? ` of ${licenseUsage.data.allotted} allotted` : ''}
             </strong>
             {licenseUsage.data.holding_calls > 0
-              ? ` · ${licenseUsage.data.holding_calls} call${licenseUsage.data.holding_calls === 1 ? '' : 's'} from unconfigured extensions`
+              ? ` · ${licenseUsage.data.holding_calls} call${licenseUsage.data.holding_calls === 1 ? '' : 's'} from unlicensed owners`
               : ''}
           </Text>
         </Card>
@@ -568,6 +573,164 @@ function ExtensionsTab() {
             />
             <Checkbox label="Enabled" checked={editExt.enabled} onChange={(e) => setEditExt({ ...editExt, enabled: e.currentTarget.checked })} />
             <Button onClick={() => updateExt.mutate()} loading={updateExt.isPending} disabled={!editExt.extension}>
+              Save
+            </Button>
+          </Stack>
+        )}
+      </Modal>
+    </Stack>
+  );
+}
+
+function RecordedUsersTab() {
+  const qc = useQueryClient();
+  const groups = useQuery({ queryKey: ['admin-groups'], queryFn: api.admin.groups });
+  const users = useQuery({ queryKey: ['admin-recorded-users'], queryFn: api.admin.recordedUsers });
+  const licenseUsage = useQuery({ queryKey: ['license-usage'], queryFn: api.tenant.licenseUsage });
+
+  const [form, setForm] = useState({ email: '', label: '', enabled: true, group_ids: [] as number[] });
+  const createUser = useMutation({
+    mutationFn: () => api.admin.createRecordedUser(form),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-recorded-users'] });
+      qc.invalidateQueries({ queryKey: ['license-usage'] });
+      qc.invalidateQueries({ queryKey: ['calls'] });
+      setForm({ email: '', label: '', enabled: true, group_ids: [] });
+    },
+  });
+
+  const [editUser, setEditUser] = useState<{
+    id: number;
+    email: string;
+    label: string;
+    enabled: boolean;
+    group_ids: number[];
+  } | null>(null);
+  const updateUser = useMutation({
+    mutationFn: () => {
+      if (!editUser) throw new Error('No user selected');
+      return api.admin.updateRecordedUser(editUser.id, {
+        email: editUser.email,
+        label: editUser.label || null,
+        enabled: editUser.enabled,
+        group_ids: editUser.group_ids,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-recorded-users'] });
+      qc.invalidateQueries({ queryKey: ['license-usage'] });
+      qc.invalidateQueries({ queryKey: ['calls'] });
+      setEditUser(null);
+    },
+  });
+
+  const deleteUser = useMutation({
+    mutationFn: (id: number) => api.admin.deleteRecordedUser(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-recorded-users'] });
+      qc.invalidateQueries({ queryKey: ['license-usage'] });
+    },
+  });
+
+  return (
+    <Stack gap="md">
+      <Text size="sm" c="dimmed">
+        WXC mode: Webex recording owner emails licensed for ingest. Calls from unlisted owners stay in
+        the holding pool for seven days.
+      </Text>
+      {licenseUsage.data && (
+        <Card padding="md" radius="md" withBorder>
+          <Title order={4} mb="xs">
+            Licenses
+          </Title>
+          <Text size="sm">
+            Recording seats:{' '}
+            <strong>
+              {licenseUsage.data.used} used
+              {licenseUsage.data.allotted != null ? ` of ${licenseUsage.data.allotted} allotted` : ''}
+            </strong>
+          </Text>
+        </Card>
+      )}
+      <Group align="flex-end">
+        <TextInput
+          label="Email"
+          placeholder="agent@customer.com"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.currentTarget.value })}
+        />
+        <TextInput label="Label" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
+        <MultiSelect
+          label="Groups"
+          clearable
+          data={groups.data?.map((g) => ({ value: String(g.id), label: g.name })) ?? []}
+          value={form.group_ids.map(String)}
+          onChange={(v) => setForm({ ...form, group_ids: v.map(Number) })}
+        />
+        <Checkbox label="Enabled" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.currentTarget.checked })} />
+        <Button onClick={() => createUser.mutate()} disabled={!form.email.includes('@')}>
+          Add
+        </Button>
+      </Group>
+      <Table>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Email</Table.Th>
+            <Table.Th>Label</Table.Th>
+            <Table.Th>Groups</Table.Th>
+            <Table.Th>Enabled</Table.Th>
+            <Table.Th />
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {users.data?.map((u) => (
+            <Table.Tr key={u.id}>
+              <Table.Td>{u.email}</Table.Td>
+              <Table.Td>{u.label}</Table.Td>
+              <Table.Td>
+                {u.group_ids.map((gid) => groups.data?.find((g) => g.id === gid)?.name ?? String(gid)).join(', ') || '—'}
+              </Table.Td>
+              <Table.Td>{u.enabled ? 'Yes' : 'No'}</Table.Td>
+              <Table.Td>
+                <Group gap={4} justify="flex-end">
+                  <ActionIcon
+                    variant="subtle"
+                    onClick={() =>
+                      setEditUser({
+                        id: u.id,
+                        email: u.email,
+                        label: u.label ?? '',
+                        enabled: u.enabled,
+                        group_ids: u.group_ids,
+                      })
+                    }
+                  >
+                    <IconEdit size={16} />
+                  </ActionIcon>
+                  <ActionIcon color="red" variant="subtle" onClick={() => deleteUser.mutate(u.id)}>
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Group>
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+
+      <Modal opened={!!editUser} onClose={() => setEditUser(null)} title="Edit recorded user">
+        {editUser && (
+          <Stack gap="sm">
+            <TextInput label="Email" value={editUser.email} onChange={(e) => setEditUser({ ...editUser, email: e.target.value })} />
+            <TextInput label="Label" value={editUser.label} onChange={(e) => setEditUser({ ...editUser, label: e.target.value })} />
+            <MultiSelect
+              label="Groups"
+              clearable
+              data={groups.data?.map((g) => ({ value: String(g.id), label: g.name })) ?? []}
+              value={editUser.group_ids.map(String)}
+              onChange={(v) => setEditUser({ ...editUser, group_ids: v.map(Number) })}
+            />
+            <Checkbox label="Enabled" checked={editUser.enabled} onChange={(e) => setEditUser({ ...editUser, enabled: e.currentTarget.checked })} />
+            <Button onClick={() => updateUser.mutate()} loading={updateUser.isPending} disabled={!editUser.email.includes('@')}>
               Save
             </Button>
           </Stack>
@@ -755,7 +918,10 @@ export function SettingsPage() {
             Groups &amp; Roles
           </Tabs.Tab>
           <Tabs.Tab value="extensions" leftSection={<IconPhone size={16} />}>
-            Extensions
+            UCM extensions
+          </Tabs.Tab>
+          <Tabs.Tab value="recorded-users" leftSection={<IconMail size={16} />}>
+            Recorded users
           </Tabs.Tab>
           <Tabs.Tab value="connectors" leftSection={<IconPlugConnected size={16} />}>
             Connectors
@@ -764,7 +930,7 @@ export function SettingsPage() {
             Transcription
           </Tabs.Tab>
           <Tabs.Tab value="webex" leftSection={<IconCloud size={16} />}>
-            Webex setup
+            WXC setup
           </Tabs.Tab>
           <Tabs.Tab value="group-sync" leftSection={<IconAdjustmentsHorizontal size={16} />}>
             Group sync
@@ -787,6 +953,11 @@ export function SettingsPage() {
         <Tabs.Panel value="extensions" pt="lg">
           <Card padding="lg" radius="md">
             <ExtensionsTab />
+          </Card>
+        </Tabs.Panel>
+        <Tabs.Panel value="recorded-users" pt="lg">
+          <Card padding="lg" radius="md">
+            <RecordedUsersTab />
           </Card>
         </Tabs.Panel>
         <Tabs.Panel value="connectors" pt="lg">

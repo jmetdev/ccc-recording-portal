@@ -7,8 +7,15 @@ registering apps or reading logs:
    *integration*, identifies who's logging in and what org they're in.
 2. **Admin-consent Service App** — an org-level integration a customer's Full
    Admin authorizes once in Control Hub, used for tenant auto-provisioning,
-   org-admin detection, the hosted per-tenant connector, and (later) Control
-   Hub group sync.
+   org-admin detection, Control Hub group sync, and (separately) the WXC
+   recording connector's org authorization.
+
+3. **WXC recording connector** (`ccc-connector-webex`, sibling repo) — a
+   headless Docker poller deployed on the VPS per customer org. Uses its own
+   Service App client credentials + org refresh token (`/data/tokens.json`) to
+   list converged Calling recordings (`spark-compliance:recordings_read` or
+   `spark-admin:recordings_read` fallback). Pushes MP3 + VTT to portal ingest
+   v2. See `ccc-connector-webex/README.md` and `scripts/wxc-smoke-checklist.md`.
 
 ## 1. Per-user OIDC/SSO login (Webex as a Keycloak identity provider)
 
@@ -43,8 +50,9 @@ App, following the same pattern CloudCoreFax already uses successfully
 | `spark-admin:devices_read` / `_write` | customer-managed device provisioning, if the hosted connector needs it | validated pattern, ported from CloudCoreFax |
 | `spark-admin:telephony_config_read` / `_write` | number/location lookups, if needed by the connector | validated pattern, ported from CloudCoreFax |
 | `spark-admin:licenses_read` | license checks, if the hosted connector requires a specific license type | validated pattern, ported from CloudCoreFax |
-| groups-read (exact scope name **unconfirmed** — likely under an `identity:` or `spark-admin:` prefix) | Control Hub group → role sync | **unvalidated — spike against a live org before implementing; do not guess the name** |
-| compliance/recording-retrieval scope (exact scope **unconfirmed**, and this may require a **distinct Webex "Compliance Officer" application type** rather than an extra scope on this Service App) | the hosted per-tenant connector's recording pull | **unvalidated — spike before assuming this fits the Service App model at all** |
+| `spark-compliance:recordings_read` | WXC connector recording list/download (Compliance Officer) | **validated** via `ccc-connector-webex` |
+| `spark-admin:recordings_read` | WXC connector admin-mode listing fallback | **validated** via `ccc-connector-webex` |
+| groups-read (exact scope name **unconfirmed**) | Control Hub group → role sync | **unvalidated — spike against a live org** |
 
 Webex enforces an approximate length ceiling on the combined scope string
 (CloudCoreFax's existing 9-scope registration is already close to it). The two
@@ -99,7 +107,16 @@ its own OIDC bearer-token verifier built (it has none today) before it can
 actually consume tokens from its new client — tracked as separate work in
 that repo.
 
-## Live spike results (2026-07-18, AWS dev)
+## WXC recording ingest (canonical path)
+
+The experimental `webex-connector/` webhook stub and ECS/Docker auto-provisioning
+in this repo are **deprecated**. Production WXC ingest:
+
+1. Create a connector credential (`kind=webex`) in the portal.
+2. Deploy `ccc-connector-webex` on the VPS (`deploy/deploy-connector-webex.sh`).
+3. Configure recorded users (owner emails) and Control Hub group sync for RBAC.
+
+## Live spike results (2026-07-18, AWS dev — portal Service App only)
 
 Ran `scripts/spike-webex-apis.py` against `/ccc/dev/webex_serviceapp_*` SSM:
 
@@ -107,9 +124,11 @@ Ran `scripts/spike-webex-apis.py` against `/ccc/dev/webex_serviceapp_*` SSM:
 |---|---|
 | Service App credentials | **Blocked** — SSM values are still `PLACEHOLDER_SET_ME` (copied from fax dev). No org token exchange attempted. |
 | `GET /v1/groups` | **Not run** — requires a real Service App + authorized `--org-id`. Client code in `webex_serviceapp.py` uses `/groups` and `/groups/{id}/members` with `displayName`/`members` fields; re-validate when creds exist. |
-| Recording retrieval | **Not run** — same blocker. The hosted connector stub in `webex-connector/app/main.py` intentionally does not call Webex until this spike succeeds. |
+| Recording retrieval | **Not run** on portal Service App — WXC ingest uses separate `ccc-connector-webex` poller with Compliance Officer scopes instead of the deprecated `webex-connector/` stub. |
 
-**Recording-retrieval conclusion (design, pending live proof):** Webex Compliance / call-recording APIs historically require a **Compliance Officer** or partner application type, not an extra scope on the admin Service App. Treat recording pull as blocked on app type until a live token proves otherwise — do not wire fake endpoints into the connector.
+**Recording-retrieval conclusion:** WXC ingest is implemented in `ccc-connector-webex`
+(Service App + `spark-compliance:recordings_read` or admin fallback). The portal's
+`webex-connector/` webhook path is deprecated.
 
 Re-run after setting real Service App SSM values:
 
@@ -119,9 +138,6 @@ AWS_PROFILE=dev python3 scripts/spike-webex-apis.py --org-id <AUTHORIZED_ORG_ID>
 
 ## Known caveats
 
-- Group-membership and recording-retrieval scopes are unvalidated (flagged
-  above) — do not implement Phase E/F backend code against assumed field or
-  scope names.
-- Webex's Compliance API has historically required a distinct application
-  type/partner approval separate from a standard Service App — confirm this
-  before committing to the hosted-connector design in Phase E.
+- Group-membership API shape may still need live validation for Phase F.
+- The deprecated `webex-connector/` stub and ECS auto-provision path remain in
+  the repo for reference only — use `ccc-connector-webex` on the VPS.

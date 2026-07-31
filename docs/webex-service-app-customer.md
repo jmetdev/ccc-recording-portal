@@ -26,18 +26,25 @@ Go to the portal and choose **Continue with Webex**. Org admins are elevated
 when Service App admin detection is available; everyone else lands with the
 default role until group mappings apply.
 
-### 3. Optional: hosted Webex Calling connector
+### 3. WXC recording connector (Webex Calling)
 
-If you record through **Webex Calling** (not on-prem CUCM), open
-**Settings → Webex setup** and enable the hosted connector after authorize.
-Recording retrieval may require additional Webex compliance approvals — your
-CloudCoreCollab contact will confirm when that path is fully live.
+If you record through **Webex Calling** (not on-prem UCM):
 
-## Track B — On-prem CUCM only
+1. Authorize the Service App (step 1).
+2. **Settings → Connectors** — create a **WXC (Webex cloud)** credential.
+3. CloudCoreCollab deploys the `ccc-connector-webex` Docker poller on the VPS
+   with that token and your Webex org authorization.
+4. **Settings → Recorded users** — add owner emails that should count against
+   your recording seats and map to call-visibility groups.
 
-Use **Settings → Connectors** and the one-line edge installer. You do **not**
-need to authorize the Service App for CUCM recording, playback, or Whisper
-transcription.
+Webex delivers muxed mono audio and a VTT transcript (no on-prem Whisper).
+See `scripts/wxc-smoke-checklist.md` for verification steps.
+
+## Track B — On-prem UCM only
+
+Use **Settings → Connectors** and the one-line edge installer (kind **UCM**).
+You do **not** need to authorize the Service App for UCM recording, playback,
+or Whisper transcription.
 
 ## Optional
 

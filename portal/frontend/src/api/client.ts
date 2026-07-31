@@ -494,6 +494,21 @@ export const api = {
       request<Extension>(`/admin/recorded-extensions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
     deleteExtension: (id: number) =>
       request<void>(`/admin/recorded-extensions/${id}`, { method: 'DELETE' }),
+    recordedUsers: () => request<RecordedUser[]>('/admin/recorded-users'),
+    createRecordedUser: (body: unknown) =>
+      request<RecordedUser>('/admin/recorded-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    updateRecordedUser: (id: number, body: unknown) =>
+      request<RecordedUser>(`/admin/recorded-users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    deleteRecordedUser: (id: number) =>
+      request<void>(`/admin/recorded-users/${id}`, { method: 'DELETE' }),
     purgeCallData: () =>
       request<{ status: string; calls_deleted: number; files_deleted: number }>('/admin/purge-call-data', {
         method: 'POST',
@@ -525,6 +540,14 @@ export type TagCreate = {
 export type Group = { id: number; name: string };
 export type Role = { id: number; name: string; description: string | null; permissions: string[] };
 export type Extension = { id: number; extension: string; label: string | null; enabled: boolean; group_ids: number[] };
+
+export type RecordedUser = {
+  id: number;
+  email: string;
+  label: string | null;
+  enabled: boolean;
+  group_ids: number[];
+};
 
 export type TranscriptSearchResult = {
   transcript_id: number;

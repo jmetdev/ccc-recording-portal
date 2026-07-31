@@ -1,17 +1,8 @@
-"""Hosted per-tenant Webex connector.
+"""Hosted per-tenant Webex connector (DEPRECATED).
 
-One instance of this container per tenant (see portal backend's
-services/webex_connector.py). Receives this tenant's Webex webhook events,
-verifies them with this tenant's own webhook secret, and is meant to fetch
-the actual recording and push it through the shared ingest v2 contract.
-
-The exact Webex recording-retrieval mechanism (Compliance Recording API vs. a
-recording-ready webhook vs. polling, and its scope/partner-approval
-requirements) is UNVALIDATED pending a live-org spike — see
-docs/webex-service-app.md's "known caveats". `_fetch_and_ingest_recording`
-below is a clearly-marked stub: it verifies the webhook and logs the event,
-but does not yet call any Webex recording API. Do not wire real API calls into
-it until that spike concludes and confirms the real shapes.
+One instance of this container per tenant was an experimental webhook receiver.
+WXC ingest now uses the external ``ccc-connector-webex`` poller on the VPS.
+See ``ccc-connector-webex/README.md``.
 """
 
 import hashlib

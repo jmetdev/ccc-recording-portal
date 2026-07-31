@@ -41,9 +41,9 @@ from app.schemas import (
     V2TranscriptCreate,
 )
 from app.services.live_hub import live_hub
+from app.services.ingest_grouping import resolve_ingest_group_and_holding
 from app.services.media_cleanup import purge_near_far_mono_media
 from app.services.media_jobs import enqueue_job
-from app.services.recorded_extensions import group_id_for_extension, match_recorded_extension
 from app.services.storage import connector_media_key, get_storage
 from app.services.transcription import is_transcription_enabled
 from app.services.whisper_config import get_transcription_settings, whisper_runtime_options
@@ -125,13 +125,9 @@ async def v2_call_start(
         # upstream id so a re-poll never creates a second call.
         return {"status": "duplicate", "call_id": existing.id}
 
-    matched = await match_recorded_extension(db, payload.near_addr, tenant_id=cred.tenant_id)
-    if matched:
-        group_id = group_id_for_extension(matched)
-        holding = False
-    else:
-        group_id = None
-        holding = True
+    group_id, holding = await resolve_ingest_group_and_holding(
+        db, tenant_id=cred.tenant_id, source=CallSource(payload.source), near_addr=payload.near_addr
+    )
 
     call = Call(
         tenant_id=cred.tenant_id,
