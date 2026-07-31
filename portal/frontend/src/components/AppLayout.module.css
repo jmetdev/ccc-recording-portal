@@ -36,6 +36,11 @@
   border-bottom: 1px solid #e9eaed;
 }
 
+.userFooter {
+  border-top: 1px solid #e9eaed;
+  margin-top: auto;
+}
+
 .avatar {
   width: 30px;
   height: 30px;
@@ -48,6 +53,7 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
 
 .main {
