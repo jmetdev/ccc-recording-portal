@@ -1,24 +1,31 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ActionIcon,
   Alert,
-  Badge,
   Box,
   Button,
   Group,
   Loader,
+  Menu,
   Pagination,
-  Select,
   Stack,
   Switch,
   Text,
-  TextInput,
   Title,
 } from '@mantine/core';
-import { IconArrowLeft, IconInfoCircle, IconPhoneIncoming, IconPhoneOutgoing, IconSearch } from '@tabler/icons-react';
+import {
+  IconArrowLeft,
+  IconChevronDown,
+  IconChevronUp,
+  IconDotsVertical,
+  IconExternalLink,
+  IconInfoCircle,
+  IconPhoneIncoming,
+  IconPhoneOutgoing,
+} from '@tabler/icons-react';
 import { api, hasPermission } from '../../api/client';
-import { CallStatusBadge } from '../../components/CallStatusBadge';
 import { SourceBadge } from '../../components/SourceBadge';
 import { useAuth } from '../../auth/AuthContext';
 import { formatParty } from '../../utils/partyLabel';
@@ -31,27 +38,58 @@ import {
   formatTime,
   shortDate,
 } from './recordingsShared';
+import { RecordingsSearchBar, type RecordingsFilters } from './RecordingsSearchBar';
+import { SelectedCallPlayer } from './SelectedCallPlayer';
+import { RecordingsExpandPanel } from './RecordingsExpandPanel';
+import { useCallMedia } from './useCallMedia';
 import classes from './Recordings.module.css';
 
 const PAGE_SIZE = 20;
 
+function statusDotClass(status: string): string {
+  switch (status) {
+    case 'recording':
+      return classes.statusDotRecording;
+    case 'processing':
+      return classes.statusDotProcessing;
+    case 'transcribing':
+      return classes.statusDotTranscribing;
+    case 'completed':
+      return classes.statusDotCompleted;
+    case 'failed':
+      return classes.statusDotFailed;
+    default:
+      return classes.statusDotDefault;
+  }
+}
+
 export function RecordingsListPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const canFilterByGroup =
     hasPermission(user, 'view_all_calls') || hasPermission(user, 'view_group_calls');
 
   const holdingOnly = searchParams.get('holding') === 'true';
   const trashOnly = searchParams.get('trashed') === 'true';
+  const callParam = searchParams.get('call');
 
-  const [q, setQ] = useState('');
-  const [source, setSource] = useState<string | null>(null);
-  const [sentiment, setSentiment] = useState<string | null>(null);
-  const [groupFilter, setGroupFilter] = useState<string | null>(null);
+  const [filters, setFilters] = useState<RecordingsFilters>({
+    q: '',
+    source: null,
+    sentiment: null,
+    groupId: null,
+    status: null,
+  });
   const [holding, setHolding] = useState(holdingOnly);
   const [trashed, setTrashed] = useState(trashOnly);
   const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<number | null>(
+    callParam && Number.isFinite(Number(callParam)) ? Number(callParam) : null,
+  );
+  const [expandOpen, setExpandOpen] = useState(false);
+  const markedReadForCall = useRef<number | null>(null);
 
   useEffect(() => {
     setHolding(holdingOnly);
@@ -62,8 +100,14 @@ export function RecordingsListPage() {
   }, [trashOnly]);
 
   useEffect(() => {
+    if (callParam && Number.isFinite(Number(callParam))) {
+      setSelectedId(Number(callParam));
+    }
+  }, [callParam]);
+
+  useEffect(() => {
     setPage(1);
-  }, [q, source, sentiment, groupFilter, holding, trashed]);
+  }, [filters, holding, trashed]);
 
   const { data: myGroups } = useQuery({
     queryKey: ['groups-mine'],
@@ -73,10 +117,11 @@ export function RecordingsListPage() {
   });
 
   const params: Record<string, string> = { page: String(page), page_size: String(PAGE_SIZE) };
-  if (q) params.q = q;
-  if (source) params.source = source;
-  if (sentiment) params.sentiment = sentiment;
-  if (groupFilter) params.group_id = groupFilter;
+  if (filters.q) params.q = filters.q;
+  if (filters.source) params.source = filters.source;
+  if (filters.sentiment) params.sentiment = filters.sentiment;
+  if (filters.groupId) params.group_id = filters.groupId;
+  if (filters.status) params.status = filters.status;
   if (holding) params.holding = 'true';
   if (trashed) params.trashed = 'true';
 
@@ -92,8 +137,40 @@ export function RecordingsListPage() {
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(page * PAGE_SIZE, total);
 
+  const selectedMedia = useCallMedia(selectedId);
+
+  const selectCall = useCallback(
+    (id: number) => {
+      setSelectedId(id);
+      setExpandOpen(true);
+      markedReadForCall.current = null;
+      const next = new URLSearchParams(searchParams);
+      next.set('call', String(id));
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  useEffect(() => {
+    if (!selectedId || !selectedMedia.call.data) return;
+    if (!selectedMedia.call.data.is_unread) return;
+    if (markedReadForCall.current === selectedId) return;
+    markedReadForCall.current = selectedId;
+    void (async () => {
+      try {
+        await api.markCallRead(selectedId);
+        await queryClient.invalidateQueries({ queryKey: ['calls'] });
+        queryClient.setQueryData(['call', selectedId], (prev: typeof selectedMedia.call.data) =>
+          prev ? { ...prev, is_unread: false } : prev,
+        );
+      } catch {
+        markedReadForCall.current = null;
+      }
+    })();
+  }, [selectedId, selectedMedia.call.data, queryClient]);
+
   const groupSections = useMemo(() => {
-    if (!canFilterByGroup || groupFilter || items.length === 0) return null;
+    if (!canFilterByGroup || filters.groupId || items.length === 0) return null;
     const byGroup = new Map<string, typeof items>();
     for (const call of items) {
       const key = call.group_name ?? 'Ungrouped';
@@ -103,7 +180,7 @@ export function RecordingsListPage() {
     }
     if (byGroup.size <= 1) return null;
     return [...byGroup.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [canFilterByGroup, groupFilter, items]);
+  }, [canFilterByGroup, filters.groupId, items]);
 
   const renderCallRow = (c: (typeof items)[number]) => {
     const title = callTitle(c);
@@ -117,17 +194,17 @@ export function RecordingsListPage() {
       : '—';
     const durationLine = c.duration_s != null ? formatTime(c.duration_s) : '—';
     const direction = (c.direction || '').toLowerCase();
+    const isSelected = selectedId === c.id;
+    const detailHref = trashed ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`;
 
     return (
       <li key={c.id}>
-        <button
-          type="button"
-          className={`${classes.listTableRow}${c.is_unread ? ` ${classes.listTableRowUnread}` : ''}`}
-          onClick={() =>
-            navigate(trashed ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`)
-          }
+        <div
+          className={`${classes.listTableRow}${c.is_unread ? ` ${classes.listTableRowUnread}` : ''}${
+            isSelected ? ` ${classes.listTableRowSelected}` : ''
+          }`}
         >
-          <div className={classes.listCell}>
+          <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
             <Group gap={8} wrap="nowrap" align="flex-start">
               {direction === 'inbound' ? (
                 <IconPhoneIncoming size={16} color="#1997e4" style={{ flexShrink: 0, marginTop: 2 }} />
@@ -145,18 +222,18 @@ export function RecordingsListPage() {
                 )}
               </Box>
             </Group>
-          </div>
-          <div className={classes.listCell}>
+          </button>
+          <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
             <Text size="sm" truncate>
               {near}
             </Text>
-          </div>
-          <div className={classes.listCell}>
+          </button>
+          <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
             <Text size="sm" truncate>
               {far}
             </Text>
-          </div>
-          <div className={classes.listCell}>
+          </button>
+          <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
             <Text size="sm">{dateLine}</Text>
             <Text className={classes.rowSub}>{durationLine}</Text>
             {c.trashed_at ? (
@@ -164,33 +241,51 @@ export function RecordingsListPage() {
                 {daysUntilTrashPurge(c.trashed_at)}d left
               </Text>
             ) : null}
-          </div>
-          <div className={`${classes.listCell} ${classes.listCellEnd}`}>
+          </button>
+          <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
             {c.trashed_at ? (
-              <Badge size="sm" variant="light" radius="sm" color="gray">
-                Trash
-              </Badge>
+              <span className={`${classes.statusDot} ${classes.statusDotDefault}`} title="Trash" />
             ) : c.holding ? (
-              <Badge size="sm" variant="light" radius="sm" color="orange">
-                Unconfigured
-              </Badge>
+              <span className={`${classes.statusDot} ${classes.statusDotDefault}`} title="Unconfigured" />
             ) : (
-              <CallStatusBadge status={c.status} size="sm" radius="sm" />
+              <span
+                className={`${classes.statusDot} ${statusDotClass(c.status)}`}
+                title={c.status}
+              />
             )}
-            <SourceBadge source={c.source} />
-          </div>
-          <div className={`${classes.listCell} ${classes.listCellEnd}`}>
+          </button>
+          <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
             {c.sentiment ? (
-              <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
+              <Text size="sm" fw={500} c={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
                 {formatSentimentLabel(c.sentiment)}
-              </Badge>
+              </Text>
             ) : (
               <Text size="sm" c="dimmed">
                 —
               </Text>
             )}
+          </button>
+          <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
+            <SourceBadge source={c.source} />
+          </button>
+          <div className={`${classes.listCell} ${classes.listCellActions}`}>
+            <Menu position="bottom-end" withinPortal>
+              <Menu.Target>
+                <ActionIcon variant="subtle" color="gray" aria-label="Actions">
+                  <IconDotsVertical size={16} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  leftSection={<IconExternalLink size={14} />}
+                  onClick={() => navigate(detailHref)}
+                >
+                  Open full page
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </div>
-        </button>
+        </div>
       </li>
     );
   };
@@ -201,9 +296,11 @@ export function RecordingsListPage() {
         <span>Recording</span>
         <span>Near</span>
         <span>Far</span>
-        <span>Date & duration</span>
+        <span>Date</span>
         <span>Status</span>
         <span>Sentiment</span>
+        <span>Source</span>
+        <span />
       </div>
       <ul className={classes.list}>{calls.map(renderCallRow)}</ul>
     </div>
@@ -233,49 +330,13 @@ export function RecordingsListPage() {
       </Group>
 
       <div className={classes.filterBar}>
-        <TextInput
-          size="sm"
-          placeholder="Search recordings…"
-          leftSection={<IconSearch size={14} />}
-          value={q}
-          onChange={(e) => setQ(e.currentTarget.value)}
-          style={{ flex: '1 1 240px', minWidth: 200 }}
+        <RecordingsSearchBar
+          filters={filters}
+          onChange={setFilters}
+          groups={myGroups}
+          canFilterByGroup={canFilterByGroup}
+          facetItems={items}
         />
-        <Select
-          size="sm"
-          placeholder="Source"
-          aria-label="Filter by source"
-          clearable
-          data={[
-            { value: 'cucm', label: 'CUCM' },
-            { value: 'webex', label: 'Webex' },
-          ]}
-          value={source}
-          onChange={setSource}
-          style={{ width: 130 }}
-        />
-        <Select
-          size="sm"
-          placeholder="Sentiment"
-          aria-label="Filter by sentiment"
-          clearable
-          data={['positive', 'neutral', 'negative']}
-          value={sentiment}
-          onChange={setSentiment}
-          style={{ width: 130 }}
-        />
-        {canFilterByGroup && (
-          <Select
-            size="sm"
-            placeholder="Group"
-            aria-label="Filter by group"
-            clearable
-            data={(myGroups ?? []).map((g) => ({ value: String(g.id), label: g.name }))}
-            value={groupFilter}
-            onChange={setGroupFilter}
-            style={{ width: 140 }}
-          />
-        )}
         <Switch
           size="sm"
           label="Unconfigured"
@@ -293,6 +354,20 @@ export function RecordingsListPage() {
           }}
         />
       </div>
+
+      {selectedId != null && (
+        <SelectedCallPlayer
+          callId={selectedId}
+          trashOnly={trashed}
+          onTrashed={() => {
+            setSelectedId(null);
+            const next = new URLSearchParams(searchParams);
+            next.delete('call');
+            setSearchParams(next, { replace: true });
+            navigate('/recordings?trashed=true');
+          }}
+        />
+      )}
 
       {trashed && (
         <Alert variant="light" color="gray" icon={<IconInfoCircle size={16} />}>
@@ -324,6 +399,27 @@ export function RecordingsListPage() {
         </div>
       ) : (
         renderTable(items)
+      )}
+
+      {selectedId != null && (
+        <>
+          <Button
+            className={classes.expandToggle}
+            variant="subtle"
+            size="sm"
+            rightSection={expandOpen ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
+            onClick={() => setExpandOpen((v) => !v)}
+          >
+            Transcript & notes
+          </Button>
+          {expandOpen && (
+            <RecordingsExpandPanel
+              callId={selectedId}
+              currentTime={selectedMedia.currentTime}
+              onSeek={selectedMedia.seek}
+            />
+          )}
+        </>
       )}
 
       <div className={classes.listFooter}>

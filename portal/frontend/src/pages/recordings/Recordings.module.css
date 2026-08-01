@@ -1,7 +1,7 @@
 .listPage {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   width: 100%;
 }
 
@@ -16,6 +16,186 @@
   border-radius: 10px;
 }
 
+.playerStrip {
+  background: #ffffff;
+  border: 1px solid #e9eaed;
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.playerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.playerTitle {
+  line-height: 1.3;
+}
+
+.dataGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0;
+  border: 1px solid #e9eaed;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.dataGridItem {
+  padding: 12px 14px;
+  border-right: 1px solid #eef0f3;
+  border-bottom: 1px solid #eef0f3;
+  min-width: 0;
+}
+
+.dataGridItem:nth-child(3n) {
+  border-right: none;
+}
+
+.dataGridLabel {
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #74777d;
+  margin-bottom: 6px;
+}
+
+.dataGridValue {
+  min-width: 0;
+}
+
+.expandToggle {
+  align-self: flex-start;
+}
+
+.expandPanel {
+  background: #ffffff;
+  border: 1px solid #e9eaed;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.expandTabBar {
+  display: flex;
+  border-bottom: 1px solid #e9eaed;
+}
+
+.expandTab {
+  flex: 1;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #74777d;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.expandTab:hover {
+  color: #0a0a0a;
+  background: #fafbfc;
+}
+
+.expandTabActive {
+  color: #1997e4;
+  border-bottom-color: #1997e4;
+  background: #ffffff;
+}
+
+.expandBody {
+  padding: 16px 18px;
+}
+
+.detailsGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.detailsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.detailsRow:last-child {
+  border-bottom: none;
+}
+
+.detailsLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: #5c5f66;
+  flex-shrink: 0;
+}
+
+.detailsValue {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0a0a0a;
+  text-align: right;
+  min-width: 0;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusDotRecording {
+  background: #fa5252;
+}
+
+.statusDotProcessing {
+  background: #15aabf;
+}
+
+.statusDotTranscribing {
+  background: #12b886;
+}
+
+.statusDotCompleted {
+  background: #228be6;
+}
+
+.statusDotFailed {
+  background: #e03131;
+}
+
+.statusDotDefault {
+  background: #868e96;
+}
+
+.listTableRowSelected {
+  background-color: #eaf3fe !important;
+}
+
+.listTableRowSelected:hover {
+  background-color: #e0eefc !important;
+}
+
+.listCellActions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
 .listTable {
   width: 100%;
   background: #ffffff;
@@ -27,12 +207,14 @@
 .listTableHeader {
   display: grid;
   grid-template-columns:
-    minmax(0, 2.2fr)
+    minmax(0, 2fr)
+    minmax(0, 1fr)
+    minmax(0, 1fr)
     minmax(0, 1.1fr)
-    minmax(0, 1.1fr)
-    minmax(0, 1.2fr)
-    minmax(0, 0.9fr)
-    minmax(0, 0.8fr);
+    minmax(0, 0.5fr)
+    minmax(0, 0.8fr)
+    minmax(0, 0.7fr)
+    36px;
   gap: 12px;
   padding: 12px 18px;
   background: #f4f6f8;
@@ -47,12 +229,14 @@
 .listTableRow {
   display: grid;
   grid-template-columns:
-    minmax(0, 2.2fr)
+    minmax(0, 2fr)
+    minmax(0, 1fr)
+    minmax(0, 1fr)
     minmax(0, 1.1fr)
-    minmax(0, 1.1fr)
-    minmax(0, 1.2fr)
-    minmax(0, 0.9fr)
-    minmax(0, 0.8fr);
+    minmax(0, 0.5fr)
+    minmax(0, 0.8fr)
+    minmax(0, 0.7fr)
+    36px;
   gap: 12px;
   align-items: center;
   width: 100%;
@@ -63,8 +247,19 @@
   font: inherit;
   text-align: left;
   color: inherit;
-  cursor: pointer;
   transition: background-color 100ms ease;
+}
+
+.listTableRow > .listCell {
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .listTableRow:last-child {

@@ -8,3 +8,15 @@
 .brandAccent {
   color: #1997e4;
 }
+
+.brandOnColor {
+  color: #ffffff;
+}
+
+.brandAccentOnColor {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.iconOnly {
+  justify-content: center;
+}
