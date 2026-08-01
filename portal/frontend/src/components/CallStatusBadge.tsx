@@ -35,25 +35,25 @@ function configFor(status: string): StatusConfig {
       return {
         label: 'Processing',
         color: 'cyan',
-        icon: <IconLoader2 size={12} className={`${classes.badgeIcon} ${classes.spin}`} />,
+        icon: <IconLoader2 size={14} className={`${classes.badgeIcon} ${classes.spin}`} />,
       };
     case 'transcribing':
       return {
         label: 'Transcribing',
         color: 'teal',
-        icon: <IconMicrophone size={12} className={classes.badgeIcon} />,
+        icon: <IconMicrophone size={14} className={classes.badgeIcon} />,
       };
     case 'completed':
       return {
         label: 'Complete',
         color: 'blue',
-        icon: <IconCheck size={12} className={classes.badgeIcon} />,
+        icon: <IconCheck size={14} className={classes.badgeIcon} />,
       };
     case 'failed':
       return {
         label: 'Failed',
         color: 'red',
-        icon: <IconX size={12} className={classes.badgeIcon} />,
+        icon: <IconX size={14} className={classes.badgeIcon} />,
       };
     default:
       return {

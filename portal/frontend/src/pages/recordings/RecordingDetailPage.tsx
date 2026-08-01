@@ -47,6 +47,7 @@ import {
   daysUntilTrashPurge,
   formatCallSource,
   formatDurationHms,
+  formatSentimentLabel,
   formatTime,
   longDateTime,
   partyParts,
@@ -274,8 +275,10 @@ export function RecordingDetailPage() {
         <Button
           variant="light"
           color="brandBlue"
-          size="compact-sm"
-          leftSection={<IconArrowLeft size={16} />}
+          size="sm"
+          radius="sm"
+          className={classes.headerChip}
+          leftSection={<IconArrowLeft size={14} />}
           onClick={() => navigate(listBack)}
         >
           Back to recordings
@@ -303,10 +306,18 @@ export function RecordingDetailPage() {
             )}
           </div>
           <div className={classes.headerActions}>
-            {status && <CallStatusBadge status={status} radius="sm" />}
+            {status && (
+              <CallStatusBadge status={status} size="sm" radius="sm" className={classes.headerChip} />
+            )}
             {c?.sentiment && (
-              <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
-                {c.sentiment}
+              <Badge
+                size="sm"
+                variant="light"
+                radius="sm"
+                className={classes.headerChip}
+                color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}
+              >
+                {formatSentimentLabel(c.sentiment)}
               </Badge>
             )}
             {hasAudio && (

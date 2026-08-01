@@ -194,6 +194,27 @@
   width: 100%;
 }
 
+/* Light buttons and badges share one chip size on detail toolbars */
+.headerChip:global(.mantine-Button-root) {
+  --button-height: 30px;
+  --button-padding-x: 10px;
+  --button-fz: 12px;
+  font-weight: 500;
+}
+
+.headerChip:global(.mantine-Badge-root) {
+  --badge-height: 30px;
+  --badge-padding-x: 10px;
+  --badge-fz: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.headerChip:global(.mantine-Button-root) :global(.mantine-Button-section) {
+  margin-inline-end: 6px;
+}
+
 .detailColumns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
