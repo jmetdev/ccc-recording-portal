@@ -270,14 +270,25 @@ export function RecordingDetailPage() {
 
   return (
     <Stack gap="md" className={classes.detailPage}>
-      <Breadcrumbs>
-        <Anchor component={Link} to={listBack} size="sm">
-          Recordings
-        </Anchor>
-        <Text size="sm" c="dimmed">
-          Details
-        </Text>
-      </Breadcrumbs>
+      <div className={classes.detailNav}>
+        <Button
+          variant="light"
+          color="brandBlue"
+          size="compact-sm"
+          leftSection={<IconArrowLeft size={16} />}
+          onClick={() => navigate(listBack)}
+        >
+          Back to recordings
+        </Button>
+        <Breadcrumbs separator="›">
+          <Anchor component={Link} to={listBack} size="sm">
+            Recordings
+          </Anchor>
+          <Text size="sm" c="dimmed">
+            Call {callId}
+          </Text>
+        </Breadcrumbs>
+      </div>
 
       <div className={classes.detailHeader}>
         <div className={classes.headerTop}>
@@ -288,8 +299,6 @@ export function RecordingDetailPage() {
             {c && (
               <div className={classes.headerMetaLine}>
                 {c.started_at ? longDateTime(c.started_at) : '—'}
-                <span aria-hidden="true"> · </span>
-                ID: {c.id}
               </div>
             )}
           </div>
@@ -300,11 +309,6 @@ export function RecordingDetailPage() {
                 {c.sentiment}
               </Badge>
             )}
-            <Tooltip label="Back to list">
-              <ActionIcon variant="subtle" color="gray" onClick={() => navigate(listBack)} aria-label="Back">
-                <IconArrowLeft size={18} />
-              </ActionIcon>
-            </Tooltip>
             {hasAudio && (
               <Tooltip label="Download">
                 <ActionIcon
