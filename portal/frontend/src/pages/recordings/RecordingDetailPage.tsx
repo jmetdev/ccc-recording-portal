@@ -45,6 +45,7 @@ import {
   TRASH_RETENTION_DAYS,
   callTitle,
   daysUntilTrashPurge,
+  formatCallSource,
   formatDurationHms,
   formatTime,
   longDateTime,
@@ -574,46 +575,54 @@ export function RecordingDetailPage() {
               <div className={classes.asideCardHeader}>Call details</div>
               <div className={classes.asideCardBody}>
                 <div className={classes.asideRow}>
-                  <Text className={classes.metaLabel}>Date & time</Text>
-                  <Text className={classes.metaValue}>
+                  <Text className={classes.asideLabel}>Date & time</Text>
+                  <Text className={classes.asideValue}>
                     {c.started_at ? longDateTime(c.started_at) : '—'}
                   </Text>
                 </div>
                 <div className={classes.asideRow}>
-                  <Text className={classes.metaLabel}>Duration</Text>
-                  <Text className={classes.metaValue}>
+                  <Text className={classes.asideLabel}>Duration</Text>
+                  <Text className={classes.asideValue}>
                     {c.duration_s != null ? formatDurationHms(c.duration_s) : '—'}
                   </Text>
                 </div>
                 <div className={classes.asideRow}>
-                  <Text className={classes.metaLabel}>Source</Text>
-                  <Text className={classes.metaValue}>{(c.source || '—').toUpperCase()}</Text>
+                  <Text className={classes.asideLabel}>Source</Text>
+                  <Text className={classes.asideValue}>{formatCallSource(c.source)}</Text>
                 </div>
                 <div className={classes.asideRow}>
-                  <Text className={classes.metaLabel}>Status</Text>
-                  {status ? <CallStatusBadge status={status} radius="sm" /> : <Text className={classes.metaValue}>—</Text>}
+                  <Text className={classes.asideLabel}>Status</Text>
+                  <div className={classes.asideValue}>
+                    {status ? <CallStatusBadge status={status} radius="sm" /> : '—'}
+                  </div>
                 </div>
                 {c.sentiment && (
                   <div className={classes.asideRow}>
-                    <Text className={classes.metaLabel}>Sentiment</Text>
-                    <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
-                      {c.sentiment}
-                    </Badge>
+                    <Text className={classes.asideLabel}>Sentiment</Text>
+                    <div className={classes.asideValue}>
+                      <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
+                        {c.sentiment}
+                      </Badge>
+                    </div>
                   </div>
                 )}
                 <div className={classes.asideRow}>
-                  <Text className={classes.metaLabel}>Legal hold</Text>
-                  {canManageRetention ? (
-                    <Switch
-                      size="sm"
-                      checked={!!c.legal_hold}
-                      disabled={legalHold.isPending}
-                      onChange={(e) => legalHold.mutate(e.currentTarget.checked)}
-                      aria-label="Legal hold"
-                    />
-                  ) : (
-                    <Text className={classes.metaValue}>{c.legal_hold ? 'On' : 'Off'}</Text>
-                  )}
+                  <Text className={classes.asideLabel}>Legal hold</Text>
+                  <div className={classes.asideValue}>
+                    {canManageRetention ? (
+                      <Switch
+                        size="sm"
+                        checked={!!c.legal_hold}
+                        disabled={legalHold.isPending}
+                        onChange={(e) => legalHold.mutate(e.currentTarget.checked)}
+                        aria-label="Legal hold"
+                      />
+                    ) : (
+                      <Text component="span" size="sm">
+                        {c.legal_hold ? 'On' : 'Off'}
+                      </Text>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

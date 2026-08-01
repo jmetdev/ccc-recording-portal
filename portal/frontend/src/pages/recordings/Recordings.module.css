@@ -270,10 +270,8 @@
 }
 
 .partyLabel {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: #74777d;
 }
 
@@ -314,16 +312,41 @@
 }
 
 .asideCardBody {
-  padding: 14px 16px;
+  padding: 8px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
 .asideRow {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.asideRow:last-child {
+  border-bottom: none;
+  padding-bottom: 4px;
+}
+
+.asideLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: #5c5f66;
+  flex-shrink: 0;
+}
+
+.asideValue {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0a0a0a;
+  text-align: right;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .metaStrip {

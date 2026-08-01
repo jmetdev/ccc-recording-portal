@@ -43,6 +43,13 @@ export function longDateTime(value: string) {
   });
 }
 
+export function formatCallSource(source?: string | null): string {
+  if (!source) return '—';
+  if (source === 'cucm') return 'CUCM';
+  if (source === 'webex') return 'Webex';
+  return source.charAt(0).toUpperCase() + source.slice(1);
+}
+
 export function callTitle(call: {
   subject?: string | null;
   far_name?: string | null;
