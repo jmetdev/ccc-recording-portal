@@ -513,6 +513,13 @@ export const api = {
       }),
     deleteRecordedUser: (id: number) =>
       request<void>(`/admin/recorded-users/${id}`, { method: 'DELETE' }),
+    holdingParties: () => request<HoldingParty[]>('/admin/holding-parties'),
+    enableHoldingParties: (body: { items: HoldingPartyEnableItem[] }) =>
+      request<HoldingPartyEnableResult>('/admin/holding-parties/enable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
     purgeCallData: () =>
       request<{ status: string; calls_deleted: number; files_deleted: number }>('/admin/purge-call-data', {
         method: 'POST',
@@ -551,6 +558,29 @@ export type RecordedUser = {
   label: string | null;
   enabled: boolean;
   group_ids: number[];
+};
+
+export type HoldingParty = {
+  near_addr: string;
+  near_name: string | null;
+  kind: 'extension' | 'email';
+  call_count: number;
+  source_hint: string;
+  already_configured: boolean;
+};
+
+export type HoldingPartyEnableItem = {
+  kind: 'extension' | 'email';
+  value: string;
+  display_name?: string | null;
+  group_ids?: number[];
+};
+
+export type HoldingPartyEnableResult = {
+  extensions_enabled: number;
+  users_enabled: number;
+  calls_released: number;
+  skipped_already_configured: number;
 };
 
 export type TranscriptSearchResult = {

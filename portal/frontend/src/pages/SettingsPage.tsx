@@ -31,12 +31,14 @@ import {
   IconPlus,
   IconTrash,
   IconUsers,
+  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { api, hasPermission, type User } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { ConnectorsTab } from './settings/ConnectorsTab';
 import { TranscriptionTab } from './settings/TranscriptionTab';
 import { WebexSetupTab } from './settings/WebexSetupTab';
+import { UnconfiguredTab } from './settings/UnconfiguredTab';
 import { GroupSyncTab } from './settings/GroupSyncTab';
 import { HealthStatusPage } from './HealthStatusPage';
 
@@ -187,7 +189,7 @@ function UsersTab() {
                   <ActionIcon variant="subtle" onClick={() => openEdit(u)} aria-label="Edit user">
                     <IconEdit size={16} />
                   </ActionIcon>
-                  <ActionIcon color="red" variant="subtle" onClick={() => deleteUser.mutate(u.id)}>
+                  <ActionIcon color="red" variant="subtle" onClick={() => deleteUser.mutate(u.id)} aria-label="Delete user">
                     <IconTrash size={16} />
                   </ActionIcon>
                 </Group>
@@ -537,6 +539,7 @@ function ExtensionsTab() {
                 <Group gap={4} justify="flex-end">
                   <ActionIcon
                     variant="subtle"
+                    aria-label="Edit extension"
                     onClick={() =>
                       setEditExt({
                         id: e.id,
@@ -549,7 +552,7 @@ function ExtensionsTab() {
                   >
                     <IconEdit size={16} />
                   </ActionIcon>
-                  <ActionIcon color="red" variant="subtle" onClick={() => deleteExt.mutate(e.id)}>
+                  <ActionIcon color="red" variant="subtle" onClick={() => deleteExt.mutate(e.id)} aria-label="Delete extension">
                     <IconTrash size={16} />
                   </ActionIcon>
                 </Group>
@@ -695,6 +698,7 @@ function RecordedUsersTab() {
                 <Group gap={4} justify="flex-end">
                   <ActionIcon
                     variant="subtle"
+                    aria-label="Edit recorded user"
                     onClick={() =>
                       setEditUser({
                         id: u.id,
@@ -707,7 +711,12 @@ function RecordedUsersTab() {
                   >
                     <IconEdit size={16} />
                   </ActionIcon>
-                  <ActionIcon color="red" variant="subtle" onClick={() => deleteUser.mutate(u.id)}>
+                  <ActionIcon
+                    color="red"
+                    variant="subtle"
+                    onClick={() => deleteUser.mutate(u.id)}
+                    aria-label="Delete recorded user"
+                  >
                     <IconTrash size={16} />
                   </ActionIcon>
                 </Group>
@@ -923,6 +932,9 @@ export function SettingsPage() {
           <Tabs.Tab value="recorded-users" leftSection={<IconMail size={16} />}>
             Recorded users
           </Tabs.Tab>
+          <Tabs.Tab value="unconfigured" leftSection={<IconAlertTriangle size={16} />}>
+            Unconfigured
+          </Tabs.Tab>
           <Tabs.Tab value="connectors" leftSection={<IconPlugConnected size={16} />}>
             Connectors
           </Tabs.Tab>
@@ -958,6 +970,11 @@ export function SettingsPage() {
         <Tabs.Panel value="recorded-users" pt="lg">
           <Card padding="lg" radius="md">
             <RecordedUsersTab />
+          </Card>
+        </Tabs.Panel>
+        <Tabs.Panel value="unconfigured" pt="lg">
+          <Card padding="lg" radius="md">
+            <UnconfiguredTab />
           </Card>
         </Tabs.Panel>
         <Tabs.Panel value="connectors" pt="lg">

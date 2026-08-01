@@ -34,6 +34,9 @@ from app.schemas import (
     RecordedUserCreate,
     RecordedUserOut,
     RecordedUserUpdate,
+    HoldingPartyEnableRequest,
+    HoldingPartyEnableResult,
+    HoldingPartyOut,
     RoleCreate,
     RoleOut,
     UserCreate,
@@ -51,6 +54,11 @@ from app.services.recorded_users import (
     count_enabled_recorded_users,
     group_id_for_recorded_user,
     release_holding_calls_for_email,
+)
+from app.services.holding_parties import (
+    HoldingEnableItem,
+    bulk_enable_holding_parties,
+    list_holding_parties,
 )
 from app.services.retention import purge_call_media
 from app.services.storage import get_storage
@@ -109,6 +117,14 @@ async def _enforce_recording_seat_cap(
 ) -> None:
     if not enabling or currently_enabled:
         return
+    await _enforce_recording_seat_cap_additional(db, tenant_id, additional_seats=1)
+
+
+async def _enforce_recording_seat_cap_additional(
+    db: AsyncSession, tenant_id: int, *, additional_seats: int
+) -> None:
+    if additional_seats <= 0:
+        return
     tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
     allotted = await recording_seats_for_org(tenant.webex_org_id)
     if allotted is None:
@@ -116,10 +132,13 @@ async def _enforce_recording_seat_cap(
     used = await count_enabled_extensions(db, tenant_id) + await count_enabled_recorded_users(
         db, tenant_id
     )
-    if used >= allotted:
+    if used + additional_seats > allotted:
         raise HTTPException(
             status_code=403,
-            detail=f"Recording seat limit reached ({used} of {allotted} allotted). Disable another seat or request more seats.",
+            detail=(
+                f"Recording seat limit would be exceeded ({used + additional_seats} of {allotted} "
+                f"allotted). Disable another seat or request more seats."
+            ),
         )
 
 
@@ -776,6 +795,96 @@ async def delete_recorded_user(
     await db.delete(user)
     await db.commit()
     return {"status": "ok"}
+
+
+@router.get("/holding-parties", response_model=list[HoldingPartyOut])
+async def get_holding_parties(
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    parties = await list_holding_parties(db, tenant_id=admin.tenant_id)
+    return [
+        HoldingPartyOut(
+            near_addr=p.near_addr,
+            near_name=p.near_name,
+            kind=p.kind,
+            call_count=p.call_count,
+            source_hint=p.source_hint,
+            already_configured=p.already_configured,
+        )
+        for p in parties
+    ]
+
+
+@router.post("/holding-parties/enable", response_model=HoldingPartyEnableResult)
+async def enable_holding_parties(
+    body: HoldingPartyEnableRequest,
+    request: Request,
+    admin: User = Depends(require_permission(Permission.MANAGE_USERS.value)),
+    db: AsyncSession = Depends(get_db),
+):
+    new_seats = 0
+    for item in body.items:
+        if item.kind == "extension":
+            ext_value = item.value.split("@")[0] if "@" in item.value else item.value
+            existing = (
+                await db.execute(
+                    select(RecordedExtension).where(
+                        RecordedExtension.tenant_id == admin.tenant_id,
+                        RecordedExtension.extension == ext_value,
+                    )
+                )
+            ).scalar_one_or_none()
+            if not existing or not existing.enabled:
+                new_seats += 1
+        else:
+            email = item.value.strip().lower()
+            existing = (
+                await db.execute(
+                    select(RecordedUser).where(
+                        RecordedUser.tenant_id == admin.tenant_id,
+                        RecordedUser.email == email,
+                    )
+                )
+            ).scalar_one_or_none()
+            if not existing or not existing.enabled:
+                new_seats += 1
+
+    await _enforce_recording_seat_cap_additional(db, admin.tenant_id, additional_seats=new_seats)
+
+    enable_items = [
+        HoldingEnableItem(
+            kind=item.kind,
+            value=item.value,
+            display_name=item.display_name,
+            group_ids=item.group_ids or None,
+        )
+        for item in body.items
+    ]
+    result = await bulk_enable_holding_parties(db, tenant_id=admin.tenant_id, items=enable_items)
+    await record_audit(
+        db,
+        tenant_id=admin.tenant_id,
+        user=admin,
+        action="admin.holding_enable_bulk",
+        resource_type="tenant",
+        resource_id=admin.tenant_id,
+        detail={
+            "items": len(body.items),
+            "extensions_enabled": result.extensions_enabled,
+            "users_enabled": result.users_enabled,
+            "calls_released": result.calls_released,
+            "skipped_already_configured": result.skipped_already_configured,
+        },
+        request=request,
+    )
+    await db.commit()
+    return HoldingPartyEnableResult(
+        extensions_enabled=result.extensions_enabled,
+        users_enabled=result.users_enabled,
+        calls_released=result.calls_released,
+        skipped_already_configured=result.skipped_already_configured,
+    )
 
 
 @router.post("/purge-call-data")

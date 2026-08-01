@@ -8,6 +8,11 @@ export const SENTIMENT_COLORS: Record<string, string> = {
   neutral: 'gray',
 };
 
+export function formatSentimentLabel(sentiment: string): string {
+  if (!sentiment) return sentiment;
+  return sentiment.charAt(0).toUpperCase() + sentiment.slice(1).toLowerCase();
+}
+
 export function daysUntilTrashPurge(trashedAt: string): number {
   const purgeAt = new Date(trashedAt).getTime() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   return Math.max(0, Math.ceil((purgeAt - Date.now()) / (24 * 60 * 60 * 1000)));

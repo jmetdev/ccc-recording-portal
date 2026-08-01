@@ -54,14 +54,20 @@ export function WebexSetupTab() {
           <List.Item>Confirm authorization status below shows <strong>Authorized</strong></List.Item>
           <List.Item>Optional: Settings → Group sync for Control Hub group → portal role mapping</List.Item>
           <List.Item>Optional: Settings → Recorded users for licensed owner emails</List.Item>
-          <List.Item>Click <strong>Enable WXC connector</strong> below to start recording ingest</List.Item>
+          {configured && authorized && provisioningAvailable ? (
+            <List.Item>Click <strong>Enable WXC connector</strong> below to start recording ingest</List.Item>
+          ) : (
+            <List.Item>
+              After platform setup and Control Hub authorization, enable the WXC connector from this page
+            </List.Item>
+          )}
         </List>
       </Card>
 
       {!configured ? (
         <Alert color="yellow" variant="light" title="Service App not configured on this deployment">
-          Platform credentials are missing. Contact CloudCoreCollab support.
-          {s?.missing_keys?.length ? ` (missing ${s.missing_keys.join(', ')})` : ''}
+          Platform credentials are missing. Contact CloudCoreCollab support to complete Webex Service App
+          setup for this portal.
         </Alert>
       ) : authorized ? (
         <Card padding="lg" radius="md">
@@ -136,15 +142,11 @@ export function WebexSetupTab() {
             <Button color="red" variant="light" loading={disable.isPending} onClick={() => disable.mutate()}>
               Disable
             </Button>
-          ) : (
-            <Button
-              loading={enable.isPending}
-              disabled={!canEnable}
-              onClick={() => enable.mutate()}
-            >
+          ) : canEnable ? (
+            <Button loading={enable.isPending} onClick={() => enable.mutate()}>
               Enable WXC connector
             </Button>
-          )}
+          ) : null}
         </Group>
         {provisioningAvailable && (!configured || !authorized) && (
           <Text size="xs" c="dimmed" mt="sm">

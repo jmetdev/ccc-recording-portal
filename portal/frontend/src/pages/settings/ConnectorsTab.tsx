@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
+  Badge,
   Button,
   Card,
   CopyButton,
@@ -18,6 +19,7 @@ import {
 import { IconCheck, IconCopy, IconPlus, IconTrash } from '@tabler/icons-react';
 import { api, ConnectorCredentialCreated } from '../../api/client';
 import { SourceBadge } from '../../components/SourceBadge';
+import { connectorStatusColor, connectorStatusLabel } from '../../utils/connectorStatus';
 
 function formatTime(value: string | null): string {
   if (!value) return 'never';
@@ -27,6 +29,8 @@ function formatTime(value: string | null): string {
 export function ConnectorsTab() {
   const qc = useQueryClient();
   const connectors = useQuery({ queryKey: ['tenant-connectors'], queryFn: api.tenant.connectors });
+  const systemStatus = useQuery({ queryKey: ['system-status'], queryFn: api.systemStatus });
+  const healthById = new Map((systemStatus.data?.connectors ?? []).map((c) => [c.id, c]));
 
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState('');
@@ -101,7 +105,8 @@ export function ConnectorsTab() {
             <Table.Tr>
               <Table.Th>Name</Table.Th>
               <Table.Th>Kind</Table.Th>
-              <Table.Th>Status</Table.Th>
+              <Table.Th>Credential</Table.Th>
+              <Table.Th>Liveness</Table.Th>
               <Table.Th>Last seen</Table.Th>
               <Table.Th>Version</Table.Th>
               <Table.Th />
@@ -122,6 +127,21 @@ export function ConnectorsTab() {
                   <Text size="xs" c={c.enabled ? 'green' : 'dimmed'}>
                     {c.enabled ? 'Active' : 'Revoked'}
                   </Text>
+                </Table.Td>
+                <Table.Td>
+                  {healthById.get(c.id) ? (
+                    <Badge
+                      size="sm"
+                      variant="light"
+                      color={connectorStatusColor(healthById.get(c.id)!.status)}
+                    >
+                      {connectorStatusLabel(healthById.get(c.id)!.status)}
+                    </Badge>
+                  ) : (
+                    <Text size="xs" c="dimmed">
+                      —
+                    </Text>
+                  )}
                 </Table.Td>
                 <Table.Td fz="xs">{formatTime(c.last_seen_at)}</Table.Td>
                 <Table.Td fz="xs" c="dimmed">

@@ -9,6 +9,8 @@ import { StatTile } from '../components/StatTile';
 import { useCallPlayer } from '../components/CallPlayerContext';
 import { useAuth } from '../auth/AuthContext';
 import { formatParty } from '../utils/partyLabel';
+import { connectorStatusColor, connectorStatusLabel } from '../utils/connectorStatus';
+import classes from './OverviewPage.module.css';
 
 function isForbiddenError(err: unknown): boolean {
   return err instanceof Error && /\b403\b|Forbidden|No call viewing permission/i.test(err.message);
@@ -48,17 +50,10 @@ function formatDuration(seconds: number | null | undefined) {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-const CONNECTOR_COLOR: Record<ConnectorHealth['status'], string> = {
-  healthy: 'teal',
-  stale: 'orange',
-  unseen: 'gray',
-  disabled: 'gray',
-};
-
 function ConnectorStrip({ connectors }: { connectors: ConnectorHealth[] }) {
   if (connectors.length === 0) return null;
   return (
-    <Card padding="lg" radius="md">
+    <Card padding="lg" radius="md" className={classes.fullWidthCard}>
       <Group justify="space-between" mb="sm">
         <Title order={3}>Connectors</Title>
         <Anchor component={Link} to="/settings?tab=connectors" size="sm">
@@ -72,8 +67,8 @@ function ConnectorStrip({ connectors }: { connectors: ConnectorHealth[] }) {
             <Text size="sm" fw={500} td={!c.enabled ? 'line-through' : undefined}>
               {c.name}
             </Text>
-            <Badge size="sm" variant="light" color={CONNECTOR_COLOR[c.status]}>
-              {c.status}
+            <Badge size="sm" variant="light" color={connectorStatusColor(c.status)}>
+              {connectorStatusLabel(c.status)}
             </Badge>
           </Group>
         ))}
@@ -147,7 +142,7 @@ export function OverviewPage() {
   if (statsLoading && canViewCalls) return <Loader />;
 
   return (
-    <Stack gap="lg">
+    <Stack gap="lg" className={classes.page}>
       <Title order={2}>Overview</Title>
 
       {!canViewCalls && (
@@ -165,22 +160,22 @@ export function OverviewPage() {
       )}
 
       {canManage && (licenseUsage?.holding_calls ?? 0) > 0 && (
-        <Alert color="orange" title="Unconfigured extensions are being recorded">
+        <Alert color="orange" title="Unconfigured parties are being recorded">
           {licenseUsage!.holding_calls} call{licenseUsage!.holding_calls === 1 ? '' : 's'} arrived from
-          extensions that are not enabled for recording. Review them in{' '}
+          extensions or recorded users that are not enabled for recording. Review them in{' '}
           <Anchor component={Link} to="/recordings?holding=true" fw={600}>
             Recordings
           </Anchor>{' '}
-          or add the extensions under{' '}
-          <Anchor component={Link} to="/settings?tab=extensions" fw={600}>
-            Settings → Extensions
+          or enable seats under{' '}
+          <Anchor component={Link} to="/settings?tab=unconfigured" fw={600}>
+            Settings → Unconfigured
           </Anchor>
           . Holding calls are automatically deleted after 7 days.
         </Alert>
       )}
 
       {canViewCalls && (
-        <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+        <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md" className={classes.kpiGrid}>
           <StatTile label="Calls today" value={stats?.calls_today ?? '—'} />
           <StatTile label="Total calls" value={stats?.calls_total ?? '—'} />
           <StatTile label="Currently recording" value={stats?.recording_now ?? '—'} accent="#1997e4" />
@@ -191,7 +186,7 @@ export function OverviewPage() {
       {canManage && <ConnectorStrip connectors={connectors} />}
 
       {canViewCalls && (
-        <Card padding="lg" radius="md">
+        <Card padding="lg" radius="md" className={classes.fullWidthCard}>
           <Group justify="space-between" mb="md">
             <Title order={3}>Recent calls</Title>
             <Anchor component={Link} to="/recordings" size="sm">
@@ -241,7 +236,7 @@ export function OverviewPage() {
       )}
 
       {canViewCalls && (
-        <Card padding="lg" radius="md">
+        <Card padding="lg" radius="md" className={classes.fullWidthCard}>
           <Group justify="space-between" mb="md">
             <Title order={3}>Active recordings</Title>
             {!connectorMissing && !liveForbidden && <CallStatusBadge status="recording" />}

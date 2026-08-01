@@ -19,6 +19,8 @@ import { api, TranscriptSearchResult } from '../api/client';
 import { useCallPlayer } from '../components/CallPlayerContext';
 import { FAR_COLOR, NEAR_COLOR } from '../components/DualChannelWaveform';
 import { formatParty } from '../utils/partyLabel';
+import { formatSentimentLabel } from './recordings/recordingsShared';
+import classes from './SearchPage.module.css';
 
 const SENTIMENT_COLORS: Record<string, string> = {
   positive: 'green',
@@ -223,7 +225,7 @@ export function SearchPage() {
   const coveragePct = total > 0 ? Math.round((transcribed / total) * 100) : null;
 
   return (
-    <Stack gap="lg">
+    <Stack gap="lg" className={classes.page}>
       <Title order={2}>Search</Title>
       <Text size="sm" c="dimmed">
         Full-text search across indexed call transcripts. Filter by time range and near/far
@@ -240,7 +242,7 @@ export function SearchPage() {
             : `${transcribed} of ${total} completed calls (${coveragePct}%) have a transcript indexed.`}
         </Alert>
       )}
-      <Card padding="md" radius="md">
+      <Card padding="md" radius="md" className={classes.searchPanel}>
         <Stack>
           <TextInput
             label="Keywords"
@@ -312,25 +314,27 @@ export function SearchPage() {
         </Stack>
       </Card>
       {!searched && (
-        <Text size="sm" c="dimmed">
-          Try{' '}
-          {EXAMPLE_QUERIES.map((ex, i) => (
-            <span key={ex}>
-              {i > 0 && ', '}
-              <Text
-                component="span"
-                c="brandBlue.6"
-                style={{ cursor: 'pointer' }}
-                onClick={() => {
-                  setQ(ex);
-                }}
-              >
-                “{ex}”
-              </Text>
-            </span>
-          ))}
-          .
-        </Text>
+        <div className={classes.emptyState}>
+          <Text size="sm" c="dimmed">
+            Enter keywords (2+ characters) and/or filters above, then click Search. Try{' '}
+            {EXAMPLE_QUERIES.map((ex, i) => (
+              <span key={ex}>
+                {i > 0 && ', '}
+                <Text
+                  component="span"
+                  c="brandBlue.6"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    setQ(ex);
+                  }}
+                >
+                  “{ex}”
+                </Text>
+              </span>
+            ))}
+            .
+          </Text>
+        </div>
       )}
       {results.length > 0 && (
         <Group justify="space-between">
@@ -381,11 +385,11 @@ export function SearchPage() {
                       color="gray"
                       style={{ color: r.leg === 'near' ? NEAR_COLOR : r.leg === 'far' ? FAR_COLOR : undefined }}
                     >
-                      {r.leg} leg
+                      {r.leg === 'near' ? 'Near leg' : r.leg === 'far' ? 'Far leg' : `${r.leg} leg`}
                     </Badge>
                     {r.sentiment && (
                       <Badge size="xs" variant="light" color={SENTIMENT_COLORS[r.sentiment] ?? 'gray'}>
-                        {r.sentiment}
+                        {formatSentimentLabel(r.sentiment)}
                       </Badge>
                     )}
                   </Group>
@@ -406,10 +410,12 @@ export function SearchPage() {
         );
       })}
       {!loading && searched && results.length === 0 && !error && (
-        <Text c="dimmed">
-          No results{total === 0 ? ' — no transcripts are indexed yet' : ''}. Try different keywords or
-          broaden the filters.
-        </Text>
+        <div className={classes.emptyState}>
+          <Text c="dimmed">
+            No results{total === 0 ? ' — no transcripts are indexed yet' : ''}. Try different keywords or
+            broaden the filters.
+          </Text>
+        </div>
       )}
     </Stack>
   );

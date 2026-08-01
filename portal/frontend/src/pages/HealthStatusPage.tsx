@@ -32,42 +32,18 @@ import {
   IconX,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
-import { api, ConnectorHealth, SystemStatus } from '../api/client';
+import { api, SystemStatus } from '../api/client';
 import { containerStateColor, LogViewer, overallColor, StageBadge } from '../components/health/LogViewer';
 import { SourceBadge } from '../components/SourceBadge';
 import classes from '../components/health/LogViewer.module.css';
-
-function connectorStatusColor(status: ConnectorHealth['status']): string {
-  switch (status) {
-    case 'healthy':
-      return 'teal';
-    case 'stale':
-      return 'orange';
-    default:
-      return 'gray';
-  }
-}
-
-function connectorStatusLabel(status: ConnectorHealth['status']): string {
-  switch (status) {
-    case 'healthy':
-      return 'Healthy';
-    case 'stale':
-      return 'Stale';
-    case 'unseen':
-      return 'Never connected';
-    case 'disabled':
-      return 'Disabled';
-    default:
-      return status;
-  }
-}
+import {
+  connectorStatusColor,
+  connectorStatusLabel,
+  formatConnectorStats,
+} from '../utils/connectorStatus';
 
 function formatStats(stats: Record<string, unknown> | null): string {
-  if (!stats || Object.keys(stats).length === 0) return '—';
-  return Object.entries(stats)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join(' · ');
+  return formatConnectorStats(stats);
 }
 
 function formatTime(value: string | null | undefined) {

@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -135,6 +136,33 @@ class RecordedUserUpdate(BaseModel):
     label: str | None = None
     enabled: bool | None = None
     group_ids: list[int] | None = None
+
+
+class HoldingPartyOut(BaseModel):
+    near_addr: str
+    near_name: str | None
+    kind: Literal["extension", "email"]
+    call_count: int
+    source_hint: str
+    already_configured: bool
+
+
+class HoldingPartyEnableItem(BaseModel):
+    kind: Literal["extension", "email"]
+    value: str
+    display_name: str | None = None
+    group_ids: list[int] = []
+
+
+class HoldingPartyEnableRequest(BaseModel):
+    items: list[HoldingPartyEnableItem] = Field(..., min_length=1)
+
+
+class HoldingPartyEnableResult(BaseModel):
+    extensions_enabled: int
+    users_enabled: int
+    calls_released: int
+    skipped_already_configured: int
 
 
 class IngestStartPayload(BaseModel):

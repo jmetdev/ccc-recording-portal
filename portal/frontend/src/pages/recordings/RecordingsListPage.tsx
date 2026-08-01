@@ -19,6 +19,7 @@ import {
 import { IconArrowLeft, IconInfoCircle, IconPhoneIncoming, IconPhoneOutgoing, IconSearch } from '@tabler/icons-react';
 import { api, hasPermission } from '../../api/client';
 import { CallStatusBadge } from '../../components/CallStatusBadge';
+import { SourceBadge } from '../../components/SourceBadge';
 import { useAuth } from '../../auth/AuthContext';
 import { formatParty } from '../../utils/partyLabel';
 import {
@@ -26,6 +27,7 @@ import {
   TRASH_RETENTION_DAYS,
   callTitle,
   daysUntilTrashPurge,
+  formatSentimentLabel,
   formatTime,
   shortDate,
 } from './recordingsShared';
@@ -164,26 +166,23 @@ export function RecordingsListPage() {
             ) : null}
           </div>
           <div className={`${classes.listCell} ${classes.listCellEnd}`}>
-            {c.holding && (
-              <Badge size="sm" variant="light" radius="sm" color="orange">
-                holding
-              </Badge>
-            )}
             {c.trashed_at ? (
               <Badge size="sm" variant="light" radius="sm" color="gray">
-                trash
+                Trash
+              </Badge>
+            ) : c.holding ? (
+              <Badge size="sm" variant="light" radius="sm" color="orange">
+                Unconfigured
               </Badge>
             ) : (
               <CallStatusBadge status={c.status} size="sm" radius="sm" />
             )}
-            <Text size="xs" c="dimmed" tt="uppercase">
-              {(c.source || '—').toUpperCase()}
-            </Text>
+            <SourceBadge source={c.source} />
           </div>
           <div className={`${classes.listCell} ${classes.listCellEnd}`}>
             {c.sentiment ? (
               <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
-                {c.sentiment}
+                {formatSentimentLabel(c.sentiment)}
               </Badge>
             ) : (
               <Text size="sm" c="dimmed">

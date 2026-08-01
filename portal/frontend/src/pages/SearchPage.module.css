@@ -1,0 +1,19 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.searchPanel {
+  width: 100%;
+}
+
+.emptyState {
+  width: 100%;
+  padding: 32px 24px;
+  background: #ffffff;
+  border: 1px solid #e9eaed;
+  border-radius: 10px;
+  text-align: center;
+}
