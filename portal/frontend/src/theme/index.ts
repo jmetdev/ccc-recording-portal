@@ -43,9 +43,9 @@ const brandViolet: MantineColorsTuple = [
 
 export function createTheme(overrides?: MantineThemeOverride) {
   return mantineCreateTheme({
-    fontFamily: 'Manrope, -apple-system, BlinkMacSystemFont, sans-serif',
-    fontFamilyMonospace: '"DM Mono", ui-monospace, SFMono-Regular, monospace',
-    headings: { fontFamily: 'Manrope, -apple-system, BlinkMacSystemFont, sans-serif' },
+    fontFamily: '"IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif',
+    fontFamilyMonospace: '"IBM Plex Mono", ui-monospace, SFMono-Regular, monospace',
+    headings: { fontFamily: '"IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif' },
     primaryColor: 'brandBlue',
     primaryShade: 6,
     defaultRadius: 'md',

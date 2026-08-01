@@ -184,7 +184,7 @@
 }
 
 .timelineTime {
-  font-family: 'DM Mono', ui-monospace, monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-size: 12px;
   color: var(--mantine-color-dimmed);
   padding-top: 2px;

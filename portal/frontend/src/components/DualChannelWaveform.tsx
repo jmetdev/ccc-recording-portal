@@ -31,7 +31,7 @@ function tagBadgeElement(note: string): HTMLElement {
     display: 'inline-block',
     padding: '1px 9px',
     borderRadius: '999px',
-    fontFamily: 'Manrope, system-ui, sans-serif',
+    fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
     fontSize: '11px',
     fontWeight: '600',
     lineHeight: '1.6',
