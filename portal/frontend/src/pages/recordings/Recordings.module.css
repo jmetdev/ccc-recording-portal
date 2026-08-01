@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 1100px;
+  width: 100%;
 }
 
 .filterBar {
@@ -16,13 +16,89 @@
   border-radius: 10px;
 }
 
+.listTable {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #e9eaed;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.listTableHeader {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 2.2fr)
+    minmax(0, 1.1fr)
+    minmax(0, 1.1fr)
+    minmax(0, 1.2fr)
+    minmax(0, 0.9fr)
+    minmax(0, 0.8fr);
+  gap: 12px;
+  padding: 12px 18px;
+  background: #f4f6f8;
+  border-bottom: 1px solid #e9eaed;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #74777d;
+}
+
+.listTableRow {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 2.2fr)
+    minmax(0, 1.1fr)
+    minmax(0, 1.1fr)
+    minmax(0, 1.2fr)
+    minmax(0, 0.9fr)
+    minmax(0, 0.8fr);
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 14px 18px;
+  border: none;
+  border-bottom: 1px solid #eef0f3;
+  background: #ffffff;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+
+.listTableRow:last-child {
+  border-bottom: none;
+}
+
+.listTableRow:hover {
+  background-color: #fafbfc;
+}
+
+.listTableRow:focus-visible {
+  outline: 2px solid #1997e4;
+  outline-offset: -2px;
+}
+
+.listTableRowUnread .rowTitle {
+  font-weight: 650;
+}
+
+.listCell {
+  min-width: 0;
+}
+
+.listCellEnd {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .row {
@@ -74,6 +150,13 @@
   line-height: 1.45;
 }
 
+.rowSub {
+  font-size: 12px;
+  color: #74777d;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
 .listFooter {
   display: flex;
   align-items: center;
@@ -82,13 +165,60 @@
   padding: 4px 2px;
 }
 
-/* ---- Detail (Option B) ---- */
+@media (max-width: 900px) {
+  .listTableHeader {
+    display: none;
+  }
+
+  .listTableRow {
+    display: block;
+    padding: 16px 18px;
+  }
+
+  .listCell + .listCell {
+    margin-top: 6px;
+  }
+
+  .listCellEnd {
+    justify-content: flex-start;
+    margin-top: 8px;
+  }
+}
+
+/* ---- Detail (Imagicle-style two column) ---- */
 
 .detailPage {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 960px;
+  width: 100%;
+}
+
+.detailColumns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+.detailMain {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.detailAside {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .detailColumns {
+    grid-template-columns: 1fr;
+  }
 }
 
 .detailHeader {
@@ -124,15 +254,9 @@
 }
 
 .partyRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-@media (max-width: 640px) {
-  .partyRow {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .partyCard {
@@ -174,20 +298,38 @@
   font-family: 'DM Mono', ui-monospace, monospace;
 }
 
-.metaStrip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px 20px;
-  padding: 14px 18px;
-  background: #f4f6f8;
+.asideCard {
+  background: #ffffff;
   border: 1px solid #e9eaed;
   border-radius: 10px;
+  overflow: hidden;
 }
 
-@media (max-width: 720px) {
-  .metaStrip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.asideCardHeader {
+  padding: 14px 16px;
+  border-bottom: 1px solid #eef0f3;
+  font-size: 14px;
+  font-weight: 650;
+  color: #0a0a0a;
+}
+
+.asideCardBody {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.asideRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metaStrip {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .metaItem {
@@ -252,6 +394,17 @@
   gap: 12px;
   flex-wrap: nowrap;
   margin-top: 4px;
+}
+
+.detailTabs {
+  background: #ffffff;
+  border: 1px solid #e9eaed;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.detailTabPanel {
+  padding: 16px;
 }
 
 .sectionCard {

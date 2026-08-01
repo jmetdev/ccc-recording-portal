@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,6 +14,7 @@ import {
   Slider,
   Stack,
   Switch,
+  Tabs,
   Text,
   Textarea,
   Title,
@@ -50,26 +51,6 @@ import {
   partyParts,
 } from './recordingsShared';
 import classes from './Recordings.module.css';
-
-function SectionCard({
-  icon,
-  title,
-  children,
-}: {
-  icon: ReactNode;
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <Card padding={0} radius="md" className={classes.sectionCard}>
-      <div className={classes.sectionHeader}>
-        <span className={classes.sectionIcon}>{icon}</span>
-        <span className={classes.sectionTitle}>{title}</span>
-      </div>
-      <div className={classes.sectionBody}>{children}</div>
-    </Card>
-  );
-}
 
 export function RecordingDetailPage() {
   const { id } = useParams();
@@ -376,21 +357,6 @@ export function RecordingDetailPage() {
             )}
           </div>
         </div>
-
-        {c && (
-          <div className={classes.partyRow}>
-            <div className={classes.partyCard}>
-              <span className={`${classes.partyLabel} ${classes.partyLabelNear}`}>Near</span>
-              <span className={classes.partyName}>{near.name}</span>
-              {near.detail && <span className={classes.partyDetail}>{near.detail}</span>}
-            </div>
-            <div className={classes.partyCard}>
-              <span className={`${classes.partyLabel} ${classes.partyLabelFar}`}>Far</span>
-              <span className={classes.partyName}>{far.name}</span>
-              {far.detail && <span className={classes.partyDetail}>{far.detail}</span>}
-            </div>
-          </div>
-        )}
       </div>
 
       {c?.trashed_at && (
@@ -400,218 +366,276 @@ export function RecordingDetailPage() {
         </Alert>
       )}
 
-      {c && (
-        <div className={classes.metaStrip}>
-          <div className={classes.metaItem}>
-            <Text className={classes.metaLabel}>Status</Text>
-            {status ? <CallStatusBadge status={status} radius="sm" /> : <Text className={classes.metaValue}>—</Text>}
-          </div>
-          <div className={classes.metaItem}>
-            <Text className={classes.metaLabel}>Source</Text>
-            <Text className={classes.metaValue}>{(c.source || '—').toUpperCase()}</Text>
-          </div>
-          <div className={classes.metaItem}>
-            <Text className={classes.metaLabel}>Duration</Text>
-            <Text className={classes.metaValue}>
-              {c.duration_s != null ? formatDurationHms(c.duration_s) : '—'}
-            </Text>
-          </div>
-          <div className={classes.metaItem}>
-            <Text className={classes.metaLabel}>Legal hold</Text>
-            {canManageRetention ? (
-              <Switch
-                size="sm"
-                checked={!!c.legal_hold}
-                disabled={legalHold.isPending}
-                onChange={(e) => legalHold.mutate(e.currentTarget.checked)}
-                aria-label="Legal hold"
-              />
+      <div className={classes.detailColumns}>
+        <div className={classes.detailMain}>
+          <Card padding="md" radius="md" className={classes.waveformCard}>
+            {hasAudio ? (
+              <Stack gap="sm">
+                <div className={classes.waveLegend}>
+                  <span className={classes.waveLegendItem}>
+                    <span className={`${classes.waveSwatch} ${classes.waveSwatchNear}`} />
+                    Near ({near.name})
+                  </span>
+                  <span className={classes.waveLegendItem}>
+                    <span className={`${classes.waveSwatch} ${classes.waveSwatchFar}`} />
+                    Far ({far.name})
+                  </span>
+                </div>
+                <DualChannelWaveform
+                  nearRecording={nearRecording}
+                  farRecording={farRecording}
+                  stereoRecording={stereoRecording}
+                  mixRecording={mixRecording}
+                  audioUrl={api.audioUrl}
+                  nearLabel={nearLabel}
+                  farLabel={farLabel}
+                  highlightTag={
+                    selectedTag
+                      ? { start: selectedTag.start_s, end: selectedTag.end_s, note: selectedTag.note }
+                      : null
+                  }
+                  canTag={canManageTags}
+                  onRegionSelected={(start, end) => setRegionModal({ start, end })}
+                  onTimeUpdate={setCurrentTime}
+                  onDuration={setDuration}
+                  onPlayingChange={setPlaying}
+                  seekTo={seekTo}
+                  playSignal={playSignal}
+                  pauseSignal={pauseSignal}
+                  tagSelectSignal={tagSelectSignal}
+                />
+                <div className={classes.transport}>
+                  <ActionIcon variant="filled" size="xl" radius="xl" onClick={togglePlay} aria-label="Play or pause">
+                    {playing ? <IconPlayerPause size={22} /> : <IconPlayerPlay size={22} />}
+                  </ActionIcon>
+                  <Text size="xs" c="dimmed" ff="monospace" style={{ width: 52 }}>
+                    {formatDurationHms(currentTime)}
+                  </Text>
+                  <Slider
+                    style={{ flex: 1 }}
+                    value={durationSeconds ? (currentTime / durationSeconds) * 100 : 0}
+                    onChange={onSeek}
+                    disabled={!durationSeconds}
+                    size="sm"
+                    label={(v) => (durationSeconds ? formatDurationHms((v / 100) * durationSeconds) : null)}
+                    color="brandBlue"
+                  />
+                  <Text size="xs" c="dimmed" ff="monospace" style={{ width: 52, textAlign: 'right' }}>
+                    {formatDurationHms(durationSeconds)}
+                  </Text>
+                  {canManageTags && (
+                    <Button
+                      size="xs"
+                      variant="light"
+                      leftSection={<IconTag size={14} />}
+                      onClick={() => setTagSelectSignal((n) => n + 1)}
+                    >
+                      Tag region
+                    </Button>
+                  )}
+                </div>
+              </Stack>
             ) : (
-              <Text className={classes.metaValue}>{c.legal_hold ? 'On' : 'Off'}</Text>
+              <Text size="sm" c="dimmed">
+                {recordings.isLoading
+                  ? 'Loading recordings…'
+                  : status === 'recording'
+                    ? 'Call is being recorded…'
+                    : status === 'processing'
+                      ? 'Recording is being processed…'
+                      : 'No audio available for this call.'}
+              </Text>
             )}
-          </div>
-        </div>
-      )}
+          </Card>
 
-      <Card padding="md" radius="md" className={classes.waveformCard}>
-        {hasAudio ? (
-          <Stack gap="sm">
-            <div className={classes.waveLegend}>
-              <span className={classes.waveLegendItem}>
-                <span className={`${classes.waveSwatch} ${classes.waveSwatchNear}`} />
-                Near ({near.name})
-              </span>
-              <span className={classes.waveLegendItem}>
-                <span className={`${classes.waveSwatch} ${classes.waveSwatchFar}`} />
-                Far ({far.name})
-              </span>
-            </div>
-            <DualChannelWaveform
-              nearRecording={nearRecording}
-              farRecording={farRecording}
-              stereoRecording={stereoRecording}
-              mixRecording={mixRecording}
-              audioUrl={api.audioUrl}
-              nearLabel={nearLabel}
-              farLabel={farLabel}
-              highlightTag={
-                selectedTag
-                  ? { start: selectedTag.start_s, end: selectedTag.end_s, note: selectedTag.note }
-                  : null
-              }
-              canTag={canManageTags}
-              onRegionSelected={(start, end) => setRegionModal({ start, end })}
-              onTimeUpdate={setCurrentTime}
-              onDuration={setDuration}
-              onPlayingChange={setPlaying}
-              seekTo={seekTo}
-              playSignal={playSignal}
-              pauseSignal={pauseSignal}
-              tagSelectSignal={tagSelectSignal}
-            />
-            <div className={classes.transport}>
-              <ActionIcon variant="filled" size="xl" radius="xl" onClick={togglePlay} aria-label="Play or pause">
-                {playing ? <IconPlayerPause size={22} /> : <IconPlayerPlay size={22} />}
-              </ActionIcon>
-              <Text size="xs" c="dimmed" ff="monospace" style={{ width: 52 }}>
-                {formatDurationHms(currentTime)}
-              </Text>
-              <Slider
-                style={{ flex: 1 }}
-                value={durationSeconds ? (currentTime / durationSeconds) * 100 : 0}
-                onChange={onSeek}
-                disabled={!durationSeconds}
-                size="sm"
-                label={(v) => (durationSeconds ? formatDurationHms((v / 100) * durationSeconds) : null)}
-                color="brandBlue"
+          <Tabs defaultValue="summary" className={classes.detailTabs}>
+            <Tabs.List>
+              <Tabs.Tab value="summary" leftSection={<IconFileText size={14} />}>
+                Summary
+              </Tabs.Tab>
+              <Tabs.Tab value="notes" leftSection={<IconNote size={14} />}>
+                Notes
+              </Tabs.Tab>
+              <Tabs.Tab value="tags" leftSection={<IconTag size={14} />}>
+                Tags
+              </Tabs.Tab>
+              {canViewTranscripts && (
+                <Tabs.Tab value="transcription" leftSection={<IconMessages size={14} />}>
+                  Transcription
+                </Tabs.Tab>
+              )}
+            </Tabs.List>
+
+            <Tabs.Panel value="summary" className={classes.detailTabPanel}>
+              {c?.summary ? (
+                <Text size="sm" style={{ lineHeight: 1.55 }}>
+                  {c.summary}
+                </Text>
+              ) : (
+                <Text size="sm" c="dimmed">
+                  Summary available after transcription.
+                </Text>
+              )}
+            </Tabs.Panel>
+
+            <Tabs.Panel value="notes" className={classes.detailTabPanel}>
+              <Textarea
+                value={notesDraft}
+                onChange={(e) => {
+                  setNotesDraft(e.currentTarget.value);
+                  setNotesDirty(true);
+                }}
+                placeholder="Add notes about this call…"
+                autosize
+                minRows={4}
+                mb="sm"
+                styles={{ input: { borderColor: '#e9eaed' } }}
               />
-              <Text size="xs" c="dimmed" ff="monospace" style={{ width: 52, textAlign: 'right' }}>
-                {formatDurationHms(durationSeconds)}
-              </Text>
-              {canManageTags && (
+              <Group justify="flex-end">
                 <Button
                   size="xs"
                   variant="light"
-                  leftSection={<IconTag size={14} />}
-                  onClick={() => setTagSelectSignal((n) => n + 1)}
+                  loading={saveNotes.isPending}
+                  disabled={!notesDirty}
+                  onClick={() => saveNotes.mutate()}
                 >
-                  Tag region
+                  Save notes
                 </Button>
+              </Group>
+              {saveNotes.isError && (
+                <Text size="xs" c="red" mt="xs">
+                  {(saveNotes.error as Error).message}
+                </Text>
               )}
+            </Tabs.Panel>
+
+            <Tabs.Panel value="tags" className={classes.detailTabPanel}>
+              {tagList.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  {canManageTags ? 'Select a region on the waveform to add a tag.' : 'No tags.'}
+                </Text>
+              ) : (
+                <Group gap={8}>
+                  {tagList.map((t) => (
+                    <Badge
+                      key={t.id}
+                      radius="sm"
+                      variant={selectedTagId === t.id ? 'filled' : 'outline'}
+                      color="brandBlue"
+                      className={classes.tagChip}
+                      onClick={() => {
+                        setSelectedTagId((cur) => (cur === t.id ? null : t.id));
+                        setSeekTo(t.start_s + Math.random() * 1e-6);
+                      }}
+                      title={t.note || undefined}
+                    >
+                      {formatTime(t.start_s)}–{formatTime(t.end_s)}
+                      {t.note ? ` · ${t.note}` : ''}
+                    </Badge>
+                  ))}
+                </Group>
+              )}
+            </Tabs.Panel>
+
+            {canViewTranscripts && (
+              <Tabs.Panel value="transcription" className={classes.detailTabPanel}>
+                {transcripts.isLoading && (
+                  <Text size="sm" c="dimmed">
+                    Loading…
+                  </Text>
+                )}
+                {status === 'transcribing' && (
+                  <Text size="sm" c="dimmed">
+                    Transcription in progress…
+                  </Text>
+                )}
+                {!transcripts.isLoading && transcriptList.length === 0 && status === 'completed' && (
+                  <Text size="sm" c="dimmed">
+                    No transcript available for this call.
+                  </Text>
+                )}
+                <ConversationTranscript
+                  transcripts={transcriptList}
+                  nearLabel={nearLabel}
+                  farLabel={farLabel}
+                  currentTime={currentTime}
+                  onSeek={(t) => setSeekTo(t + Math.random() * 1e-6)}
+                  maxHeight={480}
+                  layout="timeline"
+                />
+              </Tabs.Panel>
+            )}
+          </Tabs>
+        </div>
+
+        {c && (
+          <aside className={classes.detailAside}>
+            <div className={classes.asideCard}>
+              <div className={classes.asideCardHeader}>Call details</div>
+              <div className={classes.asideCardBody}>
+                <div className={classes.asideRow}>
+                  <Text className={classes.metaLabel}>Date & time</Text>
+                  <Text className={classes.metaValue}>
+                    {c.started_at ? longDateTime(c.started_at) : '—'}
+                  </Text>
+                </div>
+                <div className={classes.asideRow}>
+                  <Text className={classes.metaLabel}>Duration</Text>
+                  <Text className={classes.metaValue}>
+                    {c.duration_s != null ? formatDurationHms(c.duration_s) : '—'}
+                  </Text>
+                </div>
+                <div className={classes.asideRow}>
+                  <Text className={classes.metaLabel}>Source</Text>
+                  <Text className={classes.metaValue}>{(c.source || '—').toUpperCase()}</Text>
+                </div>
+                <div className={classes.asideRow}>
+                  <Text className={classes.metaLabel}>Status</Text>
+                  {status ? <CallStatusBadge status={status} radius="sm" /> : <Text className={classes.metaValue}>—</Text>}
+                </div>
+                {c.sentiment && (
+                  <div className={classes.asideRow}>
+                    <Text className={classes.metaLabel}>Sentiment</Text>
+                    <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
+                      {c.sentiment}
+                    </Badge>
+                  </div>
+                )}
+                <div className={classes.asideRow}>
+                  <Text className={classes.metaLabel}>Legal hold</Text>
+                  {canManageRetention ? (
+                    <Switch
+                      size="sm"
+                      checked={!!c.legal_hold}
+                      disabled={legalHold.isPending}
+                      onChange={(e) => legalHold.mutate(e.currentTarget.checked)}
+                      aria-label="Legal hold"
+                    />
+                  ) : (
+                    <Text className={classes.metaValue}>{c.legal_hold ? 'On' : 'Off'}</Text>
+                  )}
+                </div>
+              </div>
             </div>
-          </Stack>
-        ) : (
-          <Text size="sm" c="dimmed">
-            {recordings.isLoading
-              ? 'Loading recordings…'
-              : status === 'recording'
-                ? 'Call is being recorded…'
-                : status === 'processing'
-                  ? 'Recording is being processed…'
-                  : 'No audio available for this call.'}
-          </Text>
-        )}
-      </Card>
 
-      <SectionCard icon={<IconFileText size={16} />} title="Summary">
-        {c?.summary ? (
-          <Text size="sm" style={{ lineHeight: 1.55 }}>
-            {c.summary}
-          </Text>
-        ) : (
-          <Text size="sm" c="dimmed">
-            Summary available after transcription.
-          </Text>
+            <div className={classes.asideCard}>
+              <div className={classes.asideCardHeader}>Parties</div>
+              <div className={classes.asideCardBody}>
+                <div className={classes.partyCard}>
+                  <span className={`${classes.partyLabel} ${classes.partyLabelNear}`}>Near</span>
+                  <span className={classes.partyName}>{near.name}</span>
+                  {near.detail && <span className={classes.partyDetail}>{near.detail}</span>}
+                </div>
+                <div className={classes.partyCard}>
+                  <span className={`${classes.partyLabel} ${classes.partyLabelFar}`}>Far</span>
+                  <span className={classes.partyName}>{far.name}</span>
+                  {far.detail && <span className={classes.partyDetail}>{far.detail}</span>}
+                </div>
+              </div>
+            </div>
+          </aside>
         )}
-      </SectionCard>
-
-      <SectionCard icon={<IconNote size={16} />} title="Notes">
-        <Textarea
-          value={notesDraft}
-          onChange={(e) => {
-            setNotesDraft(e.currentTarget.value);
-            setNotesDirty(true);
-          }}
-          placeholder="Add notes about this call…"
-          autosize
-          minRows={3}
-          mb="sm"
-          styles={{ input: { borderColor: '#e9eaed' } }}
-        />
-        <Group justify="flex-end">
-          <Button
-            size="xs"
-            variant="light"
-            loading={saveNotes.isPending}
-            disabled={!notesDirty}
-            onClick={() => saveNotes.mutate()}
-          >
-            Save notes
-          </Button>
-        </Group>
-        {saveNotes.isError && (
-          <Text size="xs" c="red" mt="xs">
-            {(saveNotes.error as Error).message}
-          </Text>
-        )}
-      </SectionCard>
-
-      <SectionCard icon={<IconTag size={16} />} title="Tags">
-        {tagList.length === 0 ? (
-          <Text size="sm" c="dimmed">
-            {canManageTags ? 'Select a region on the waveform to add a tag.' : 'No tags.'}
-          </Text>
-        ) : (
-          <Group gap={8}>
-            {tagList.map((t) => (
-              <Badge
-                key={t.id}
-                radius="sm"
-                variant={selectedTagId === t.id ? 'filled' : 'outline'}
-                color="brandBlue"
-                className={classes.tagChip}
-                onClick={() => {
-                  setSelectedTagId((cur) => (cur === t.id ? null : t.id));
-                  setSeekTo(t.start_s + Math.random() * 1e-6);
-                }}
-                title={t.note || undefined}
-              >
-                {formatTime(t.start_s)}–{formatTime(t.end_s)}
-                {t.note ? ` · ${t.note}` : ''}
-              </Badge>
-            ))}
-          </Group>
-        )}
-      </SectionCard>
-
-      {canViewTranscripts && (
-        <SectionCard icon={<IconMessages size={16} />} title="Transcription">
-          {transcripts.isLoading && (
-            <Text size="sm" c="dimmed">
-              Loading…
-            </Text>
-          )}
-          {status === 'transcribing' && (
-            <Text size="sm" c="dimmed">
-              Transcription in progress…
-            </Text>
-          )}
-          {!transcripts.isLoading && transcriptList.length === 0 && status === 'completed' && (
-            <Text size="sm" c="dimmed">
-              No transcript available for this call.
-            </Text>
-          )}
-          <ConversationTranscript
-            transcripts={transcriptList}
-            nearLabel={nearLabel}
-            farLabel={farLabel}
-            currentTime={currentTime}
-            onSeek={(t) => setSeekTo(t + Math.random() * 1e-6)}
-            maxHeight={480}
-            layout="timeline"
-          />
-        </SectionCard>
-      )}
+      </div>
 
       <Modal opened={!!regionModal} onClose={() => setRegionModal(null)} title="Tag region">
         {regionModal && (

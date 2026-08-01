@@ -16,7 +16,7 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconArrowLeft, IconInfoCircle, IconSearch } from '@tabler/icons-react';
+import { IconArrowLeft, IconInfoCircle, IconPhoneIncoming, IconPhoneOutgoing, IconSearch } from '@tabler/icons-react';
 import { api, hasPermission } from '../../api/client';
 import { CallStatusBadge } from '../../components/CallStatusBadge';
 import { useAuth } from '../../auth/AuthContext';
@@ -107,62 +107,108 @@ export function RecordingsListPage() {
     const title = callTitle(c);
     const near = formatParty(c.near_name, c.near_addr);
     const far = formatParty(c.far_name, c.far_addr);
+    const dateLine = c.started_at
+      ? `${shortDate(c.started_at)} · ${new Date(c.started_at).toLocaleTimeString(undefined, {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}`
+      : '—';
+    const durationLine = c.duration_s != null ? formatTime(c.duration_s) : '—';
+    const direction = (c.direction || '').toLowerCase();
+
     return (
       <li key={c.id}>
         <button
           type="button"
-          className={`${classes.row}${c.is_unread ? ` ${classes.rowUnread}` : ''}`}
+          className={`${classes.listTableRow}${c.is_unread ? ` ${classes.listTableRowUnread}` : ''}`}
           onClick={() =>
             navigate(trashed ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`)
           }
         >
-          <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
-            <Box style={{ flex: 1, minWidth: 0 }}>
-              <Text className={classes.rowTitle} truncate>
-                {title}
-              </Text>
-              <div className={classes.rowMeta}>
-                Near: {near} · Far: {far} · {shortDate(c.started_at)}
-                {c.started_at
-                  ? ` ${new Date(c.started_at).toLocaleTimeString(undefined, {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}`
-                  : ''}{' '}
-                · {c.duration_s != null ? formatTime(c.duration_s) : '—'} ·{' '}
-                {(c.source || '').toUpperCase() || '—'}
-                {c.trashed_at ? ` · ${daysUntilTrashPurge(c.trashed_at)}d left` : ''}
-              </div>
-              {c.summary && (
-                <Text className={classes.rowSummary} lineClamp={2}>
-                  {c.summary}
+          <div className={classes.listCell}>
+            <Group gap={8} wrap="nowrap" align="flex-start">
+              {direction === 'inbound' ? (
+                <IconPhoneIncoming size={16} color="#1997e4" style={{ flexShrink: 0, marginTop: 2 }} />
+              ) : direction === 'outbound' ? (
+                <IconPhoneOutgoing size={16} color="#7450d5" style={{ flexShrink: 0, marginTop: 2 }} />
+              ) : null}
+              <Box style={{ minWidth: 0 }}>
+                <Text className={classes.rowTitle} truncate>
+                  {title}
                 </Text>
-              )}
-            </Box>
-            <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
-              {c.sentiment && (
-                <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
-                  {c.sentiment}
-                </Badge>
-              )}
-              {c.holding && (
-                <Badge size="sm" variant="light" radius="sm" color="orange">
-                  holding
-                </Badge>
-              )}
-              {c.trashed_at ? (
-                <Badge size="sm" variant="light" radius="sm" color="gray">
-                  trash
-                </Badge>
-              ) : (
-                <CallStatusBadge status={c.status} size="sm" radius="sm" />
-              )}
+                {c.summary && (
+                  <Text className={classes.rowSub} lineClamp={1}>
+                    {c.summary}
+                  </Text>
+                )}
+              </Box>
             </Group>
-          </Group>
+          </div>
+          <div className={classes.listCell}>
+            <Text size="sm" truncate>
+              {near}
+            </Text>
+          </div>
+          <div className={classes.listCell}>
+            <Text size="sm" truncate>
+              {far}
+            </Text>
+          </div>
+          <div className={classes.listCell}>
+            <Text size="sm">{dateLine}</Text>
+            <Text className={classes.rowSub}>{durationLine}</Text>
+            {c.trashed_at ? (
+              <Text className={classes.rowSub} c="orange">
+                {daysUntilTrashPurge(c.trashed_at)}d left
+              </Text>
+            ) : null}
+          </div>
+          <div className={`${classes.listCell} ${classes.listCellEnd}`}>
+            {c.holding && (
+              <Badge size="sm" variant="light" radius="sm" color="orange">
+                holding
+              </Badge>
+            )}
+            {c.trashed_at ? (
+              <Badge size="sm" variant="light" radius="sm" color="gray">
+                trash
+              </Badge>
+            ) : (
+              <CallStatusBadge status={c.status} size="sm" radius="sm" />
+            )}
+            <Text size="xs" c="dimmed" tt="uppercase">
+              {(c.source || '—').toUpperCase()}
+            </Text>
+          </div>
+          <div className={`${classes.listCell} ${classes.listCellEnd}`}>
+            {c.sentiment ? (
+              <Badge size="sm" variant="light" radius="sm" color={SENTIMENT_COLORS[c.sentiment] ?? 'gray'}>
+                {c.sentiment}
+              </Badge>
+            ) : (
+              <Text size="sm" c="dimmed">
+                —
+              </Text>
+            )}
+          </div>
         </button>
       </li>
     );
   };
+
+  const renderTable = (calls: typeof items) => (
+    <div className={classes.listTable}>
+      <div className={classes.listTableHeader} aria-hidden="true">
+        <span>Recording</span>
+        <span>Near</span>
+        <span>Far</span>
+        <span>Date & duration</span>
+        <span>Status</span>
+        <span>Sentiment</span>
+      </div>
+      <ul className={classes.list}>{calls.map(renderCallRow)}</ul>
+    </div>
+  );
 
   return (
     <Stack gap="md" className={classes.listPage}>
@@ -269,16 +315,16 @@ export function RecordingsListPage() {
       ) : groupSections ? (
         <div>
           {groupSections.map(([groupName, calls]) => (
-            <section key={groupName}>
+            <section key={groupName} style={{ marginBottom: 20 }}>
               <Text size="xs" fw={600} c="dimmed" py="xs" tt="uppercase">
                 {groupName}
               </Text>
-              <ul className={classes.list}>{calls.map(renderCallRow)}</ul>
+              {renderTable(calls)}
             </section>
           ))}
         </div>
       ) : (
-        <ul className={classes.list}>{items.map(renderCallRow)}</ul>
+        renderTable(items)
       )}
 
       <div className={classes.listFooter}>
