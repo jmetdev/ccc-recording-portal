@@ -121,6 +121,16 @@ function AppLayoutInner() {
         collapsed: { mobile: !opened },
       }}
       padding="lg"
+      styles={{
+        navbar: {
+          backgroundColor: '#1997e4',
+          borderRight: 'none',
+        },
+        header: {
+          backgroundColor: '#1997e4',
+          borderBottom: 'none',
+        },
+      }}
     >
       <AppShell.Header className={classes.header} hiddenFrom="sm">
         <Group h="100%" px="md" justify="space-between">
