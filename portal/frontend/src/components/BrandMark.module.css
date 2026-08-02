@@ -1,7 +1,6 @@
 .brandWrap {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
 }
 
 .brand {
@@ -24,8 +23,6 @@
   color: #ffffff;
   line-height: 1.2;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .brandAccentOnColor {

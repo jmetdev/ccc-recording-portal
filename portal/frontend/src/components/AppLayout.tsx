@@ -20,8 +20,8 @@ import { BrandMark } from './BrandMark';
 import classes from './AppLayout.module.css';
 
 const NAV_EXPANDED_KEY = 'ccc.navExpanded';
-const NAV_WIDTH_COLLAPSED = 80;
-const NAV_WIDTH_EXPANDED = 220;
+const NAV_WIDTH_COLLAPSED = 88;
+const NAV_WIDTH_EXPANDED = 264;
 
 type NavItem = { to: string; label: string; icon: Icon; perm?: string; end?: boolean };
 
