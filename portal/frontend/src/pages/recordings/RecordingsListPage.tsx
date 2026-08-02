@@ -83,7 +83,6 @@ export function RecordingsListPage() {
     status: null,
   });
   const [holding, setHolding] = useState(holdingOnly);
-  const [trashed, setTrashed] = useState(trashOnly);
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(
     callParam && Number.isFinite(Number(callParam)) ? Number(callParam) : null,
@@ -96,10 +95,6 @@ export function RecordingsListPage() {
   }, [holdingOnly]);
 
   useEffect(() => {
-    setTrashed(trashOnly);
-  }, [trashOnly]);
-
-  useEffect(() => {
     if (callParam && Number.isFinite(Number(callParam))) {
       setSelectedId(Number(callParam));
     }
@@ -107,7 +102,7 @@ export function RecordingsListPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [filters, holding, trashed]);
+  }, [filters, holding, trashOnly]);
 
   const { data: myGroups } = useQuery({
     queryKey: ['groups-mine'],
@@ -123,7 +118,7 @@ export function RecordingsListPage() {
   if (filters.groupId) params.group_id = filters.groupId;
   if (filters.status) params.status = filters.status;
   if (holding) params.holding = 'true';
-  if (trashed) params.trashed = 'true';
+  if (trashOnly) params.trashed = 'true';
 
   const { data, isLoading } = useQuery({
     queryKey: ['calls', params],
@@ -195,7 +190,7 @@ export function RecordingsListPage() {
     const durationLine = c.duration_s != null ? formatTime(c.duration_s) : '—';
     const direction = (c.direction || '').toLowerCase();
     const isSelected = selectedId === c.id;
-    const detailHref = trashed ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`;
+    const detailHref = trashOnly ? `/recordings/${c.id}?trashed=true` : `/recordings/${c.id}`;
 
     return (
       <li key={c.id}>
@@ -235,12 +230,14 @@ export function RecordingsListPage() {
           </button>
           <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
             <Text size="sm">{dateLine}</Text>
-            <Text className={classes.rowSub}>{durationLine}</Text>
             {c.trashed_at ? (
               <Text className={classes.rowSub} c="orange">
                 {daysUntilTrashPurge(c.trashed_at)}d left
               </Text>
             ) : null}
+          </button>
+          <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
+            <Text size="sm">{durationLine}</Text>
           </button>
           <button type="button" className={classes.listCell} onClick={() => selectCall(c.id)}>
             {c.trashed_at ? (
@@ -297,6 +294,7 @@ export function RecordingsListPage() {
         <span>Near</span>
         <span>Far</span>
         <span>Date</span>
+        <span>Duration</span>
         <span>Status</span>
         <span>Sentiment</span>
         <span>Source</span>
@@ -309,14 +307,14 @@ export function RecordingsListPage() {
   return (
     <Stack gap="md" className={classes.listPage}>
       <Group justify="space-between">
-        <Title order={2}>{trashed ? 'Trash' : 'Recordings'}</Title>
+        <Title order={2}>{trashOnly ? 'Trash' : 'Recordings'}</Title>
         <Group gap="xs">
-          {!trashed && (
+          {!trashOnly && (
             <Button variant="subtle" size="xs" onClick={() => navigate('/recordings?trashed=true')}>
               View trash
             </Button>
           )}
-          {trashed && (
+          {trashOnly && (
             <Button
               variant="subtle"
               size="xs"
@@ -343,22 +341,12 @@ export function RecordingsListPage() {
           checked={holding}
           onChange={(e) => setHolding(e.currentTarget.checked)}
         />
-        <Switch
-          size="sm"
-          label="Trash"
-          checked={trashed}
-          onChange={(e) => {
-            const next = e.currentTarget.checked;
-            setTrashed(next);
-            navigate(next ? '/recordings?trashed=true' : '/recordings');
-          }}
-        />
       </div>
 
       {selectedId != null && (
         <SelectedCallPlayer
           callId={selectedId}
-          trashOnly={trashed}
+          trashOnly={trashOnly}
           onTrashed={() => {
             setSelectedId(null);
             const next = new URLSearchParams(searchParams);
@@ -369,7 +357,7 @@ export function RecordingsListPage() {
         />
       )}
 
-      {trashed && (
+      {trashOnly && (
         <Alert variant="light" color="gray" icon={<IconInfoCircle size={16} />}>
           <Text size="sm">
             Trashed recordings can be recovered for {TRASH_RETENTION_DAYS} days, then are permanently
@@ -384,7 +372,7 @@ export function RecordingsListPage() {
         </Box>
       ) : items.length === 0 ? (
         <Text c="dimmed" size="sm">
-          {trashed ? 'Trash is empty.' : 'No calls match.'}
+          {trashOnly ? 'Trash is empty.' : 'No calls match.'}
         </Text>
       ) : groupSections ? (
         <div>
@@ -427,7 +415,7 @@ export function RecordingsListPage() {
           {total === 0
             ? 'No recordings'
             : `${rangeStart}–${rangeEnd} of ${total.toLocaleString()} recording${total === 1 ? '' : 's'}`}
-          {trashed ? ' in trash' : ''}
+          {trashOnly ? ' in trash' : ''}
         </Text>
         {totalPages > 1 && (
           <Pagination

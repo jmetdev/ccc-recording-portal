@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AppShell, Burger, Group, Stack, Text, ActionIcon, Tooltip } from '@mantine/core';
+import { AppShell, Burger, Group, ActionIcon } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconCloud,
@@ -9,8 +9,6 @@ import {
   IconDatabase,
   IconAdjustmentsHorizontal,
   IconLogout,
-  IconChevronLeft,
-  IconChevronRight,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
@@ -50,51 +48,6 @@ function initials(name: string | undefined): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-function UserMenu({
-  username,
-  onLogout,
-  compact = false,
-  collapsed = false,
-}: {
-  username?: string;
-  onLogout: () => void;
-  compact?: boolean;
-  collapsed?: boolean;
-}) {
-  return (
-    <Group
-      gap="sm"
-      wrap="nowrap"
-      justify={compact || collapsed ? 'center' : 'space-between'}
-      w={compact || collapsed ? undefined : '100%'}
-      className={collapsed ? classes.userFooterCollapsed : undefined}
-    >
-      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-        <div className={classes.avatar} title={username}>
-          {initials(username)}
-        </div>
-        {!compact && !collapsed && (
-          <Text size="sm" className={classes.userName} truncate style={{ flex: 1, minWidth: 0 }}>
-            {username}
-          </Text>
-        )}
-      </Group>
-      {!collapsed && (
-        <Tooltip label="Sign out">
-          <ActionIcon
-            variant="subtle"
-            className={classes.logoutBtn}
-            onClick={onLogout}
-            aria-label="Logout"
-          >
-            <IconLogout size={18} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-    </Group>
-  );
-}
-
 function AppLayoutInner() {
   const [opened, { toggle, close }] = useDisclosure();
   const [navExpanded, setNavExpanded] = useState(readNavExpanded);
@@ -111,6 +64,30 @@ function AppLayoutInner() {
 
   const desktopExpanded = navExpanded;
   const navWidth = desktopExpanded ? NAV_WIDTH_EXPANDED : NAV_WIDTH_COLLAPSED;
+
+  const renderNavLink = (item: NavItem) => {
+    const Icon = item.icon;
+    const active = item.end
+      ? location.pathname === item.to
+      : location.pathname === item.to || location.pathname.startsWith(item.to + '/');
+
+    return (
+      <Link
+        key={item.to}
+        to={item.to}
+        title={!desktopExpanded ? item.label : undefined}
+        className={`${classes.navItem}${active ? ` ${classes.navItemActive}` : ''}${
+          desktopExpanded ? '' : ` ${classes.navItemCollapsed}`
+        }`}
+        onClick={close}
+      >
+        <span className={classes.navIcon}>
+          <Icon size={20} stroke={1.8} />
+        </span>
+        {desktopExpanded && item.label}
+      </Link>
+    );
+  };
 
   return (
     <AppShell
@@ -135,89 +112,84 @@ function AppLayoutInner() {
       <AppShell.Header className={classes.header} hiddenFrom="sm">
         <Group h="100%" px="md" justify="space-between">
           <Burger opened={opened} onClick={toggle} size="sm" />
-          <UserMenu username={user?.username} onLogout={logout} compact />
+          <button
+            type="button"
+            className={`${classes.navItem} ${classes.navItemCollapsed}`}
+            onClick={logout}
+            aria-label="Logout"
+            title="Log out"
+          >
+            <span className={classes.navIcon}>
+              <IconLogout size={20} stroke={1.8} />
+            </span>
+          </button>
         </Group>
       </AppShell.Header>
 
       <AppShell.Navbar
         className={`${classes.navbar}${desktopExpanded ? '' : ` ${classes.navbarCollapsed}`}`}
-        p="md"
+        p={0}
       >
         <AppShell.Section
           className={`${classes.brandSection}${desktopExpanded ? '' : ` ${classes.brandSectionCollapsed}`}`}
-          mb="sm"
         >
           <BrandMark variant="onColor" iconOnly={!desktopExpanded} />
           {desktopExpanded && (
-            <Tooltip label="Collapse menu">
-              <ActionIcon
-                variant="subtle"
-                className={classes.navToggle}
-                onClick={() => setNavExpanded(false)}
-                aria-label="Collapse menu"
-                visibleFrom="sm"
-              >
-                <IconChevronLeft size={18} />
-              </ActionIcon>
-            </Tooltip>
+            <ActionIcon
+              variant="subtle"
+              className={classes.navToggle}
+              onClick={() => setNavExpanded(false)}
+              aria-label="Collapse menu"
+              title="Collapse menu"
+              visibleFrom="sm"
+            >
+              «
+            </ActionIcon>
           )}
         </AppShell.Section>
 
         {!desktopExpanded && (
-          <AppShell.Section mb="sm" visibleFrom="sm">
-            <Tooltip label="Expand menu" position="right">
-              <ActionIcon
-                variant="subtle"
-                className={classes.navToggle}
-                onClick={() => setNavExpanded(true)}
-                aria-label="Expand menu"
-                w="100%"
-              >
-                <IconChevronRight size={18} />
-              </ActionIcon>
-            </Tooltip>
+          <AppShell.Section mb="sm" visibleFrom="sm" className={classes.userFooterCollapsed}>
+            <ActionIcon
+              variant="subtle"
+              className={`${classes.navToggle} ${classes.navToggleCollapsed}`}
+              onClick={() => setNavExpanded(true)}
+              aria-label="Expand menu"
+              title="Expand menu"
+            >
+              »»
+            </ActionIcon>
           </AppShell.Section>
         )}
 
-        <AppShell.Section grow>
-          <Stack gap={4}>
-            {nav.map((item) => {
-              if (item.perm && !hasPermission(user, item.perm)) return null;
-              const Icon = item.icon;
-              const active = item.end
-                ? location.pathname === item.to
-                : location.pathname === item.to || location.pathname.startsWith(item.to + '/');
-              const link = (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={`${classes.navItem}${active ? ` ${classes.navItemActive}` : ''}${
-                    desktopExpanded ? '' : ` ${classes.navItemCollapsed}`
-                  }`}
-                  onClick={close}
-                >
-                  <Icon size={18} stroke={1.8} className={classes.navIcon} />
-                  {desktopExpanded && item.label}
-                </Link>
-              );
-              if (!desktopExpanded) {
-                return (
-                  <Tooltip key={item.to} label={item.label} position="right">
-                    {link}
-                  </Tooltip>
-                );
-              }
-              return link;
-            })}
-          </Stack>
+        <AppShell.Section grow className={desktopExpanded ? classes.navList : `${classes.navList} ${classes.navListCollapsed}`}>
+          {nav.map((item) => {
+            if (item.perm && !hasPermission(user, item.perm)) return null;
+            return renderNavLink(item);
+          })}
         </AppShell.Section>
 
-        <AppShell.Section className={classes.userFooter} pt="md">
-          <UserMenu
-            username={user?.username}
-            onLogout={logout}
-            collapsed={!desktopExpanded}
-          />
+        <AppShell.Section className={`${classes.userFooter}${desktopExpanded ? '' : ` ${classes.userFooterCollapsed}`}`}>
+          {desktopExpanded && (
+            <div className={classes.userRow}>
+              <div className={classes.avatar} title={user?.username}>
+                {initials(user?.username)}
+              </div>
+              <span className={classes.userName}>{user?.username}</span>
+            </div>
+          )}
+          <button
+            type="button"
+            title={!desktopExpanded ? 'Log out' : undefined}
+            className={`${classes.navItem}${desktopExpanded ? '' : ` ${classes.navItemCollapsed}`}`}
+            onClick={logout}
+            aria-label="Log out"
+          >
+            <span className={classes.navIcon}>
+              <IconLogout size={20} stroke={1.8} />
+            </span>
+            {desktopExpanded && 'Log out'}
+          </button>
         </AppShell.Section>
       </AppShell.Navbar>
 
