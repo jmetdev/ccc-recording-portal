@@ -1,8 +1,16 @@
+.brandWrap {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
 .brand {
   font-weight: 700;
   font-size: 17px;
   letter-spacing: -0.02em;
   color: #0a0a0a;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .brandAccent {
@@ -10,11 +18,26 @@
 }
 
 .brandOnColor {
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.01em;
   color: #ffffff;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brandAccentOnColor {
-  color: rgba(255, 255, 255, 0.92);
+  font-weight: 700;
+  color: #ffffff;
+  opacity: 0.92;
+}
+
+.cloudSvg {
+  flex-shrink: 0;
+  display: block;
+  color: #ffffff;
 }
 
 .iconOnly {

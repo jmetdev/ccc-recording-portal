@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AppShell, Burger, Group, ActionIcon } from '@mantine/core';
+import { AppShell, Burger, Group } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconCloud,
@@ -9,6 +9,8 @@ import {
   IconDatabase,
   IconAdjustmentsHorizontal,
   IconLogout,
+  IconChevronsLeft,
+  IconChevronsRight,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
@@ -102,10 +104,14 @@ function AppLayoutInner() {
         navbar: {
           backgroundColor: '#1997e4',
           borderRight: 'none',
+          transition: 'width 200ms ease',
         },
         header: {
           backgroundColor: '#1997e4',
           borderBottom: 'none',
+        },
+        main: {
+          transition: 'padding-left 200ms ease',
         },
       }}
     >
@@ -133,36 +139,23 @@ function AppLayoutInner() {
         <AppShell.Section
           className={`${classes.brandSection}${desktopExpanded ? '' : ` ${classes.brandSectionCollapsed}`}`}
         >
-          <BrandMark variant="onColor" iconOnly={!desktopExpanded} />
-          {desktopExpanded && (
-            <ActionIcon
-              variant="subtle"
-              className={classes.navToggle}
-              onClick={() => setNavExpanded(false)}
-              aria-label="Collapse menu"
-              title="Collapse menu"
-              visibleFrom="sm"
-            >
-              «
-            </ActionIcon>
-          )}
+          <BrandMark variant="onColor" iconOnly={!desktopExpanded} size={desktopExpanded ? 32 : 28} />
+          <button
+            type="button"
+            className={classes.navToggle}
+            onClick={() => setNavExpanded((v) => !v)}
+            aria-label={desktopExpanded ? 'Collapse menu' : 'Expand menu'}
+            aria-expanded={desktopExpanded}
+            title={desktopExpanded ? 'Collapse menu' : 'Expand menu'}
+          >
+            {desktopExpanded ? <IconChevronsLeft size={16} /> : <IconChevronsRight size={16} />}
+          </button>
         </AppShell.Section>
 
-        {!desktopExpanded && (
-          <AppShell.Section mb="sm" visibleFrom="sm" className={classes.userFooterCollapsed}>
-            <ActionIcon
-              variant="subtle"
-              className={`${classes.navToggle} ${classes.navToggleCollapsed}`}
-              onClick={() => setNavExpanded(true)}
-              aria-label="Expand menu"
-              title="Expand menu"
-            >
-              »»
-            </ActionIcon>
-          </AppShell.Section>
-        )}
-
-        <AppShell.Section grow className={desktopExpanded ? classes.navList : `${classes.navList} ${classes.navListCollapsed}`}>
+        <AppShell.Section
+          grow
+          className={desktopExpanded ? classes.navList : `${classes.navList} ${classes.navListCollapsed}`}
+        >
           {nav.map((item) => {
             if (item.perm && !hasPermission(user, item.perm)) return null;
             return renderNavLink(item);

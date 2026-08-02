@@ -300,7 +300,9 @@ export function RecordingsListPage() {
         <span>Source</span>
         <span />
       </div>
-      <ul className={classes.list}>{calls.map(renderCallRow)}</ul>
+      <div className={classes.listTableBody}>
+        <ul className={classes.list}>{calls.map(renderCallRow)}</ul>
+      </div>
     </div>
   );
 

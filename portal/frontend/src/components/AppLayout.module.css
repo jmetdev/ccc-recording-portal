@@ -19,19 +19,28 @@
   margin-bottom: 32px;
   width: 100%;
   min-height: 36px;
+  min-width: 0;
 }
 
 .brandSectionCollapsed {
+  flex-direction: column;
   justify-content: center;
+  gap: 12px;
 }
 
 .navToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 36px;
   height: 36px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.33);
   color: #ffffff;
+  background: transparent;
   flex-shrink: 0;
+  cursor: pointer;
+  padding: 0;
 }
 
 .navToggle:hover {
@@ -39,12 +48,8 @@
   color: #ffffff;
 }
 
-.navToggleCollapsed {
+.brandSectionCollapsed .navToggle {
   width: 50px;
-  height: 36px;
-  margin-bottom: 16px;
-  font-size: 13px;
-  letter-spacing: -0.08em;
 }
 
 .navList {

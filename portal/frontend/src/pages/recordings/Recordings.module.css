@@ -225,6 +225,14 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #74777d;
+  flex-shrink: 0;
+}
+
+.listTableBody {
+  --list-row-height: 68px;
+  max-height: calc(var(--list-row-height) * 10);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .listTableRow {
@@ -242,6 +250,7 @@
   gap: 12px;
   align-items: center;
   width: 100%;
+  min-height: var(--list-row-height, 68px);
   padding: 14px 18px;
   border: none;
   border-bottom: 1px solid #eef0f3;
@@ -367,9 +376,14 @@
     display: none;
   }
 
+  .listTableBody {
+    max-height: 70vh;
+  }
+
   .listTableRow {
     display: block;
     padding: 16px 18px;
+    min-height: unset;
   }
 
   .listCell + .listCell {
