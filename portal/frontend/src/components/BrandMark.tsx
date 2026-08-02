@@ -36,7 +36,7 @@ export function BrandMark({ size = 22, textSize, variant = 'default', iconOnly =
 
   return (
     <Group
-      gap={onColor ? 10 : 8}
+      gap={onColor ? 12 : 8}
       wrap="nowrap"
       className={iconOnly ? classes.iconOnly : classes.brandWrap}
       aria-label="CloudCoreRecord"
@@ -50,7 +50,11 @@ export function BrandMark({ size = 22, textSize, variant = 'default', iconOnly =
       {!iconOnly && (
         <span
           className={onColor ? classes.brandOnColor : classes.brand}
-          style={textSize ? { fontSize: textSize } : undefined}
+          style={
+            textSize
+              ? { fontSize: textSize, fontWeight: 700, letterSpacing: '-0.02em' }
+              : undefined
+          }
           aria-hidden="true"
         >
           Cloud<span className={onColor ? classes.brandAccentOnColor : classes.brandAccent}>Core</span>

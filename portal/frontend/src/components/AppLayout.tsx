@@ -9,8 +9,8 @@ import {
   IconDatabase,
   IconAdjustmentsHorizontal,
   IconLogout,
-  IconChevronsLeft,
-  IconChevronsRight,
+  IconChevronLeft,
+  IconChevronRight,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
@@ -105,6 +105,7 @@ function AppLayoutInner() {
           backgroundColor: '#1997e4',
           borderRight: 'none',
           transition: 'width 200ms ease',
+          overflow: 'visible',
         },
         header: {
           backgroundColor: '#1997e4',
@@ -136,20 +137,26 @@ function AppLayoutInner() {
         className={`${classes.navbar}${desktopExpanded ? '' : ` ${classes.navbarCollapsed}`}`}
         p={0}
       >
+        <button
+          type="button"
+          className={classes.navPullTab}
+          onClick={() => setNavExpanded((v) => !v)}
+          aria-label={desktopExpanded ? 'Collapse menu' : 'Expand menu'}
+          aria-expanded={desktopExpanded}
+          title={desktopExpanded ? 'Collapse menu' : 'Expand menu'}
+        >
+          {desktopExpanded ? <IconChevronLeft size={15} stroke={2.5} /> : <IconChevronRight size={15} stroke={2.5} />}
+        </button>
+
         <AppShell.Section
           className={`${classes.brandSection}${desktopExpanded ? '' : ` ${classes.brandSectionCollapsed}`}`}
         >
-          <BrandMark variant="onColor" iconOnly={!desktopExpanded} size={desktopExpanded ? 32 : 28} />
-          <button
-            type="button"
-            className={classes.navToggle}
-            onClick={() => setNavExpanded((v) => !v)}
-            aria-label={desktopExpanded ? 'Collapse menu' : 'Expand menu'}
-            aria-expanded={desktopExpanded}
-            title={desktopExpanded ? 'Collapse menu' : 'Expand menu'}
-          >
-            {desktopExpanded ? <IconChevronsLeft size={16} /> : <IconChevronsRight size={16} />}
-          </button>
+          <BrandMark
+            variant="onColor"
+            iconOnly={!desktopExpanded}
+            size={desktopExpanded ? 44 : 38}
+            textSize={desktopExpanded ? 22 : undefined}
+          />
         </AppShell.Section>
 
         <AppShell.Section

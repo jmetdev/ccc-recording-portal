@@ -17,8 +17,6 @@ import {
 } from '@mantine/core';
 import {
   IconArrowLeft,
-  IconChevronDown,
-  IconChevronUp,
   IconDotsVertical,
   IconExternalLink,
   IconInfoCircle,
@@ -40,7 +38,6 @@ import {
 } from './recordingsShared';
 import { RecordingsSearchBar, type RecordingsFilters } from './RecordingsSearchBar';
 import { SelectedCallPlayer } from './SelectedCallPlayer';
-import { RecordingsExpandPanel } from './RecordingsExpandPanel';
 import { useCallMedia } from './useCallMedia';
 import classes from './Recordings.module.css';
 
@@ -87,7 +84,6 @@ export function RecordingsListPage() {
   const [selectedId, setSelectedId] = useState<number | null>(
     callParam && Number.isFinite(Number(callParam)) ? Number(callParam) : null,
   );
-  const [expandOpen, setExpandOpen] = useState(false);
   const markedReadForCall = useRef<number | null>(null);
 
   useEffect(() => {
@@ -137,7 +133,6 @@ export function RecordingsListPage() {
   const selectCall = useCallback(
     (id: number) => {
       setSelectedId(id);
-      setExpandOpen(true);
       markedReadForCall.current = null;
       const next = new URLSearchParams(searchParams);
       next.set('call', String(id));
@@ -277,7 +272,7 @@ export function RecordingsListPage() {
                   leftSection={<IconExternalLink size={14} />}
                   onClick={() => navigate(detailHref)}
                 >
-                  Open full page
+                  Full Details
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
@@ -389,27 +384,6 @@ export function RecordingsListPage() {
         </div>
       ) : (
         renderTable(items)
-      )}
-
-      {selectedId != null && (
-        <>
-          <Button
-            className={classes.expandToggle}
-            variant="subtle"
-            size="sm"
-            rightSection={expandOpen ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
-            onClick={() => setExpandOpen((v) => !v)}
-          >
-            Transcript & notes
-          </Button>
-          {expandOpen && (
-            <RecordingsExpandPanel
-              callId={selectedId}
-              currentTime={selectedMedia.currentTime}
-              onSeek={selectedMedia.seek}
-            />
-          )}
-        </>
       )}
 
       <div className={classes.listFooter}>

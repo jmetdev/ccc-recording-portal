@@ -1,4 +1,6 @@
 .navbar {
+  position: relative;
+  overflow: visible;
   background-color: #1997e4;
   border-right: none;
   display: flex;
@@ -14,42 +16,55 @@
 .brandSection {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 32px;
+  justify-content: flex-start;
+  margin-bottom: 28px;
   width: 100%;
-  min-height: 36px;
+  min-height: 48px;
   min-width: 0;
 }
 
 .brandSectionCollapsed {
-  flex-direction: column;
   justify-content: center;
-  gap: 12px;
 }
 
-.navToggle {
-  display: inline-flex;
+.navPullTab {
+  position: absolute;
+  top: 30px;
+  right: -13px;
+  z-index: 20;
+  display: none;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.33);
-  color: #ffffff;
-  background: transparent;
-  flex-shrink: 0;
-  cursor: pointer;
+  width: 18px;
+  height: 48px;
   padding: 0;
+  border: 1px solid #d8dee6;
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  background-color: #ffffff;
+  color: #1997e4;
+  box-shadow: 2px 1px 8px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
 }
 
-.navToggle:hover {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+@media (min-width: 48em) {
+  .navPullTab {
+    display: flex;
+  }
 }
 
-.brandSectionCollapsed .navToggle {
-  width: 50px;
+.navPullTab:hover {
+  background-color: #f3f9ff;
+  color: #1478b8;
+  box-shadow: 3px 2px 10px rgba(15, 23, 42, 0.16);
+}
+
+.navPullTab:active {
+  background-color: #e8f4fd;
 }
 
 .navList {

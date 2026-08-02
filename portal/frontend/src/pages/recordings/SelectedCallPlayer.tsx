@@ -162,7 +162,7 @@ export function SelectedCallPlayer({ callId, trashOnly = false, onTrashed }: Pro
             variant="light"
             leftSection={<IconExternalLink size={14} />}
           >
-            Open full page
+            Full Details
           </Button>
         </Group>
       </div>
