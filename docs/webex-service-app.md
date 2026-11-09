@@ -11,11 +11,13 @@ registering apps or reading logs:
    recording connector's org authorization.
 
 3. **WXC recording connector** (`ccc-connector-webex`, sibling repo) — a
-   headless Docker poller deployed on the VPS per customer org. Uses its own
-   Service App client credentials + org refresh token (`/data/tokens.json`) to
-   list converged Calling recordings (`spark-compliance:recordings_read` or
-   `spark-admin:recordings_read` fallback). Pushes MP3 + VTT to portal ingest
-   v2. See `ccc-connector-webex/README.md` and `scripts/wxc-smoke-checklist.md`.
+   headless Docker poller deployed per customer org. It uses the access token
+   and refresh token copied from Developer Portal → Org Authorizations
+   (`/data/tokens.json`) and does not mint a new access token. The Service App
+   client secret is not placed on the connector. Listing uses
+   `spark-compliance:recordings_read` or `spark-admin:recordings_read`.
+   Pushes MP3 + VTT to portal ingest v2. See `ccc-connector-webex/README.md`
+   and `scripts/wxc-smoke-checklist.md`.
 
 ## 1. Per-user OIDC/SSO login (Webex as a Keycloak identity provider)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import timezone
 from pathlib import Path
 
 from sqlalchemy import select
@@ -35,18 +36,29 @@ def tenant_data_host_path(tenant_id: int) -> str | None:
     return str(path)
 
 
-async def write_tokens_file(db: AsyncSession, tenant_id: int, auth: WebexServiceAuth) -> None:
-    """Refresh org access if needed and write wxc-sdk tokens.json for the poller."""
-    await wx.get_org_token(db, tenant_id)
-    await db.refresh(auth)
-    if not auth.refresh_token_encrypted:
-        raise RuntimeError("Service App refresh token missing for tenant")
+async def write_tokens_file(
+    db: AsyncSession, tenant_id: int, auth: WebexServiceAuth
+) -> None:
+    """Write the developer-portal access and refresh tokens for the poller.
 
-    payload: dict[str, str] = {
-        "refresh_token": decrypt_secret(auth.refresh_token_encrypted),
-    }
+    Does not call Webex and does not mint a new access token.
+    """
+    del db
+    if not auth.access_token_encrypted or not auth.refresh_token_encrypted:
+        raise RuntimeError(
+            "Paste the developer-portal access token and refresh token before starting the connector"
+        )
+
+    payload: dict[str, str] = {}
+    if auth.refresh_token_encrypted:
+        payload["refresh_token"] = decrypt_secret(auth.refresh_token_encrypted)
     if auth.access_token_encrypted:
         payload["access_token"] = decrypt_secret(auth.access_token_encrypted)
+    if auth.access_expires_at is not None:
+        expires_at = auth.access_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        payload["expires_at"] = expires_at.isoformat()
 
     dest = tenant_data_path(tenant_id) / TOKENS_FILE
     dest.write_text(json.dumps(payload, indent=2), encoding="utf-8")

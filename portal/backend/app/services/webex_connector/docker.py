@@ -53,8 +53,6 @@ def _run_container(
     env = {
         "PORTAL_URL": settings.webex_connector_portal_url,
         "CONNECTOR_TOKEN": connector_token,
-        "WEBEX_CLIENT_ID": settings.webex_serviceapp_client_id,
-        "WEBEX_CLIENT_SECRET": settings.webex_serviceapp_client_secret,
         "WEBEX_SCOPES": settings.webex_connector_scopes,
         "LIST_MODE": settings.webex_connector_list_mode,
         "WEBEX_TOKEN_FILE": "/data/tokens.json",

@@ -111,8 +111,20 @@ def store_token_pair(auth: WebexServiceAuth, pair: dict) -> None:
         auth.refresh_token_encrypted = encrypt_secret(refresh)
 
 
-async def _refresh_access_token(auth: WebexServiceAuth) -> str:
-    refresh = decrypt_secret(auth.refresh_token_encrypted)
+def serviceapp_client_credentials_ready() -> bool:
+    """True when the portal itself holds a real Service App client id and secret.
+
+    Customer connectors never receive these values. They present the tenant
+    refresh token and this process performs the Webex refresh grant.
+    """
+    values = (settings.webex_serviceapp_client_id, settings.webex_serviceapp_client_secret)
+    return all(value and not any(p in value for p in PLACEHOLDER_VALUES) for value in values)
+
+
+async def exchange_refresh_grant(refresh_token: str) -> dict:
+    """Exchange a tenant refresh token. The client secret never leaves this process."""
+    if not serviceapp_client_credentials_ready():
+        raise RuntimeError("Webex Service App client credentials are not configured on the portal")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{API}/access_token",
@@ -120,15 +132,75 @@ async def _refresh_access_token(auth: WebexServiceAuth) -> str:
                 "grant_type": "refresh_token",
                 "client_id": settings.webex_serviceapp_client_id,
                 "client_secret": settings.webex_serviceapp_client_secret,
-                "refresh_token": refresh,
+                "refresh_token": refresh_token,
             },
         )
     if resp.status_code != 200:
-        auth.status = "error"
         raise RuntimeError(f"Service App token refresh failed: {resp.status_code} {resp.text[:300]}")
-    store_token_pair(auth, resp.json())
+    return resp.json()
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def public_token_payload(auth: WebexServiceAuth) -> dict:
+    """Token fields safe to hand to a customer connector. No client secret."""
+    expires_at = _as_utc(auth.access_expires_at)
+    expires_in = None
+    if expires_at is not None:
+        expires_in = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
+    payload = {
+        "access_token": decrypt_secret(auth.access_token_encrypted) if auth.access_token_encrypted else None,
+        "refresh_token": decrypt_secret(auth.refresh_token_encrypted) if auth.refresh_token_encrypted else None,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "expires_in": expires_in,
+    }
+    return payload
+
+
+async def _refresh_access_token(auth: WebexServiceAuth) -> str:
+    refresh = decrypt_secret(auth.refresh_token_encrypted)
+    try:
+        pair = await exchange_refresh_grant(refresh)
+    except RuntimeError:
+        auth.status = "error"
+        raise
+    store_token_pair(auth, pair)
     auth.status = "authorized"
     return decrypt_secret(auth.access_token_encrypted)
+
+
+async def issue_connector_token(
+    db: AsyncSession,
+    tenant_id: int,
+    presented_refresh: str | None = None,
+    *,
+    force: bool = False,
+) -> dict:
+    """Return the access and refresh tokens already stored for this tenant.
+
+    The pair comes from the Webex Developer Portal. This does not call Webex
+    and does not mint a new access token. ``presented_refresh`` and ``force``
+    are ignored.
+    """
+    del presented_refresh, force
+    auth = await get_auth(db, tenant_id)
+    if auth is None or auth.status == "deauthorized":
+        raise HTTPException(
+            status_code=409,
+            detail="The Webex Service App is not authorized for this organization",
+        )
+    if not auth.access_token_encrypted or not auth.refresh_token_encrypted:
+        raise HTTPException(
+            status_code=409,
+            detail="Paste the developer-portal access token and refresh token for this organization",
+        )
+    return public_token_payload(auth)
 
 
 async def get_auth(db: AsyncSession, tenant_id: int) -> WebexServiceAuth | None:

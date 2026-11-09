@@ -13,12 +13,15 @@ hardware, and Webex media arrives already encoded with a transcript.
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from app.core.config import settings
 from app.core.database import get_db, set_tenant_context
 from app.core.security import hash_connector_token
 from app.models import (
@@ -26,6 +29,7 @@ from app.models import (
     CallSource,
     CallStatus,
     ConnectorCredential,
+    ConnectorKind,
     JobType,
     Recording,
     RecordingLeg,
@@ -45,7 +49,9 @@ from app.services.ingest_grouping import resolve_ingest_group_and_holding
 from app.services.media_cleanup import purge_near_far_mono_media
 from app.services.media_jobs import enqueue_job
 from app.services.storage import connector_media_key, get_storage
+from app.services import webex_serviceapp as wx
 from app.services.transcription import is_transcription_enabled
+from app.services.webex_connector.runtime import write_tokens_file
 from app.services.whisper_config import get_transcription_settings, whisper_runtime_options
 
 router = APIRouter(prefix="/v2", tags=["ingest-v2"])
@@ -395,6 +401,37 @@ async def v2_call_fail(
         {"event": "call_completed", "call_id": call.id, "refci": call.refci}, cred.tenant_id
     )
     return {"status": "ok", "call_id": call.id}
+
+
+class WebexTokenRefreshRequest(BaseModel):
+    refresh_token: str | None = None
+    force: bool = False
+
+
+@router.post("/connector/webex/token")
+async def v2_webex_token(
+    payload: WebexTokenRefreshRequest | None = None,
+    cred: ConnectorCredential = Depends(get_connector),
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh this org's Webex access token for a customer connector.
+
+    The connector authenticates with its own connector token and may send the
+    tenant refresh token. The Service App client secret stays on the portal.
+    """
+    if cred.kind != ConnectorKind.WEBEX:
+        raise HTTPException(status_code=403, detail="This credential is not a Webex connector")
+    presented = payload.refresh_token if payload else None
+    force = bool(payload.force) if payload else False
+    token = await wx.issue_connector_token(db, cred.tenant_id, presented, force=force)
+    auth = await wx.get_auth(db, cred.tenant_id)
+    hosted_dir = Path(settings.webex_connector_data_path) / f"t{cred.tenant_id}"
+    if auth is not None and hosted_dir.is_dir():
+        try:
+            await write_tokens_file(db, cred.tenant_id, auth)
+        except OSError:
+            logger.exception("Could not update hosted WXC token file for tenant %s", cred.tenant_id)
+    return token
 
 
 @router.post("/connector/heartbeat")

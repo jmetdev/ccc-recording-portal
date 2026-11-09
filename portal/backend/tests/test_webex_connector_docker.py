@@ -27,14 +27,6 @@ def settings(monkeypatch):
         "http://backend:8000",
     )
     monkeypatch.setattr(
-        "app.services.webex_connector.docker.settings.webex_serviceapp_client_id",
-        "cid",
-    )
-    monkeypatch.setattr(
-        "app.services.webex_connector.docker.settings.webex_serviceapp_client_secret",
-        "csecret",
-    )
-    monkeypatch.setattr(
         "app.services.webex_connector.docker.settings.webex_connector_scopes",
         "spark-compliance:recordings_read",
     )
@@ -70,7 +62,8 @@ def test_run_container_env_and_volume(mock_client_cls, _host_path, settings):
     assert kwargs["name"] == "ccc-webex-connector-t7"
     assert kwargs["labels"]["ccc.component"] == "wxc-connector"
     assert kwargs["environment"]["CONNECTOR_TOKEN"] == "ccck_test_token"
-    assert kwargs["environment"]["WEBEX_CLIENT_ID"] == "cid"
+    assert "WEBEX_CLIENT_ID" not in kwargs["environment"]
+    assert "WEBEX_CLIENT_SECRET" not in kwargs["environment"]
     assert kwargs["environment"]["WEBEX_TOKEN_FILE"] == "/data/tokens.json"
     assert "/data/webex-connectors/t7" in kwargs["volumes"]
     assert kwargs["network"] == "ccc"
